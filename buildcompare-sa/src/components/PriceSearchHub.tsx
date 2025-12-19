@@ -1,0 +1,395 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import {
+    Search,
+    MapPin,
+    ArrowRight,
+    Camera,
+    Loader2,
+    ShoppingCart,
+    Star,
+    Truck,
+    AlertCircle,
+    Package,
+    Tag,
+    Building2,
+    Store,
+    Phone,
+    Navigation,
+    TrendingDown,
+    Filter,
+    ChevronDown,
+    Map as MapIcon,
+    Check,
+    Download
+} from 'lucide-react';
+import { Material, ComparisonResult, Region } from '@/types';
+import { mockMaterials, generateComparisonResults } from '@/data/mockData';
+import VisualSearch from './VisualSearch';
+
+interface PriceSearchHubProps {
+    initialMaterials?: Material[];
+}
+
+export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
+    // Mode State
+    const [searchMode, setSearchMode] = useState<'manual' | 'scan'>('manual');
+
+    // Search Logic State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedMaterials, setSelectedMaterials] = useState<Material[]>(initialMaterials);
+    const [region, setRegion] = useState<Region>('gauteng');
+    const [radius, setRadius] = useState(20);
+    const [sortBy, setSortBy] = useState<'price' | 'distance' | 'rating'>('price');
+    const [isSearching, setIsSearching] = useState(false);
+    const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [searchSuggestions, setSearchSuggestions] = useState<Material[]>([]);
+
+    const regions = [
+        { id: 'gauteng', label: 'Johannesburg', fullLabel: 'Gauteng, JHB' },
+        { id: 'cape-town', label: 'Cape Town', fullLabel: 'Western Cape, CPT' },
+        { id: 'durban', label: 'Durban', fullLabel: 'KZN, Durban' },
+    ];
+
+    // Initialize if props provided
+    useEffect(() => {
+        if (initialMaterials.length > 0) {
+            setSelectedMaterials(initialMaterials);
+            performSearch(initialMaterials);
+        }
+    }, [initialMaterials]);
+
+    // Autocomplete
+    useEffect(() => {
+        if (searchQuery.length > 1) {
+            const filtered = mockMaterials.filter(m =>
+                m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (m.brand && m.brand.toLowerCase().includes(searchQuery.toLowerCase()))
+            );
+            setSearchSuggestions(filtered.slice(0, 6));
+            setShowSuggestions(true);
+        } else {
+            setSearchSuggestions([]);
+            setShowSuggestions(false);
+        }
+    }, [searchQuery]);
+
+    const performSearch = async (materials: Material[]) => {
+        setIsSearching(true);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const results = generateComparisonResults(materials, region);
+        setComparisonResults(results);
+        setIsSearching(false);
+    };
+
+    const handleSearch = () => {
+        // If we have text but no selected material, try to add it as generic
+        if (searchQuery && selectedMaterials.length === 0) {
+            // For demo, if text matches a mock item, use it, else generic
+            const distinctItem = mockMaterials.find(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
+            if (distinctItem) {
+                performSearch([distinctItem]);
+            } else {
+                // Fallback generic search
+                performSearch([{
+                    id: `gen-${Date.now()}`,
+                    name: searchQuery,
+                    category: 'other',
+                    quantity: 1,
+                    unit: 'unit'
+                }]);
+            }
+        } else if (selectedMaterials.length > 0) {
+            performSearch(selectedMaterials);
+        }
+    };
+
+    const handleAddMaterial = (material: Material) => {
+        setSelectedMaterials([material]); // Single item search for this UI focus
+        setSearchQuery(material.name);
+        setShowSuggestions(false);
+    };
+
+    const handleMaterialsExtracted = (materials: Material[]) => {
+        setSelectedMaterials(materials);
+        setSearchMode('manual'); // Switch back to results view
+        performSearch(materials);
+    };
+
+    const handleOrderNow = (supplierName: string, productName: string) => {
+        let url = '';
+        if (supplierName.toLowerCase().includes('builders')) {
+            url = `https://www.builders.co.za/search/?text=${encodeURIComponent(productName)}`;
+        } else if (supplierName.toLowerCase().includes('leroy')) {
+            url = `https://leroymerlin.co.za/catalogsearch/result/?q=${encodeURIComponent(productName)}`;
+        } else if (supplierName.toLowerCase().includes('cashbuild')) {
+            url = `https://www.cashbuild.co.za/search?q=${encodeURIComponent(productName)}`;
+        } else {
+            url = `https://www.google.com/search?q=${encodeURIComponent(productName + ' price at ' + supplierName)}`;
+        }
+        window.open(url, '_blank');
+    };
+
+    const formatCurrency = (value: number) => {
+        return new Intl.NumberFormat('en-ZA', {
+            style: 'currency',
+            currency: 'ZAR',
+            minimumFractionDigits: 2,
+        }).format(value);
+    };
+
+    const totalSavings = comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0);
+
+    const handleDownload = () => {
+        const headers = "Item,Quantity,Supplier,Price,Total,Distance\n";
+        const rows = comparisonResults.flatMap(res =>
+            res.quotes.map(q => {
+                const total = q.price * res.material.quantity;
+                return `"${res.material.name}",${res.material.quantity},"${q.supplierName}",${q.price},${total},${q.distance}`;
+            })
+        ).join('\n');
+
+        const blob = new Blob([headers + rows], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `BuildCompare_Quote_${Date.now()}.csv`;
+        a.click();
+    };
+
+    return (
+        <div className="w-full max-w-6xl mx-auto space-y-8 animate-fade-in pb-20">
+            {/* Header / Hero Section */}
+            <div className="text-center space-y-4 pt-4">
+                <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter text-white">
+                    PRICE SEARCH HUB
+                </h1>
+                <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+                    Get live, accurate market prices from major SA retailers instantly.
+                </p>
+            </div>
+
+            {/* Toggle Switch */}
+            <div className="flex justify-center">
+                <div className="p-1 bg-slate-900/80 border border-slate-800 rounded-xl inline-flex relative">
+                    <button
+                        onClick={() => setSearchMode('manual')}
+                        className={`px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'manual'
+                            ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
+                            : 'text-slate-400 hover:text-white'
+                            }`}
+                    >
+                        <Search className="w-4 h-4" />
+                        Manual Search
+                    </button>
+                    <button
+                        onClick={() => setSearchMode('scan')}
+                        className={`px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'scan'
+                            ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
+                            : 'text-slate-400 hover:text-white'
+                            }`}
+                    >
+                        <Camera className="w-4 h-4" />
+                        Upload/Scan
+                    </button>
+                </div>
+            </div>
+
+            {/* CONTENT AREA */}
+            <div className="glass-card p-8 border border-slate-800/50 shadow-2xl bg-slate-900/40">
+                {searchMode === 'manual' ? (
+                    <div className="space-y-8">
+                        {/* THE PILL SEARCH BAR */}
+                        <div className="max-w-4xl mx-auto relative z-20">
+                            <div className="flex flex-col md:flex-row items-center bg-slate-900/90 border border-slate-700 rounded-2xl md:rounded-full p-2 shadow-xl shadow-black/50 transition-all hover:border-slate-600 focus-within:border-yellow-500/50 text-white group">
+
+                                {/* Material Input */}
+                                <div className="flex-1 w-full md:w-auto flex items-center px-4 py-2 border-b md:border-b-0 md:border-r border-slate-800 relative">
+                                    <Search className="w-5 h-5 text-slate-500 group-focus-within:text-yellow-400 transition-colors" />
+                                    <input
+                                        type="text"
+                                        placeholder="Material (e.g. 50kg Cement)"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                        className="w-full bg-transparent border-none outline-none text-white placeholder-slate-500 h-10 px-3 text-lg font-medium"
+                                    />
+
+                                    {/* Suggestions Dropdown */}
+                                    {showSuggestions && searchSuggestions.length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-4 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-30">
+                                            {searchSuggestions.map((item) => (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => handleAddMaterial(item)}
+                                                    className="px-4 py-3 hover:bg-slate-800 cursor-pointer flex items-center gap-3 border-b border-slate-800/50 last:border-0"
+                                                >
+                                                    <Search className="w-4 h-4 text-slate-600" />
+                                                    <div>
+                                                        <p className="font-medium text-white">{item.name}</p>
+                                                        {item.brand && <p className="text-xs text-yellow-500">{item.brand}</p>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Location Input */}
+                                <div className="w-full md:w-64 flex items-center px-4 py-2 relative">
+                                    <MapPin className="w-5 h-5 text-yellow-400" />
+                                    <select
+                                        value={region}
+                                        onChange={(e) => setRegion(e.target.value as Region)}
+                                        className="w-full bg-transparent border-none outline-none text-white h-10 px-3 text-lg font-medium appearance-none cursor-pointer"
+                                    >
+                                        {regions.map(r => (
+                                            <option key={r.id} value={r.id} className="bg-slate-900 text-white">
+                                                {r.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="w-4 h-4 text-slate-600 absolute right-4 pointer-events-none" />
+                                </div>
+
+                                {/* Action Button */}
+                                <button
+                                    onClick={handleSearch}
+                                    disabled={!searchQuery && selectedMaterials.length === 0}
+                                    className="w-full md:w-auto px-8 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black uppercase tracking-wide rounded-xl md:rounded-full transition-all shadow-lg shadow-yellow-400/20 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
+                                >
+                                    {isSearching ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'COMPARE NOW'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* RESULTS AREA */}
+                        {isSearching && (
+                            <div className="text-center py-20">
+                                <div className="inline-flex items-center justify-center w-20 h-20 bg-yellow-400/10 rounded-full mb-6 relative">
+                                    <div className="absolute inset-0 rounded-full border-4 border-yellow-400/30 border-t-yellow-400 animate-spin"></div>
+                                    <Search className="w-8 h-8 text-yellow-400" />
+                                </div>
+                                <h3 className="text-2xl font-bold text-white mb-2">Scanning Retailers...</h3>
+                                <p className="text-slate-400">Fetching live prices from Builders, Leroy Merlin & Local Yards</p>
+                            </div>
+                        )}
+
+                        {!isSearching && comparisonResults.length > 0 && (
+                            <div className="space-y-6 animate-slide-up">
+                                {/* Success Banner */}
+                                <div className="flex flex-wrap items-center justify-between gap-4 p-6 bg-green-500/10 border border-green-500/20 rounded-2xl">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
+                                            <TrendingDown className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-green-400 uppercase tracking-wider">Potential Savings</p>
+                                            <p className="text-3xl font-bold text-white">{formatCurrency(totalSavings)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={handleDownload}
+                                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-medium text-white border border-slate-700 flex items-center gap-2 transition-colors"
+                                        >
+                                            <Download className="w-4 h-4" /> Export CSV
+                                        </button>
+                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-medium text-slate-300 border border-slate-700">
+                                            {comparisonResults.length} Items Found
+                                        </span>
+                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-medium text-yellow-400 border border-slate-700">
+                                            {radius}km Radius
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Results List */}
+                                {comparisonResults.map((result, idx) => (
+                                    <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-slate-700 transition-colors">
+                                        {/* Material Header */}
+                                        <div className="p-4 bg-black/20 border-b border-slate-800 flex items-center gap-4">
+                                            <div className="p-3 bg-slate-800 rounded-lg">
+                                                <Package className="w-6 h-6 text-yellow-400" />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-bold text-white">{result.material.name}</h3>
+                                                <div className="flex items-center gap-2 text-sm text-slate-400">
+                                                    <span className="bg-slate-800 px-2 py-0.5 rounded text-xs text-white">{result.material.category}</span>
+                                                    <span>•</span>
+                                                    <span>{result.material.quantity} {result.material.unit}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Quotes List */}
+                                        <div className="divide-y divide-slate-800">
+                                            {result.quotes.filter(q => q.distance <= radius).map((quote, qIdx) => {
+                                                const isBestPrice = quote === result.bestPrice;
+                                                return (
+                                                    <div key={qIdx} className={`p-4 flex flex-col md:flex-row items-center gap-6 hover:bg-white/5 transition-colors ${isBestPrice ? 'bg-green-500/5' : ''}`}>
+                                                        {/* Supplier Info */}
+                                                        <div className="flex-1 flex items-center gap-4 w-full">
+                                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-xl font-bold ${quote.supplierName.includes('Builders') ? 'bg-blue-600 text-white' :
+                                                                quote.supplierName.includes('Leroy') ? 'bg-green-600 text-white' :
+                                                                    quote.supplierName.includes('Cash') ? 'bg-red-600 text-white' :
+                                                                        'bg-slate-700 text-slate-300'
+                                                                }`}>
+                                                                {quote.supplierName.substring(0, 1)}
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <h4 className="font-bold text-white">{quote.supplierName}</h4>
+                                                                    {isBestPrice && <span className="text-[10px] font-black bg-green-500 text-black px-2 py-0.5 rounded-full uppercase">Best Deal</span>}
+                                                                </div>
+                                                                <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                                                                    <span className="flex items-center gap-0.5"><MapIcon className="w-3 h-3" /> {quote.distance}km</span>
+                                                                    <span className="flex items-center gap-0.5"><Navigation className="w-3 h-3" /> {quote.supplierCity}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Price & Stock */}
+                                                        <div className="text-right min-w-[120px]">
+                                                            <p className="text-2xl font-bold text-white">{formatCurrency(quote.price)}</p>
+                                                            <div className="flex items-center justify-end gap-1 mt-1">
+                                                                {quote.inStock ? (
+                                                                    <>
+                                                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                                                        <span className="text-xs text-green-400 font-medium">In Stock</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="text-xs text-red-400 font-medium">Low Stock</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Action */}
+                                                        <button
+                                                            onClick={() => handleOrderNow(quote.supplierName, result.material.name)}
+                                                            className="w-full md:w-auto px-6 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+                                                        >
+                                                            <ShoppingCart className="w-4 h-4" />
+                                                            ORDER
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    /* SCAN MODE */
+                    <div className="animate-fade-in">
+                        <VisualSearch onMaterialsExtracted={handleMaterialsExtracted} />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
