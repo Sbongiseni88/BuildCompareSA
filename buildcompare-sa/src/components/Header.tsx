@@ -153,8 +153,8 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
                             {profileOpen && (
                                 <div className="absolute right-0 mt-2 w-56 glass-card rounded-xl shadow-2xl overflow-hidden animate-slide-up">
                                     <div className="p-4 border-b border-slate-700">
-                                        <p className="font-semibold text-slate-200">Johan Muller</p>
-                                        <p className="text-xs text-slate-400">johan@buildcompare.co.za</p>
+                                        <p className="font-semibold text-slate-200">Sibongiseni</p>
+                                        <p className="text-xs text-slate-400">sibongiseni@buildcompare.co.za</p>
                                         <div className="flex items-center gap-1 mt-2">
                                             <Zap className="w-3 h-3 text-yellow-400" />
                                             <span className="text-xs text-yellow-400 font-medium">Pro Contractor</span>

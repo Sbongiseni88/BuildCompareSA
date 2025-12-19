@@ -8,11 +8,12 @@ import AIConcierge from '@/components/AIConcierge';
 import ProjectsManager from '@/components/ProjectsManager';
 import SmartEstimator from '@/components/SmartEstimator';
 import CostAnalysis from '@/components/CostAnalysis';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Menu } from 'lucide-react';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('compare');
   const [isConciergeOpen, setIsConciergeOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Render the appropriate component
   const renderContent = () => {
@@ -42,16 +43,29 @@ export default function Home() {
     <div className="min-h-screen bg-black font-sans text-slate-100 selection:bg-yellow-500/30 flex">
 
       {/* Sidebar Navigation */}
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        isCollapsed={isSidebarCollapsed}
+      />
 
       {/* Main Content Area */}
-      <main className="flex-1 min-h-screen flex flex-col relative bg-[#020617] overflow-x-hidden">
+      <main className="flex-1 min-h-screen flex flex-col relative bg-[#020617] overflow-x-hidden transition-all duration-300">
 
         {/* Top Header Bar */}
         <header className="h-20 border-b border-slate-800 flex items-center justify-between px-8 bg-black/40 backdrop-blur-md sticky top-0 z-40">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500 font-bold tracking-wider text-xs uppercase">PROJECT:</span>
-            <span className="text-white font-bold tracking-wide">SANDTON MALL RENOVATION</span>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="h-8 w-px bg-slate-800"></div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 font-bold tracking-wider text-xs uppercase">PROJECT:</span>
+              <span className="text-white font-bold tracking-wide">SANDTON MALL RENOVATION</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-6">
@@ -69,7 +83,7 @@ export default function Home() {
         </header>
 
         {/* Dynamic Content */}
-        <div className="p-8 pb-32 max-w-[1600px] mx-auto w-full">
+        <div className="p-8 pb-32 max-w-[1600px] mx-auto w-full animate-fade-in">
           {renderContent()}
         </div>
 

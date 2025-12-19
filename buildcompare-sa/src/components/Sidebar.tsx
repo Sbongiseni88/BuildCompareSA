@@ -15,9 +15,10 @@ import {
 interface SidebarProps {
     activeTab: string;
     onTabChange: (tab: string) => void;
+    isCollapsed: boolean;
 }
 
-export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange, isCollapsed }: SidebarProps) {
     const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'estimator', label: 'Smart Estimator', icon: Calculator },
@@ -32,15 +33,20 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
     ];
 
     return (
-        <aside className="sticky top-0 h-screen w-64 bg-black border-r border-slate-800 flex flex-col z-50 flex-shrink-0">
+        <aside
+            className={`sticky top-0 h-screen bg-black border-r border-slate-800 flex flex-col z-50 flex-shrink-0 transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'
+                }`}
+        >
             {/* Logo Area */}
-            <div className="p-6 flex items-center gap-3">
-                <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center">
+            <div className={`p-6 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} transition-all`}>
+                <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center flex-shrink-0">
                     <HardHat className="w-5 h-5 text-black" />
                 </div>
-                <h1 className="text-xl font-bold text-white tracking-tight">
-                    BUILD<span className="text-yellow-400">COMPARE</span>
-                </h1>
+                {!isCollapsed && (
+                    <h1 className="text-xl font-bold text-white tracking-tight whitespace-nowrap overflow-hidden animate-fade-in">
+                        BUILD<span className="text-yellow-400">COMPARE</span>
+                    </h1>
+                )}
             </div>
 
             {/* Main Menu */}
@@ -52,13 +58,14 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
                         <button
                             key={item.id}
                             onClick={() => onTabChange(item.id)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-medium ${isActive
+                            title={isCollapsed ? item.label : ''}
+                            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all duration-200 font-medium ${isActive
                                 ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
                                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
                                 }`}
                         >
-                            <Icon className="w-5 h-5" />
-                            {item.label}
+                            <Icon className="w-5 h-5 flex-shrink-0" />
+                            {!isCollapsed && <span className="whitespace-nowrap overflow-hidden animate-fade-in">{item.label}</span>}
                         </button>
                     );
                 })}
@@ -71,10 +78,11 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
                     return (
                         <button
                             key={item.id}
-                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:text-white hover:bg-slate-900 transition-colors font-medium"
+                            title={isCollapsed ? item.label : ''}
+                            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl text-slate-500 hover:text-white hover:bg-slate-900 transition-colors font-medium`}
                         >
-                            <Icon className="w-5 h-5" />
-                            {item.label}
+                            <Icon className="w-5 h-5 flex-shrink-0" />
+                            {!isCollapsed && <span className="whitespace-nowrap overflow-hidden animate-fade-in">{item.label}</span>}
                         </button>
                     );
                 })}

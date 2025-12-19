@@ -81,7 +81,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
                         <h1 className="text-2xl md:text-3xl font-bold text-white">
-                            Good morning, <span className="text-gradient">Johan</span> 👷
+                            Good morning, <span className="text-gradient">Sibongiseni</span> 👷
                         </h1>
                         <p className="text-slate-400 mt-1">
                             You have {mockDashboardStats.activeProjects} active projects. Let&apos;s find the best prices today!
