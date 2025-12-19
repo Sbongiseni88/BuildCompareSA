@@ -50,11 +50,36 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
         setInputValue('');
         setIsTyping(true);
 
-        // Simulate AI thinking
-        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+        // Simulate initial delay for realism
+        await new Promise(resolve => setTimeout(resolve, 600));
 
-        const aiResponse = generateAIResponse(inputValue);
-        setMessages(prev => [...prev, aiResponse]);
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: inputValue }),
+            });
+
+            if (!response.ok) throw new Error('API request failed');
+
+            const data = await response.json();
+
+            const aiMessage: ChatMessage = {
+                id: `ai-${Date.now()}`,
+                role: 'assistant',
+                content: data.message,
+                timestamp: new Date(),
+            };
+
+            setMessages(prev => [...prev, aiMessage]);
+        } catch (error) {
+            console.log("Using Offline AI Mode (Fallback)");
+            // Fallback to robust mock data (Offline Mode)
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Extra thinking time for mock
+            const aiResponse = generateAIResponse(inputValue);
+            setMessages(prev => [...prev, aiResponse]);
+        }
+
         setIsTyping(false);
     };
 

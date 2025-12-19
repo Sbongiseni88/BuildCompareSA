@@ -374,7 +374,7 @@ export const mockChatMessages: ChatMessage[] = [
     {
         id: 'chat-1',
         role: 'assistant',
-        content: "👋 Welcome to BuildCompare AI! I'm your **Action Bot** 🤖. Ask me to find stock, check prices, or analyze market trends.",
+        content: "Sawubona! I'm your BuildCompare Concierge. Need help with a BoQ or estimating material for your next project?",
         timestamp: new Date(),
     },
 ];
@@ -383,7 +383,101 @@ export const mockChatMessages: ChatMessage[] = [
 export function generateAIResponse(userMessage: string): ChatMessage {
     const lowerMessage = userMessage.toLowerCase();
 
-    // 1. Handle "Price Trend" Queries
+    // 1. COMPLEX SCENARIO: Cement Types
+    if (lowerMessage.includes('cement') && (lowerMessage.includes('need') || lowerMessage.includes('what'))) {
+        return {
+            id: `chat-${Date.now()}`,
+            role: 'assistant',
+            content: `Choosing the right cement depends entirely on what part of the building you are working on. In South Africa, cement is classified by its strength (measured in Megapascals or MPa), and for NHBRC-compliant residential builds, you typically choose between **32.5** and **42.5** grade.
+
+Here is a breakdown based on your specific application:
+
+### 1. For Foundations and Suspended Slabs (Structural)
+*   **Recommendation:** **42.5N or 42.5R**
+*   **Why:** For any structural element that carries the weight of the house, NHBRC standards generally require a higher strength. Using 42.5 ensures the concrete reaches its required strength (usually 25MPa to 30MPa) faster and more reliably.
+*   **Application:** Footings, reinforced columns, beams, and structural floor slabs.
+
+### 2. For Bricklaying and Plastering (Mortar)
+*   **Recommendation:** **32.5N**
+*   **Why:** 42.5 is often "too strong" for plaster and can lead to excessive shrinkage cracks. A 32.5 grade cement provides better workability (it's "fatter") and allows the mortar to bond well without becoming brittle.
+*   **Application:** Building walls (mortar) and internal/external plastering.
+
+### 3. For Surface Beds and Driveways (Non-Structural)
+*   **Recommendation:** **32.5N or 42.5N**
+*   **Why:** If it is a standard ground-level floor slab (surface bed) for a house, a 32.5 grade is often sufficient if mixed correctly. However, for driveways that will handle heavy vehicles, 42.5 is preferred to prevent cracking and wear.
+
+### 4. Specialized Projects (Coastal or Wet Areas)
+*   **Recommendation:** **Sulphate Resistant or Marine Grade Cement**
+*   **Why:** If you are building right on the coast (e.g., KZN or Western Cape) or in areas with high water tables, you may need a cement that resists salt and chemical erosion.
+
+---
+
+### Important SA Standards Checklist:
+*   **Look for the SABS Mark:** Ensure the bags carry the SANS 50197-1 mark. This is a non-negotiable for NHBRC inspections.
+*   **Brand Reliability:** In SA, brands like **PPC, AfriSam, Sephaku, and Lafarge** are the industry standards.
+*   **Shelf Life:** Never use cement that has "lumps" in it or has been sitting on a damp floor. Cement starts to lose its chemical strength 3 months after the packing date.
+
+**What specific part of the project are you working on right now? I can give you the exact mixing ratios for that job.**`,
+            timestamp: new Date()
+        };
+    }
+
+    // 2. COMPLEX SCENARIO: 3 Bedroom House
+    if (lowerMessage.includes('3 bedroom') || lowerMessage.includes('build a house') || lowerMessage.includes('house plan')) {
+        return {
+            id: `chat-${Date.now()}`,
+            role: 'assistant',
+            content: `To build a 3-bedroom, 2-bathroom house in South Africa that complies with **NHBRC (National Home Builders Registration Council)** standards and local municipal regulations, you need to plan across four main categories: Legal/Compliance, Professional Services, Structural Materials, and Finishes.
+
+Here is a breakdown of what you will need:
+
+### 1. Legal & Compliance (Non-Negotiables)
+Before you lay a single brick, you must have these in place to ensure your home is legal and insurable:
+*   **NHBRC Enrollment:** You must enroll the project with the NHBRC before construction begins. This protects you against structural defects.
+*   **Approved Building Plans:** Designed by a SACAP-registered professional and approved by your local municipality.
+*   **Water & Electrical Connections:** Applications for temporary (construction) and permanent meters from your local council.
+*   **Insurance:** Contractors' All Risk insurance is highly recommended.
+
+### 2. The Professional Team
+South African law requires certain professionals to sign off on stages of the build:
+*   **Architect/Senior Draughtsperson:** To design the layout and ensure SANS 10400 (building regulations) compliance.
+*   **Structural Engineer:** To design the foundations, roof tie-downs, and any concrete slabs. They must issue a completion certificate (Form 4).
+*   **NHBRC Registered Contractor:** To physically build the house.
+*   **Land Surveyor:** To peg out the boundary lines accurately.
+
+### 3. Structural Requirements (The Shell)
+For a standard 3-bed, 2-bath house (approx. 100m² – 150m²), you will need:
+*   **Foundations:** Concrete, reinforcing steel (rebar), and mesh.
+*   **Walls:** SABS-approved cement blocks or clay bricks, plus **DPC (Damp Proof Course)** to prevent rising damp.
+*   **Roofing:** Trusses (must be prefabricated and certified), roof covering (tiles or Chromadek), and an **A19 Roof Certificate** from an engineer.
+*   **Windows & Doors:** Standard aluminium or timber frames. Glass must meet SANS safety regulations (especially in bathrooms).
+
+### 4. Internal Services (Plumbing & Electrical)
+*   **Plumbing:** 
+    *   Piping for 2 bathrooms (showers, toilets, basins, baths) and 1 kitchen (sink, washing machine/dishwasher points).
+    *   **Geyser:** By law (SANS 10400-XA), you must have an energy-efficient water heating system (Solar Geyser or Heat Pump).
+*   **Electrical:** 
+    *   DB board, wiring, plugs, and light points.
+    *   You will need an **Electrical Certificate of Compliance (COC)** at the end.
+
+### 5. Finishing Schedule
+This is where you define the look of the home:
+*   **Kitchen:** Floor units, wall units, countertops (granite, quartz, or laminate), sink, and oven/hob.
+*   **Bathrooms:** 2x Toilets, 2x Basins, at least 1 shower, and 1 bath (standard layout).
+*   **Flooring:** Tiles, laminate, or vinyl for the whole house.
+*   **Ceilings:** Rhinoboard or PVC ceilings with cornices.
+*   **Paint:** Undercoat and final coats for interior and exterior.
+
+### 6. Budgeting Tip (The BuildCompare Way)
+In the South African market, building costs currently range from **R8,000 to R12,000 per square meter** for a standard finish. 
+*   **Estimate:** For a modest 120m² 3-bedroom house, you should budget between **R960,000 and R1.4 million**, depending on your choice of finishes and the slope of your land.
+
+**Would you like me to help you estimate the specific quantities of bricks and cement for this layout?**`,
+            timestamp: new Date()
+        };
+    }
+
+    // 3. Handle "Price Trend" Queries
     if (lowerMessage.includes('trend') || lowerMessage.includes('forecast') || lowerMessage.includes('buy now')) {
         const product = lowerMessage.includes('copper') ? 'Copper Piping' :
             lowerMessage.includes('steel') ? 'Steel Rebar' :
@@ -401,53 +495,16 @@ export function generateAIResponse(userMessage: string): ChatMessage {
         };
     }
 
-    // 2. Handle "Stock" & "Location" Queries (e.g. "5000 bricks within 20km")
-    if (lowerMessage.includes('stock') || lowerMessage.includes('km') || lowerMessage.includes('open') || lowerMessage.includes('find')) {
-        // Extract numbers if present
-        const quantityMatch = userMessage.match(/(\d+)\s*(stock|bricks|bags|units)/i);
-        const quantity = quantityMatch ? quantityMatch[1] : "required quantity";
-
-        return {
-            id: `chat-${Date.now()}`,
-            role: 'assistant',
-            content: `### 📍 Local Stock Locator\n\nSearching for **${quantity}** items within **20km**...\n\nFound **3 suppliers** open right now:\n\n1. **Builders Warehouse Sandton** (3.2km)\n   🟢 **${Math.floor(Math.random() * 5000) + 2000} in stock**\n   🕒 Closes 18:00\n   💰 R${(Math.random() * 10 + 2).toFixed(2)}/unit\n\n2. **JHB Building Supplies** (8.5km)\n   🟢 **${Math.floor(Math.random() * 8000) + 1000} in stock**\n   🕒 Closes 17:30\n   💰 R${(Math.random() * 10 + 1.8).toFixed(2)}/unit\n\n3. **Leroy Merlin** (12km)\n   🟡 **Low Stock (Call to reserve)**\n   🕒 Closes 19:00\n\n[🗺️ View on Map](#) | [📞 Call Best Price](#)`,
-            timestamp: new Date()
-        };
-    }
-
-    // 3. Specific Product Handling (Priority over generic keywords)
-    if (lowerMessage.includes('primer')) {
-        return {
-            id: `chat-${Date.now()}`,
-            role: 'assistant',
-            content: `### 🎨 Paint Primer Search\n\nI found **Duram Cement Primer 20L White** at these top locations:\n\n1. **Leroy Merlin**: R1,299.00\n   ✅ In Stock\n2. **Builders Warehouse**: R1,350.00\n3. **Mica Hardware**: R1,420.00\n\n**Quantity Check:** For coverage, 20L typically covers **100-120m²** depending on surface porosity.\n\nWould you like me to add this to your comparison list?`,
-            timestamp: new Date()
-        };
-    }
-
-    // 4. General Keyword Responses
+    // 4. General Keyword Responses (Fallback)
     const responses = [
-        {
-            keywords: ['cement', 'concrete', 'mix'],
-            // Only match if 'primer' wasn't caught above
-            response: "I can see you're looking for cement/concrete products. Based on current market rates in Gauteng:\n\n🏗️ **AfriSam All Purpose Cement 50kg**: R109 - R135 per bag\n🏗️ **PPC Surebuild Cement 50kg**: R115 - R142 per bag\n\nFor a standard wall (3m x 2.4m), you'll need approximately **8-10 bags**.",
-        },
         {
             keywords: ['brick', 'bricks', 'face brick', 'stock brick'],
             response: "I see you need bricks! Here's what I found:\n\n🧱 **Corobrik NFP Clay Face Brick**: R3.20 - R4.50 each\n🧱 **Corobrik Satin Face Brick**: R4.80 - R5.50 each\n\nFor a 10m² wall, you'll need approximately **600 bricks**.",
         },
         {
-            keywords: ['steel', 'rebar', 'reinforcing', 'mesh'],
-            response: "Looking at steel reinforcement options:\n\n🔩 **ArcelorMittal Y10 Rebar (6m)**: R165 - R195 per bar\n🔩 **Macsteel Ref 193 Mesh**: R890 - R1,050 per sheet\n\nSteel prices have been stable this month.",
-        },
-        {
-            keywords: ['paint', 'painting', 'weatherguard', 'plascon', 'dulux'],
+            keywords: ['paint', 'painting'],
             response: "Here are the current paint prices:\n\n🎨 **Dulux Weatherguard Exterior 20L**: R1,850 - R2,100\n🎨 **Plascon Micatex Exterior 20L**: R1,650 - R1,890\n\nSale Alert: Leroy Merlin has 15% off Dulux this week!",
-        },
-        {
-            keywords: ['timber', 'wood', 'meranti', 'pine'],
-            response: "Timber pricing update:\n\n🪵 **Merensky Meranti 38x114mm**: R85 - R105\n🪵 **York Timber SA Pine**: R28 - R38\n\nCurrent supply is good.",
-        },
+        }
     ];
 
     for (const resp of responses) {
@@ -465,7 +522,7 @@ export function generateAIResponse(userMessage: string): ChatMessage {
     return {
         id: `chat-${Date.now()}`,
         role: 'assistant',
-        content: `I'm your **BuildCompare Action Bot** 🤖\n\nI can help you:\n• **Find Stock**: "Find 5000 bricks near me"\n• **Check Availability**: "Is Builders Sandton open?"\n• **Analyze Trends**: "Should I buy copper now?"\n• **Compare Prices**: "Best price on Duram Primer"\n\nWhat do you need handled right now?`,
+        content: `👋 Sawubona! I'm your **BuildCompare Concierge**. Need help with a BoQ or estimating material for your next project?\n\nI can help you:\n• **Find Stock**: "Find 5000 bricks near me"\n• **Technical Advice**: "What cement do I need for a foundation?"\n• **Project Planning**: "What do I need for a 3 bedroom house?"\n\nWhat do you need handled right now?`,
         timestamp: new Date(),
     };
 }
