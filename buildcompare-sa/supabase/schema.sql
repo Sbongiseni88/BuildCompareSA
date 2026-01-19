@@ -130,3 +130,6 @@ CREATE POLICY "Users can manage their own price alerts" ON price_alerts
 CREATE POLICY "Users can view their own notifications" ON notifications
     FOR SELECT USING (auth.uid() = user_id);
 
+--test
+
+
