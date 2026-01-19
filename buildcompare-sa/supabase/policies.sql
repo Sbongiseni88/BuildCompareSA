@@ -49,3 +49,4 @@ ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "No access to audit logs" 
 ON audit_logs FOR ALL 
 USING (false);  -- Deny all by default
+--test
