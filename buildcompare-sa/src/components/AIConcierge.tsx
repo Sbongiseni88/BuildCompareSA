@@ -1,5 +1,7 @@
-// No changes needed
-Send,
+import React, { useState, useEffect, useRef } from 'react';
+import {
+    Bot,
+    Send,
     X,
     Sparkles,
     MessageCircle,
