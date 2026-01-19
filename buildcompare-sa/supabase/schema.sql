@@ -131,5 +131,5 @@ CREATE POLICY "Users can view their own notifications" ON notifications
     FOR SELECT USING (auth.uid() = user_id);
 
 --test
---test again
+--test 
 
