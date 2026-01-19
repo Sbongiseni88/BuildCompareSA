@@ -1,18 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import {
-    User,
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-    signInWithPopup,
-    GoogleAuthProvider,
-    signOut as firebaseSignOut,
-    onAuthStateChanged,
-    updateProfile,
-} from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { createClient } from '@/utils/supabase/client';
+import { User, Session } from '@supabase/supabase-js';
 
 export type UserRole = 'contractor' | 'supplier';
 
@@ -26,6 +16,7 @@ export interface UserProfile {
 
 export interface AuthState {
     user: User | null;
+    session: Session | null;
     userProfile: UserProfile | null;
     loading: boolean;
     error: string | null;
@@ -42,203 +33,192 @@ export interface AuthActions {
 export type UseAuthReturn = AuthState & AuthActions;
 
 /**
- * Maps Firebase Auth error codes to user-friendly messages
- */
-function getErrorMessage(errorCode: string): string {
-    switch (errorCode) {
-        case 'auth/invalid-email':
-            return 'Invalid email address format.';
-        case 'auth/user-disabled':
-            return 'This account has been disabled.';
-        case 'auth/user-not-found':
-            return 'No account found with this email.';
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-            return 'Invalid password. Please try again.';
-        case 'auth/email-already-in-use':
-            return 'An account with this email already exists.';
-        case 'auth/weak-password':
-            return 'Password must be at least 6 characters.';
-        case 'auth/operation-not-allowed':
-            return 'This sign-in method is not enabled.';
-        case 'auth/popup-closed-by-user':
-            return 'Sign-in popup was closed. Please try again.';
-        case 'auth/popup-blocked':
-            return 'Sign-in popup was blocked. Please enable popups.';
-        case 'auth/network-request-failed':
-            return 'Network error. Please check your connection.';
-        case 'auth/too-many-requests':
-            return 'Too many failed attempts. Please try again later.';
-        default:
-            return 'An error occurred. Please try again.';
-    }
-}
-
-/**
- * Custom hook for Firebase Authentication
- * Provides auth state and methods for sign in, sign up, and sign out
+ * Custom hook for Supabase Authentication
  */
 export function useAuth(): UseAuthReturn {
     const [user, setUser] = useState<User | null>(null);
+    const [session, setSession] = useState<Session | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Fetch user profile from Firestore
-    const fetchUserProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
+    const supabase = createClient();
+
+    // Fetch user profile from Database
+    const fetchUserProfile = useCallback(async (uid: string) => {
         try {
-            const userDoc = await getDoc(doc(db, 'users', uid));
-            if (userDoc.exists()) {
-                const data = userDoc.data();
+            // First try to get profile
+            const { data, error } = await supabase
+                .from('profiles') // Assuming a 'profiles' or 'users' table exists
+                .select('*')
+                .eq('id', uid) // Supabase typically uses 'id' which matches auth.uid()
+                .single();
+
+            if (data) {
                 return {
-                    uid,
-                    email: data.email || null,
-                    displayName: data.displayName || null,
-                    role: data.role || null,
-                    createdAt: data.createdAt?.toDate() || null,
-                };
+                    uid: data.id,
+                    email: data.email,
+                    displayName: data.full_name || data.display_name,
+                    role: data.role as UserRole,
+                    createdAt: new Date(data.created_at),
+                } as UserProfile;
             }
             return null;
         } catch (err) {
             console.error('Error fetching user profile:', err);
             return null;
         }
-    }, []);
+    }, [supabase]);
 
-    // Listen for auth state changes
+    // Initial session check
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            setUser(firebaseUser);
+        async function getSession() {
+            setLoading(true);
+            const { data: { session }, error } = await supabase.auth.getSession();
 
-            if (firebaseUser) {
-                const profile = await fetchUserProfile(firebaseUser.uid);
+            if (error) {
+                console.error('Error getting session:', error);
+                setLoading(false);
+                return;
+            }
+
+            setSession(session);
+            setUser(session?.user ?? null);
+
+            if (session?.user) {
+                const profile = await fetchUserProfile(session.user.id);
+                setUserProfile(profile);
+            }
+            setLoading(false);
+        }
+
+        getSession();
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            setSession(session);
+            setUser(session?.user ?? null);
+
+            if (session?.user) {
+                const profile = await fetchUserProfile(session.user.id);
                 setUserProfile(profile);
             } else {
                 setUserProfile(null);
             }
-
             setLoading(false);
         });
 
-        return () => unsubscribe();
-    }, [fetchUserProfile]);
+        return () => subscription.unsubscribe();
+    }, [supabase, fetchUserProfile]);
 
     // Sign in with email and password
-    const signIn = useCallback(async (email: string, password: string): Promise<void> => {
+    const signIn = useCallback(async (email: string, password: string) => {
         setLoading(true);
         setError(null);
-
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const { error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+            if (error) throw error;
         } catch (err: unknown) {
-            const errorCode = (err as { code?: string })?.code || 'unknown';
-            const message = getErrorMessage(errorCode);
+            const message = err instanceof Error ? err.message : 'An error occurred during sign in.';
             setError(message);
-            throw new Error(message);
+            throw err;
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [supabase]);
 
-    // Sign up with email, password, name, and role
+    // Sign up
     const signUp = useCallback(async (
         email: string,
         password: string,
         displayName: string,
         role: UserRole
-    ): Promise<void> => {
+    ) => {
         setLoading(true);
         setError(null);
-
         try {
-            // Create Firebase Auth user
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            const firebaseUser = userCredential.user;
-
-            // Update display name in Firebase Auth
-            await updateProfile(firebaseUser, { displayName });
-
-            // Create user profile in Firestore
-            await setDoc(doc(db, 'users', firebaseUser.uid), {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName,
-                role,
-                createdAt: serverTimestamp(),
+            const { data: { user }, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: displayName,
+                        role: role,
+                    },
+                },
             });
 
-            // Fetch the profile we just created
-            const profile = await fetchUserProfile(firebaseUser.uid);
-            setUserProfile(profile);
-        } catch (err: unknown) {
-            const errorCode = (err as { code?: string })?.code || 'unknown';
-            const message = getErrorMessage(errorCode);
-            setError(message);
-            throw new Error(message);
-        } finally {
-            setLoading(false);
-        }
-    }, [fetchUserProfile]);
+            if (error) throw error;
 
-    // Sign in with Google
-    const signInWithGoogle = useCallback(async (): Promise<void> => {
-        setLoading(true);
-        setError(null);
-
-        try {
-            const provider = new GoogleAuthProvider();
-            const userCredential = await signInWithPopup(auth, provider);
-            const firebaseUser = userCredential.user;
-
-            // Check if user profile exists, if not create one
-            const existingProfile = await fetchUserProfile(firebaseUser.uid);
-            if (!existingProfile) {
-                await setDoc(doc(db, 'users', firebaseUser.uid), {
-                    uid: firebaseUser.uid,
-                    email: firebaseUser.email,
-                    displayName: firebaseUser.displayName,
-                    role: null, // Will need to be set later
-                    createdAt: serverTimestamp(),
+            // In Supabase, we might need to manually create the profile record if a Trigger doesn't do it.
+            // Assuming we rely on a PostgreSQL Trigger for now, or just the metadata.
+            // If manual creation is needed:
+            if (user) {
+                await supabase.from('profiles').upsert({
+                    id: user.id,
+                    email: email,
+                    full_name: displayName,
+                    role: role,
+                    // user_id: user.id
                 });
             }
 
-            const profile = await fetchUserProfile(firebaseUser.uid);
-            setUserProfile(profile);
         } catch (err: unknown) {
-            const errorCode = (err as { code?: string })?.code || 'unknown';
-            const message = getErrorMessage(errorCode);
+            const message = err instanceof Error ? err.message : 'An error occurred during sign up.';
             setError(message);
-            throw new Error(message);
+            throw err;
         } finally {
             setLoading(false);
         }
-    }, [fetchUserProfile]);
+    }, [supabase]);
 
-    // Sign out
-    const signOut = useCallback(async (): Promise<void> => {
+    // Sign in with Google
+    const signInWithGoogle = useCallback(async () => {
         setLoading(true);
         setError(null);
-
         try {
-            await firebaseSignOut(auth);
-            setUserProfile(null);
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/auth/callback`,
+                },
+            });
+            if (error) throw error;
         } catch (err: unknown) {
-            const errorCode = (err as { code?: string })?.code || 'unknown';
-            const message = getErrorMessage(errorCode);
+            const message = err instanceof Error ? err.message : 'An error occurred during Google sign in.';
             setError(message);
-            throw new Error(message);
+            throw err;
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [supabase]);
 
-    // Clear error
-    const clearError = useCallback(() => {
+    // Sign out
+    const signOut = useCallback(async () => {
+        setLoading(true);
         setError(null);
-    }, []);
+        try {
+            await supabase.auth.signOut();
+            setUser(null);
+            setSession(null);
+            setUserProfile(null);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Error signing out.';
+            setError(message);
+        } finally {
+            setLoading(false);
+        }
+    }, [supabase]);
+
+    const clearError = useCallback(() => setError(null), []);
 
     return {
         user,
+        session,
         userProfile,
         loading,
         error,

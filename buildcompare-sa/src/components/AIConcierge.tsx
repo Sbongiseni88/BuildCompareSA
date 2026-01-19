@@ -1,9 +1,5 @@
-"use client";
-
-import React, { useState, useRef, useEffect } from 'react';
-import {
-    Bot,
-    Send,
+// No changes needed
+Send,
     X,
     Sparkles,
     MessageCircle,
@@ -286,8 +282,8 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                                 onClick={startVoiceRecognition}
                                 disabled={isListening || isTyping}
                                 className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isListening
-                                        ? 'bg-red-500 animate-pulse text-white'
-                                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                                    ? 'bg-red-500 animate-pulse text-white'
+                                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
                                     } disabled:opacity-50`}
                                 title={isListening ? 'Listening...' : 'Start voice input'}
                             >
