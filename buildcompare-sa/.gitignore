@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Firebase Service Account
+buildcompare-9afbd-firebase-adminsdk-fbsvc-8c39a6c12f.json

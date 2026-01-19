@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, Image as ImageIcon, Loader2, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { Upload, FileText, Image as ImageIcon, Loader2, CheckCircle, AlertCircle, X, Camera } from 'lucide-react';
 import { Material } from '@/types';
 
 interface VisualSearchProps {
@@ -121,8 +121,8 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                 <div
                     {...getRootProps()}
                     className={`relative border-2 border-dashed rounded-3xl p-12 transition-all duration-300 cursor-pointer ${isDragActive
-                            ? 'border-yellow-400 bg-yellow-500/10 scale-102'
-                            : 'border-slate-700 hover:border-yellow-500/50 hover:bg-slate-800/50'
+                        ? 'border-yellow-400 bg-yellow-500/10 scale-102'
+                        : 'border-slate-700 hover:border-yellow-500/50 hover:bg-slate-800/50'
                         }`}
                 >
                     <input {...getInputProps()} />
@@ -147,9 +147,26 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                             <span className="flex items-center gap-1"><Upload className="w-4 h-4" /> Photos</span>
                         </div>
 
-                        <button className="mt-6 px-8 py-3 bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold rounded-xl transition-all shadow-lg shadow-yellow-500/20 hover:scale-105">
-                            Browse Files
-                        </button>
+                        <div className="flex flex-col sm:flex-row gap-4 mt-6 w-full justify-center">
+                            <button className="px-8 py-3 bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-bold rounded-xl transition-all shadow-lg shadow-yellow-500/20 hover:scale-105">
+                                Browse Files
+                            </button>
+                            <label className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 hover:scale-105 border border-slate-700">
+                                <Camera className="w-5 h-5" />
+                                Take Photo
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        if (e.target.files?.length) {
+                                            handleDrop([e.target.files[0]]);
+                                        }
+                                    }}
+                                />
+                            </label>
+                        </div>
                     </div>
                 </div>
             ) : (
@@ -191,13 +208,13 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                             <div
                                 key={step.id}
                                 className={`flex items-center gap-4 p-3 rounded-lg transition-all duration-300 ${step.status === 'active' ? 'bg-slate-800/50 scale-105 border border-yellow-500/30' :
-                                        step.status === 'completed' ? 'opacity-50' : 'opacity-30'
+                                    step.status === 'completed' ? 'opacity-50' : 'opacity-30'
                                     }`}
                             >
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${step.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                                        step.status === 'active' ? 'bg-yellow-500/20 text-yellow-400' :
-                                            step.status === 'error' ? 'bg-red-500/20 text-red-400' :
-                                                'bg-slate-800 text-slate-600'
+                                    step.status === 'active' ? 'bg-yellow-500/20 text-yellow-400' :
+                                        step.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                                            'bg-slate-800 text-slate-600'
                                     }`}>
                                     {step.status === 'completed' ? <CheckCircle className="w-5 h-5" /> :
                                         step.status === 'active' ? <Loader2 className="w-5 h-5 animate-spin" /> :
@@ -206,7 +223,7 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                                 </div>
                                 <div className="flex-1">
                                     <p className={`font-medium ${step.status === 'active' ? 'text-white' :
-                                            step.status === 'error' ? 'text-red-400' : 'text-slate-300'
+                                        step.status === 'error' ? 'text-red-400' : 'text-slate-300'
                                         }`}>
                                         {step.label}
                                     </p>

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Project } from '@/types';
 import { mockProjects } from '@/data/mockData';
+import { exportProjectToPDF } from '@/lib/pdfExport';
 
 export default function ProjectsManager() {
     const [projects, setProjects] = useState<Project[]>(mockProjects);
@@ -199,9 +200,16 @@ export default function ProjectsManager() {
                                             <Archive className="w-4 h-4" />
                                             Archive
                                         </button>
-                                        <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                exportProjectToPDF(project);
+                                                setShowMenu(null);
+                                            }}
+                                            className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left"
+                                        >
                                             <Download className="w-4 h-4" />
-                                            Export Report
+                                            Export PDF
                                         </button>
                                         <button
                                             onClick={(e) => {

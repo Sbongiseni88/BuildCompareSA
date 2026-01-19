@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
+import { checkRateLimit, getRateLimitHeaders, getClientIP } from "@/lib/rate-limit";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -25,9 +26,24 @@ Always format your responses with nice Markdown (headers, bullet points) for rea
 `;
 
 export async function POST(req: Request) {
+    // Rate limiting check
+    const clientIP = getClientIP(req);
+    const rateLimitResult = checkRateLimit(clientIP, 'default');
+
+    if (!rateLimitResult.success) {
+        return NextResponse.json(
+            { error: "Too many requests. Please try again later." },
+            {
+                status: 429,
+                headers: getRateLimitHeaders(rateLimitResult)
+            }
+        );
+    }
+
     if (!apiKey) {
         return NextResponse.json({ error: "No API key configured" }, { status: 500 });
     }
+
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
@@ -52,16 +68,27 @@ export async function POST(req: Request) {
             },
         });
 
-        // Send the user message with the system prompt context (soft system prompt via history or direct injection)
-        // Gemini Pro doesn't strictly have system prompt in headers yet, so we prepend context or rely on the chat history initialization.
-        // We'll inject the persona in the first message exchange simulation above.
-        // Actually, passing instruction in the first part is often better.
+        const result = await chat.sendMessageStream(`${systemPrompt}\n\nUser Question: ${userMessage}`);
 
-        const result = await chat.sendMessage(`${systemPrompt}\n\nUser Question: ${userMessage}`);
-        const response = result.response;
-        const text = response.text();
+        // Create a readable stream from the Gemini stream
+        const stream = new ReadableStream({
+            async start(controller) {
+                const encoder = new TextEncoder();
+                try {
+                    for await (const chunk of result.stream) {
+                        const chunkText = chunk.text();
+                        if (chunkText) {
+                            controller.enqueue(encoder.encode(chunkText));
+                        }
+                    }
+                    controller.close();
+                } catch (err) {
+                    controller.error(err);
+                }
+            },
+        });
 
-        return NextResponse.json({ message: text });
+        return new NextResponse(stream);
     } catch (error) {
         console.error("Gemini API Error:", error);
         return NextResponse.json({ error: "Failed to process with AI" }, { status: 500 });

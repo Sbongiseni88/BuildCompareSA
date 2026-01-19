@@ -307,79 +307,93 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 </div>
 
                                 {/* Results List */}
-                                {comparisonResults.map((result, idx) => (
-                                    <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-slate-700 transition-colors">
-                                        {/* Material Header */}
-                                        <div className="p-4 bg-black/20 border-b border-slate-800 flex items-center gap-4">
-                                            <div className="p-3 bg-slate-800 rounded-lg">
-                                                <Package className="w-6 h-6 text-yellow-400" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-lg font-bold text-white">{result.material.name}</h3>
-                                                <div className="flex items-center gap-2 text-sm text-slate-400">
-                                                    <span className="bg-slate-800 px-2 py-0.5 rounded text-xs text-white">{result.material.category}</span>
-                                                    <span>•</span>
-                                                    <span>{result.material.quantity} {result.material.unit}</span>
+                                {/* Results List - Grid Layout */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {comparisonResults.map((result, idx) => (
+                                        <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 flex flex-col">
+                                            {/* Material Header */}
+                                            <div className="p-4 bg-black/20 border-b border-slate-800 flex items-start justify-between gap-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 bg-slate-800 rounded-lg">
+                                                        <Package className="w-5 h-5 text-yellow-400" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-base font-bold text-white line-clamp-1" title={result.material.name}>{result.material.name}</h3>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                                                            <span className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-white uppercase tracking-wider">{result.material.category}</span>
+                                                            <span>•</span>
+                                                            <span>{result.material.quantity} {result.material.unit}</span>
+                                                        </div>
+                                                    </div>
                                                 </div>
+                                                {/* Potential Savings Badge */}
+                                                {result.potentialSavings > 0 && (
+                                                    <div className="flex flex-col items-end">
+                                                        <span className="text-[10px] text-green-400 uppercase font-bold tracking-wider">Save</span>
+                                                        <span className="text-sm font-black text-white">{formatCurrency(result.potentialSavings)}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
 
-                                        {/* Quotes List */}
-                                        <div className="divide-y divide-slate-800">
-                                            {result.quotes.filter(q => q.distance <= radius).map((quote, qIdx) => {
-                                                const isBestPrice = quote === result.bestPrice;
-                                                return (
-                                                    <div key={qIdx} className={`p-4 flex flex-col md:flex-row items-center gap-6 hover:bg-white/5 transition-colors ${isBestPrice ? 'bg-green-500/5' : ''}`}>
-                                                        {/* Supplier Info */}
-                                                        <div className="flex-1 flex items-center gap-4 w-full">
-                                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-xl font-bold ${quote.supplierName.includes('Builders') ? 'bg-blue-600 text-white' :
-                                                                quote.supplierName.includes('Leroy') ? 'bg-green-600 text-white' :
-                                                                    quote.supplierName.includes('Cash') ? 'bg-red-600 text-white' :
-                                                                        'bg-slate-700 text-slate-300'
-                                                                }`}>
-                                                                {quote.supplierName.substring(0, 1)}
-                                                            </div>
-                                                            <div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <h4 className="font-bold text-white">{quote.supplierName}</h4>
-                                                                    {isBestPrice && <span className="text-[10px] font-black bg-green-500 text-black px-2 py-0.5 rounded-full uppercase">Best Deal</span>}
-                                                                </div>
-                                                                <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                                                                    <span className="flex items-center gap-0.5"><MapIcon className="w-3 h-3" /> {quote.distance}km</span>
-                                                                    <span className="flex items-center gap-0.5"><Navigation className="w-3 h-3" /> {quote.supplierCity}</span>
-                                                                </div>
-                                                            </div>
+                                            {/* Best Price Highlight */}
+                                            {result.bestPrice && (
+                                                <div className="p-4 bg-gradient-to-r from-green-500/10 to-transparent border-b border-white/5">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] font-black bg-green-500 text-black px-2 py-0.5 rounded-full uppercase">Best Deal</span>
+                                                            <span className="text-xs font-bold text-green-400">{result.bestPrice.supplierName}</span>
                                                         </div>
-
-                                                        {/* Price & Stock */}
-                                                        <div className="text-right min-w-[120px]">
-                                                            <p className="text-2xl font-bold text-white">{formatCurrency(quote.price)}</p>
-                                                            <div className="flex items-center justify-end gap-1 mt-1">
-                                                                {quote.inStock ? (
-                                                                    <>
-                                                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                                                        <span className="text-xs text-green-400 font-medium">In Stock</span>
-                                                                    </>
-                                                                ) : (
-                                                                    <span className="text-xs text-red-400 font-medium">Low Stock</span>
-                                                                )}
-                                                            </div>
+                                                    </div>
+                                                    <div className="flex items-end justify-between">
+                                                        <div>
+                                                            <p className="text-2xl font-black text-white">{formatCurrency(result.bestPrice.price)}</p>
+                                                            <p className="text-[10px] text-slate-500">per unit</p>
                                                         </div>
-
-                                                        {/* Action */}
                                                         <button
-                                                            onClick={() => handleOrderNow(quote.supplierName, result.material.name)}
-                                                            className="w-full md:w-auto px-6 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+                                                            onClick={() => handleOrderNow(result.bestPrice!.supplierName, result.material.name)}
+                                                            className="px-3 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-black text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
                                                         >
-                                                            <ShoppingCart className="w-4 h-4" />
-                                                            ORDER
+                                                            ORDER <ArrowRight className="w-3 h-3" />
                                                         </button>
                                                     </div>
-                                                );
-                                            })}
+                                                </div>
+                                            )}
+
+                                            {/* Other Quotes List */}
+                                            <div className="flex-1 overflow-y-auto max-h-[200px] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                                {result.quotes
+                                                    .filter(q => q.distance <= radius && q !== result.bestPrice)
+                                                    .sort((a, b) => a.price - b.price)
+                                                    .map((quote, qIdx) => (
+                                                        <div key={qIdx} className="p-3 border-b border-slate-800/50 last:border-0 hover:bg-white/5 transition-colors group">
+                                                            <div className="flex justify-between items-center">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${quote.supplierName.includes('Builders') ? 'bg-blue-600/20 text-blue-400' :
+                                                                        quote.supplierName.includes('Leroy') ? 'bg-green-600/20 text-green-400' :
+                                                                            quote.supplierName.includes('Cash') ? 'bg-red-600/20 text-red-400' :
+                                                                                'bg-slate-700/50 text-slate-400'
+                                                                        }`}>
+                                                                        {quote.supplierName.substring(0, 1)}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{quote.supplierName}</p>
+                                                                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                                                                            <span>{quote.distance}km</span>
+                                                                            <span>•</span>
+                                                                            <span className={quote.inStock ? 'text-green-500' : 'text-red-500'}>{quote.inStock ? 'Stock' : 'No Stock'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <p className="text-sm font-bold text-slate-200">{formatCurrency(quote.price)}</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>

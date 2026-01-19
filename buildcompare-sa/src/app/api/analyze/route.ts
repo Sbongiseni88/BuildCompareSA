@@ -2,12 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Material } from '@/types';
 import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
+import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 
 // Initialize Gemini
 // NOTE: user needs to add GEMINI_API_KEY to .env.local
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: NextRequest) {
+    // Rate limiting check - using 'scraping' config for stricter limits
+    const clientIP = getClientIP(req);
+    const rateLimitResult = checkRateLimit(clientIP, 'scraping');
+
+    if (!rateLimitResult.success) {
+        return NextResponse.json(
+            { error: "Rate limit exceeded. Please wait before trying again." },
+            {
+                status: 429,
+                headers: getRateLimitHeaders(rateLimitResult)
+            }
+        );
+    }
+
     try {
         const formData = await req.formData();
         const file = formData.get('file') as File;

@@ -11,7 +11,9 @@ import {
     AlertTriangle,
     ArrowRight,
     Minimize2,
-    Maximize2
+    Maximize2,
+    Mic,
+    MicOff
 } from 'lucide-react';
 import { ChatMessage } from '@/types';
 import { mockChatMessages, generateAIResponse } from '@/data/mockData';
@@ -26,7 +28,35 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
+    const [isListening, setIsListening] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Voice Recognition Setup
+    const startVoiceRecognition = () => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert('Voice recognition is not supported in your browser. Please use Chrome or Edge.');
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-ZA'; // South African English
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = (event: any) => {
+            console.error('Speech recognition error:', event.error);
+            setIsListening(false);
+        };
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setInputValue(prev => prev + (prev ? ' ' : '') + transcript);
+        };
+
+        recognition.start();
+    };
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -50,9 +80,6 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
         setInputValue('');
         setIsTyping(true);
 
-        // Simulate initial delay for realism
-        await new Promise(resolve => setTimeout(resolve, 600));
-
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -61,26 +88,44 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
             });
 
             if (!response.ok) throw new Error('API request failed');
+            if (!response.body) throw new Error('No response body');
 
-            const data = await response.json();
-
-            const aiMessage: ChatMessage = {
-                id: `ai-${Date.now()}`,
+            // Create placeholder for AI message
+            const aiMessageId = `ai-${Date.now()}`;
+            setMessages(prev => [...prev, {
+                id: aiMessageId,
                 role: 'assistant',
-                content: data.message,
+                content: '',
                 timestamp: new Date(),
-            };
+            }]);
 
-            setMessages(prev => [...prev, aiMessage]);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let aiContent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                aiContent += chunk;
+
+                setMessages(prev => prev.map(msg =>
+                    msg.id === aiMessageId
+                        ? { ...msg, content: aiContent }
+                        : msg
+                ));
+            }
+
         } catch (error) {
             console.log("Using Offline AI Mode (Fallback)");
             // Fallback to robust mock data (Offline Mode)
             await new Promise(resolve => setTimeout(resolve, 1000)); // Extra thinking time for mock
             const aiResponse = generateAIResponse(inputValue);
             setMessages(prev => [...prev, aiResponse]);
+        } finally {
+            setIsTyping(false);
         }
-
-        setIsTyping(false);
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -109,7 +154,9 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
 
     return (
         <div
-            className={`fixed right-0 top-0 h-full z-50 flex flex-col bg-slate-900 border-l border-yellow-500/20 shadow-2xl transition-all duration-300 ${isMinimized ? 'w-16' : 'w-96'
+            className={`fixed right-0 top-0 h-full z-50 flex flex-col bg-slate-900 border-l border-yellow-500/20 shadow-2xl transition-all duration-300 ${isMinimized
+                ? 'w-16'
+                : 'w-full md:w-96'
                 }`}
         >
             {/* Header */}
@@ -234,6 +281,19 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                                     style={{ height: 'auto' }}
                                 />
                             </div>
+                            {/* Voice Input Button */}
+                            <button
+                                onClick={startVoiceRecognition}
+                                disabled={isListening || isTyping}
+                                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isListening
+                                        ? 'bg-red-500 animate-pulse text-white'
+                                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
+                                    } disabled:opacity-50`}
+                                title={isListening ? 'Listening...' : 'Start voice input'}
+                            >
+                                {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                            </button>
+                            {/* Send Button */}
                             <button
                                 onClick={handleSendMessage}
                                 disabled={!inputValue.trim() || isTyping}
@@ -243,7 +303,7 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                             </button>
                         </div>
                         <p className="text-xs text-slate-500 mt-2 text-center">
-                            AI-powered suggestions • Not financial advice
+                            AI-powered suggestions • Voice enabled • Not financial advice
                         </p>
                     </div>
                 </>
