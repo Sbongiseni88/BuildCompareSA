@@ -53,11 +53,11 @@ export default function Sidebar({ activeTab, onTabChange, isCollapsed, isMobileO
             )}
 
             <aside
-                className={`fixed inset-y-0 left-0 lg:sticky top-0 h-screen bg-black border-r border-slate-800 flex flex-col z-[60] flex-shrink-0 transition-all duration-300 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+                className={`fixed inset-y-0 left-0 lg:sticky top-0 h-[100dvh] bg-black border-r border-slate-800 flex flex-col z-[60] flex-shrink-0 transition-all duration-300 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                     } ${isCollapsed ? 'lg:w-20' : 'lg:w-64'} w-64`}
             >
-                {/* Logo Area */}
-                <div className={`p-6 flex items-center ${isCollapsed ? 'lg:justify-center' : 'gap-3'} transition-all`}>
+                {/* Logo Area (Static) */}
+                <div className={`p-6 flex items-center flex-shrink-0 ${isCollapsed ? 'lg:justify-center' : 'gap-3'} transition-all`}>
                     <div className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center flex-shrink-0">
                         <HardHat className="w-5 h-5 text-black" />
                     </div>
@@ -68,8 +68,8 @@ export default function Sidebar({ activeTab, onTabChange, isCollapsed, isMobileO
                     )}
                 </div>
 
-                {/* Main Menu */}
-                <div className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+                {/* Main Menu (Scrollable) */}
+                <div className="flex-1 px-4 py-4 space-y-2 overflow-y-auto min-h-0">
                     {menuItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = activeTab === item.id;
@@ -92,8 +92,8 @@ export default function Sidebar({ activeTab, onTabChange, isCollapsed, isMobileO
                     })}
                 </div>
 
-                {/* Bottom Menu */}
-                <div className="p-4 border-t border-slate-900 space-y-2">
+                {/* Bottom Menu (Static - Anchored) */}
+                <div className="p-4 border-t border-slate-900 space-y-2 flex-shrink-0 pb-8 lg:pb-4">
                     {bottomItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = activeTab === item.id;
