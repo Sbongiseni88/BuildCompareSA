@@ -9,6 +9,7 @@ import ProjectsManager from '@/components/ProjectsManager';
 import SmartEstimator from '@/components/SmartEstimator';
 import CostAnalysis from '@/components/CostAnalysis';
 import AccountProfile from '@/components/AccountProfile';
+import FeedbackModal from '@/components/FeedbackModal';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { MessageSquare, Menu, HardHat } from 'lucide-react';
@@ -17,6 +18,7 @@ export default function Home() {
   const { signOut } = useAuthContext();
   const [activeTab, setActiveTab] = useState('compare');
   const [isConciergeOpen, setIsConciergeOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -68,6 +70,7 @@ export default function Home() {
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabChange}
+          onFeedbackClick={() => setIsFeedbackOpen(true)}
           isCollapsed={isSidebarCollapsed}
           isMobileOpen={isMobileSidebarOpen}
           onMobileClose={() => setIsMobileSidebarOpen(false)}
@@ -132,6 +135,12 @@ export default function Home() {
           <AIConcierge
             isOpen={isConciergeOpen}
             onToggle={() => setIsConciergeOpen(!isConciergeOpen)}
+          />
+
+          {/* Feedback Modal */}
+          <FeedbackModal
+            isOpen={isFeedbackOpen}
+            onClose={() => setIsFeedbackOpen(false)}
           />
         </main>
       </div>

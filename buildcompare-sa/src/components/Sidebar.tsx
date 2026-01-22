@@ -10,18 +10,20 @@ import {
     Settings,
     LogOut,
     HardHat,
-    User
+    User,
+    MessageSquare
 } from 'lucide-react';
 
 interface SidebarProps {
     activeTab: string;
     onTabChange: (tab: string) => void;
+    onFeedbackClick: () => void;
     isCollapsed: boolean;
     isMobileOpen: boolean;
     onMobileClose: () => void;
 }
 
-export default function Sidebar({ activeTab, onTabChange, isCollapsed, isMobileOpen, onMobileClose }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange, onFeedbackClick, isCollapsed, isMobileOpen, onMobileClose }: SidebarProps) {
     const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'estimator', label: 'Smart Estimator', icon: Calculator },
@@ -32,11 +34,17 @@ export default function Sidebar({ activeTab, onTabChange, isCollapsed, isMobileO
 
     const bottomItems = [
         { id: 'account', label: 'Account', icon: User },
+        { id: 'feedback', label: 'Send Feedback', icon: MessageSquare },
         { id: 'sign-out', label: 'Sign Out', icon: LogOut },
     ];
 
     const handleItemClick = (id: string) => {
-        onTabChange(id);
+        if (id === 'feedback') {
+            onFeedbackClick();
+        } else {
+            onTabChange(id);
+        }
+
         if (window.innerWidth < 1024) {
             onMobileClose();
         }
