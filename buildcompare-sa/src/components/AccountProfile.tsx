@@ -24,11 +24,11 @@ interface UserProfileData {
 }
 
 export default function AccountProfile() {
-    const { user, signOut } = useAuthContext();
+    const { user, loading: authLoading, signOut } = useAuthContext();
     const supabase = createClient();
 
     const [profile, setProfile] = useState<UserProfileData | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
 
     // Form State
@@ -37,18 +37,23 @@ export default function AccountProfile() {
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
+        // Wait for auth to load before doing anything
+        if (authLoading) return;
+
+        // If user is available, fetch profile
         if (user) {
             fetchProfile();
         }
-    }, [user]);
+    }, [user, authLoading]);
 
     const fetchProfile = async () => {
+        if (!user) return;
         setIsLoading(true);
         try {
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
-                .eq('id', user?.id)
+                .eq('id', user.id)
                 .single();
 
             if (error) throw error;
@@ -99,7 +104,7 @@ export default function AccountProfile() {
         }
     };
 
-    if (isLoading) {
+    if (authLoading || isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[50vh]">
                 <Loader2 className="w-10 h-10 text-yellow-400 animate-spin mb-4" />

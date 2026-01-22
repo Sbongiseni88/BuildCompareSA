@@ -75,16 +75,8 @@ export function useAuth(): UseAuthReturn {
         async function getSession() {
             setLoading(true);
             try {
-                // Determine session with a timeout race
-                const sessionPromise = supabase.auth.getSession();
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Session timeout')), 5000)
-                );
-
-                const { data: { session }, error } = await Promise.race([
-                    sessionPromise,
-                    timeoutPromise
-                ]) as any; // Cast for race result
+                // Get session directly without timeout race (let Supabase handle its own timeouts)
+                const { data: { session }, error } = await supabase.auth.getSession();
 
                 if (error) {
                     console.error('Error getting session:', error);
@@ -105,7 +97,8 @@ export function useAuth(): UseAuthReturn {
                     }
                 }
             } catch (err) {
-                console.error("Auth initialization timed out or failed:", err);
+                console.error("Auth initialization failed:", err);
+                // Even on error, stop loading so the app doesn't hang
             } finally {
                 setLoading(false);
             }

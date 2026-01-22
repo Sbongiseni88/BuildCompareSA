@@ -39,7 +39,7 @@ export default function ProjectsManager({
     const supabase = createClient();
 
     const [projects, setProjects] = useState<Project[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'on-hold'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -355,7 +355,7 @@ export default function ProjectsManager({
             </div>
 
             {/* Loading State */}
-            {isLoading && (
+            {(authLoading || isLoading) && (
                 <div className="flex flex-col items-center justify-center py-20">
                     <Loader2 className="w-10 h-10 text-yellow-400 animate-spin mb-4" />
                     <p className="text-slate-400">Loading your projects...</p>
@@ -363,7 +363,7 @@ export default function ProjectsManager({
             )}
 
             {/* Projects Grid */}
-            {!isLoading && (
+            {!authLoading && !isLoading && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredProjects.map((project, index) => {
                         const progressPercent = (project.spent / project.totalBudget) * 100;
