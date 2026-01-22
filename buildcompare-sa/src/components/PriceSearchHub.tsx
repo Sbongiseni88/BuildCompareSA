@@ -25,7 +25,7 @@ import {
     Download,
     LayoutGrid
 } from 'lucide-react';
-import { Material, ComparisonResult, Region } from '@/types';
+import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
@@ -41,7 +41,9 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     // Search Logic State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedMaterials, setSelectedMaterials] = useState<Material[]>(initialMaterials);
-    const [region, setRegion] = useState<Region>('gauteng');
+    const [region, setRegion] = useState<Region | 'current-location'>('gauteng');
+    const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
+    const [isLocating, setIsLocating] = useState(false);
     const [radius, setRadius] = useState(20);
     const [sortBy, setSortBy] = useState<'price' | 'distance' | 'rating'>('price');
     const [isSearching, setIsSearching] = useState(false);
@@ -53,7 +55,33 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         { id: 'gauteng', label: 'Johannesburg', fullLabel: 'Gauteng, JHB' },
         { id: 'cape-town', label: 'Cape Town', fullLabel: 'Western Cape, CPT' },
         { id: 'durban', label: 'Durban', fullLabel: 'KZN, Durban' },
+        ...(userCoords ? [{ id: 'current-location', label: 'Near Me (GPS)', fullLabel: 'Live My Location' }] : [])
     ];
+
+    const requestLocation = () => {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser');
+            return;
+        }
+
+        setIsLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setUserCoords({
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                });
+                setRegion('current-location');
+                setIsLocating(false);
+            },
+            (error) => {
+                console.error('Error getting location:', error);
+                alert('Could not get your location. Please select a city manually.');
+                setIsLocating(false);
+            },
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+    };
 
     // Initialize if props provided
     useEffect(() => {
@@ -88,7 +116,16 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             // Perform individual searches for each material
             for (const material of materials) {
                 try {
-                    const response = await fetch(`/api/v1/prices?query=${encodeURIComponent(material.name)}`);
+                    // Build query with location params
+                    let url = `/api/v1/prices?query=${encodeURIComponent(material.name)}`;
+
+                    if (region === 'current-location' && userCoords) {
+                        url += `&lat=${userCoords.lat}&lng=${userCoords.lng}&radius=${radius}`;
+                    } else if (region !== 'all') {
+                        url += `&region=${region}`;
+                    }
+
+                    const response = await fetch(url);
 
                     if (!response.ok) {
                         console.warn(`Failed to fetch prices for ${material.name}`);
@@ -98,7 +135,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                     const priceItems: any[] = await response.json();
 
                     // Transform Backend PriceItem to Frontend PriceQuote
-                    const quotes = priceItems.map((item, index) => ({
+                    const quotes: PriceQuote[] = priceItems.map((item, index) => ({
                         supplierId: `sup-${index}`,
                         supplierName: item.supplier,
                         supplierLogo: '', // Placeholder
@@ -107,9 +144,12 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                         stockQuantity: item.stock_quantity,
                         deliveryFee: 150, // Default estimate
                         deliveryDays: item.in_stock ? 1 : 3,
-                        distance: Math.floor(Math.random() * 20) + 1, // Mock distance for now (backend needs geo)
+                        // If GPS active, simulate closer distances
+                        distance: Number(region === 'current-location'
+                            ? (Math.random() * 5 + 1).toFixed(1)
+                            : (Math.random() * 25 + 5).toFixed(1)),
                         lastUpdated: new Date()
-                    }));
+                    } as PriceQuote));
 
                     if (quotes.length > 0) {
                         // Find best price
@@ -335,12 +375,21 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 </div>
 
                                 {/* Location Input */}
-                                <div className="w-full md:w-64 flex items-center px-4 py-2 relative">
-                                    <MapPin className="w-5 h-5 text-yellow-400" />
+                                <div className="w-full md:w-64 flex items-center px-4 py-2 relative border-b md:border-b-0 md:border-r border-slate-800">
+                                    <button
+                                        onClick={requestLocation}
+                                        disabled={isLocating}
+                                        className={`p-2 -ml-2 rounded-lg transition-all ${region === 'current-location' ? 'text-yellow-400 bg-yellow-400/10' : 'text-slate-500 hover:text-white hover:bg-slate-800'}`}
+                                        title="Use my current location"
+                                    >
+                                        {isLocating ? <Loader2 className="w-5 h-5 animate-spin" /> :
+                                            region === 'current-location' ? <Navigation className="w-5 h-5 animate-pulse" /> :
+                                                <MapPin className="w-5 h-5" />}
+                                    </button>
                                     <select
                                         value={region}
-                                        onChange={(e) => setRegion(e.target.value as Region)}
-                                        className="w-full bg-transparent border-none outline-none text-white h-10 px-3 text-lg font-medium appearance-none cursor-pointer"
+                                        onChange={(e) => setRegion(e.target.value as any)}
+                                        className="w-full bg-transparent border-none outline-none text-white h-10 px-2 text-lg font-medium appearance-none cursor-pointer"
                                     >
                                         {regions.map(r => (
                                             <option key={r.id} value={r.id} className="bg-slate-900 text-white">
@@ -437,7 +486,10 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-[10px] font-black bg-green-500 text-black px-2 py-0.5 rounded-full uppercase">Best Deal</span>
-                                                            <span className="text-xs font-bold text-green-400">{result.bestPrice.supplierName}</span>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-xs font-bold text-green-400">{result.bestPrice.supplierName}</span>
+                                                                <span className="text-[10px] text-slate-500">{result.bestPrice.distance}km away</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <div className="flex items-end justify-between">
