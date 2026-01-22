@@ -50,7 +50,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                 if (error) throw error;
 
                 if (data) {
-                    const mappedProjects: Project[] = data.map(p => ({
+                    const mappedProjects: Project[] = data.map((p: any) => ({
                         id: p.id,
                         name: p.name,
                         location: p.location || '',

@@ -78,7 +78,7 @@ export default function ProjectsManager({
             if (error) throw error;
 
             // Map DB response to Frontend Types
-            const mappedProjects: Project[] = (data || []).map(p => ({
+            const mappedProjects: Project[] = (data || []).map((p: any) => ({
                 id: p.id,
                 name: p.name,
                 location: p.location || '',
