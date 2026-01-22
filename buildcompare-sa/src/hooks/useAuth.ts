@@ -74,22 +74,41 @@ export function useAuth(): UseAuthReturn {
     useEffect(() => {
         async function getSession() {
             setLoading(true);
-            const { data: { session }, error } = await supabase.auth.getSession();
+            try {
+                // Determine session with a timeout race
+                const sessionPromise = supabase.auth.getSession();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Session timeout')), 5000)
+                );
 
-            if (error) {
-                console.error('Error getting session:', error);
+                const { data: { session }, error } = await Promise.race([
+                    sessionPromise,
+                    timeoutPromise
+                ]) as any; // Cast for race result
+
+                if (error) {
+                    console.error('Error getting session:', error);
+                    setLoading(false);
+                    return;
+                }
+
+                setSession(session);
+                setUser(session?.user ?? null);
+
+                if (session?.user) {
+                    // This fetch is critical but shouldn't block app forever if it fails
+                    try {
+                        const profile = await fetchUserProfile(session.user.id);
+                        setUserProfile(profile);
+                    } catch (e) {
+                        console.warn('Profile fetch failed quietly', e);
+                    }
+                }
+            } catch (err) {
+                console.error("Auth initialization timed out or failed:", err);
+            } finally {
                 setLoading(false);
-                return;
             }
-
-            setSession(session);
-            setUser(session?.user ?? null);
-
-            if (session?.user) {
-                const profile = await fetchUserProfile(session.user.id);
-                setUserProfile(profile);
-            }
-            setLoading(false);
         }
 
         getSession();

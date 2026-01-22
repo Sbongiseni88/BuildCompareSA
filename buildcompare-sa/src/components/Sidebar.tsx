@@ -9,7 +9,8 @@ import {
     PieChart,
     Settings,
     LogOut,
-    HardHat
+    HardHat,
+    User
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,7 +29,7 @@ export default function Sidebar({ activeTab, onTabChange, isCollapsed }: Sidebar
     ];
 
     const bottomItems = [
-        { id: 'settings', label: 'Settings', icon: Settings },
+        { id: 'account', label: 'Account', icon: User },
         { id: 'sign-out', label: 'Sign Out', icon: LogOut },
     ];
 
@@ -75,11 +76,16 @@ export default function Sidebar({ activeTab, onTabChange, isCollapsed }: Sidebar
             <div className="p-4 border-t border-slate-900 space-y-2">
                 {bottomItems.map((item) => {
                     const Icon = item.icon;
+                    const isActive = activeTab === item.id;
                     return (
                         <button
                             key={item.id}
+                            onClick={() => onTabChange(item.id)}
                             title={isCollapsed ? item.label : ''}
-                            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl text-slate-500 hover:text-white hover:bg-slate-900 transition-colors font-medium`}
+                            className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all duration-200 font-medium ${isActive
+                                ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
+                                : 'text-slate-500 hover:text-white hover:bg-slate-900'
+                                }`}
                         >
                             <Icon className="w-5 h-5 flex-shrink-0" />
                             {!isCollapsed && <span className="whitespace-nowrap overflow-hidden animate-fade-in">{item.label}</span>}

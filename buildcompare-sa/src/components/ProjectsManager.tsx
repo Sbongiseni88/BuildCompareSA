@@ -16,14 +16,30 @@ import {
     Package,
     TrendingUp,
     X,
-    Check
+    Check,
+    Loader2
 } from 'lucide-react';
 import { Project } from '@/types';
-import { mockProjects } from '@/data/mockData';
 import { exportProjectToPDF } from '@/lib/pdfExport';
+import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
 
-export default function ProjectsManager() {
-    const [projects, setProjects] = useState<Project[]>(mockProjects);
+interface ProjectsManagerProps {
+    onNavigateToCompare?: () => void;
+    onNavigateToEstimator?: () => void;
+    onNavigateToAnalytics?: () => void;
+}
+
+export default function ProjectsManager({
+    onNavigateToCompare,
+    onNavigateToEstimator,
+    onNavigateToAnalytics
+}: ProjectsManagerProps) {
+    const { user } = useAuthContext();
+    const supabase = createClient();
+
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'on-hold'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -34,6 +50,68 @@ export default function ProjectsManager() {
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectLocation, setNewProjectLocation] = useState('');
     const [newProjectBudget, setNewProjectBudget] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
+
+    // Add Material State
+    const [showAddMaterialModal, setShowAddMaterialModal] = useState(false);
+    const [newMaterialName, setNewMaterialName] = useState('');
+    const [newMaterialQuantity, setNewMaterialQuantity] = useState('');
+    const [newMaterialUnit, setNewMaterialUnit] = useState('units');
+    const [newMaterialCategory, setNewMaterialCategory] = useState('other');
+    const [isAddingMaterial, setIsAddingMaterial] = useState(false);
+
+    // Fetch Projects from Supabase
+    const fetchProjects = async () => {
+        if (!user) return;
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('projects')
+                .select(`
+                    *,
+                    project_materials (*)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            // Map DB response to Frontend Types
+            const mappedProjects: Project[] = (data || []).map(p => ({
+                id: p.id,
+                name: p.name,
+                location: p.location || '',
+                createdAt: new Date(p.created_at),
+                totalBudget: Number(p.total_budget),
+                spent: Number(p.spent),
+                status: p.status as any,
+                materials: (p.project_materials || []).map((m: any) => ({
+                    id: m.id,
+                    name: m.name,
+                    brand: m.brand,
+                    category: m.category,
+                    quantity: Number(m.quantity),
+                    unit: m.unit
+                }))
+            }));
+
+            setProjects(mappedProjects);
+        } catch (error) {
+            console.error('Error fetching projects:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Initial Fetch
+    React.useEffect(() => {
+        if (user) {
+            fetchProjects();
+        } else {
+            // If no user (e.g. during auth load), empty list
+            setProjects([]);
+            setIsLoading(false);
+        }
+    }, [user]);
 
     const filteredProjects = projects.filter(project => {
         const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -60,30 +138,139 @@ export default function ProjectsManager() {
         }
     };
 
-    const handleCreateProject = () => {
-        if (!newProjectName || !newProjectLocation || !newProjectBudget) return;
+    const handleCreateProject = async () => {
+        console.log("Attempting to create project...");
+        console.log("User:", user?.id);
+        console.log("Inputs:", { newProjectName, newProjectLocation, newProjectBudget });
 
-        const newProject: Project = {
-            id: `proj-${Date.now()}`,
-            name: newProjectName,
-            location: newProjectLocation,
-            createdAt: new Date(),
-            totalBudget: parseFloat(newProjectBudget),
-            spent: 0,
-            status: 'active',
-            materials: [],
-        };
+        if (!newProjectName || !newProjectLocation || !newProjectBudget) {
+            console.warn("Validation failed: Missing fields");
+            return;
+        }
 
-        setProjects([newProject, ...projects]);
-        setShowCreateModal(false);
-        setNewProjectName('');
-        setNewProjectLocation('');
-        setNewProjectBudget('');
+        if (!user) {
+            console.error("Validation failed: No user logged in");
+            alert("You must be logged in to create a project.");
+            return;
+        }
+
+        setIsCreating(true);
+        try {
+            const newProjectPayload = {
+                user_id: user.id,
+                name: newProjectName,
+                location: newProjectLocation,
+                total_budget: parseFloat(newProjectBudget),
+                status: 'active',
+                spent: 0
+            };
+
+            console.log("Sending payload to Supabase:", newProjectPayload);
+
+            const { data, error } = await supabase
+                .from('projects')
+                .insert([newProjectPayload])
+                .select()
+                .single();
+
+            if (error) {
+                console.error("Supabase Insert Error:", error);
+                throw error;
+            }
+
+            if (data) {
+                const newProject: Project = {
+                    id: data.id,
+                    name: data.name,
+                    location: data.location,
+                    createdAt: new Date(data.created_at),
+                    totalBudget: Number(data.total_budget),
+                    spent: Number(data.spent),
+                    status: data.status,
+                    materials: []
+                };
+                setProjects([newProject, ...projects]);
+                setShowCreateModal(false);
+                setNewProjectName('');
+                setNewProjectLocation('');
+                setNewProjectBudget('');
+            }
+        } catch (error: any) {
+            console.error('Error creating project:', error);
+            alert(`Failed to create project: ${error.message || 'Unknown error'}`);
+        } finally {
+            setIsCreating(false);
+        }
     };
 
-    const handleDeleteProject = (id: string) => {
-        setProjects(projects.filter(p => p.id !== id));
-        setShowMenu(null);
+    const handleDeleteProject = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this project? This cannot be undone.')) return;
+
+        try {
+            const { error } = await supabase
+                .from('projects')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setProjects(projects.filter(p => p.id !== id));
+            setShowMenu(null);
+            if (selectedProject?.id === id) setSelectedProject(null);
+        } catch (error) {
+            console.error('Error deleting project:', error);
+            alert('Failed to delete project.');
+        }
+    };
+
+    const handleAddMaterial = async () => {
+        if (!selectedProject || !newMaterialName || !newMaterialQuantity || !user) return;
+
+        setIsAddingMaterial(true);
+        try {
+            const payload = {
+                project_id: selectedProject.id,
+                name: newMaterialName,
+                quantity: parseFloat(newMaterialQuantity),
+                unit: newMaterialUnit,
+                category: newMaterialCategory,
+                estimated_price: 0 // Default
+            };
+
+            const { data, error } = await supabase
+                .from('project_materials')
+                .insert([payload])
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            if (data) {
+                // Update local state
+                const updatedMaterials = [...selectedProject.materials, {
+                    id: data.id,
+                    name: data.name,
+                    quantity: Number(data.quantity),
+                    unit: data.unit,
+                    category: data.category,
+                    brand: data.brand
+                }];
+
+                const updatedProject = { ...selectedProject, materials: updatedMaterials };
+                setSelectedProject(updatedProject);
+                setProjects(projects.map(p => p.id === selectedProject.id ? updatedProject : p));
+
+                // Reset form
+                setShowAddMaterialModal(false);
+                setNewMaterialName('');
+                setNewMaterialQuantity('');
+            }
+        } catch (error: any) {
+            console.error('Error adding material:', error);
+            alert(`Failed to add material: ${error.message}`);
+        } finally {
+            setIsAddingMaterial(false);
+        }
     };
 
     const stats = {
@@ -163,153 +350,163 @@ export default function ProjectsManager() {
                 </div>
             </div>
 
+            {/* Loading State */}
+            {isLoading && (
+                <div className="flex flex-col items-center justify-center py-20">
+                    <Loader2 className="w-10 h-10 text-yellow-400 animate-spin mb-4" />
+                    <p className="text-slate-400">Loading your projects...</p>
+                </div>
+            )}
+
             {/* Projects Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredProjects.map((project, index) => {
-                    const progressPercent = (project.spent / project.totalBudget) * 100;
-                    const isOverBudget = progressPercent > 100;
+            {!isLoading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredProjects.map((project, index) => {
+                        const progressPercent = (project.spent / project.totalBudget) * 100;
+                        const isOverBudget = progressPercent > 100;
 
-                    return (
-                        <div
-                            key={project.id}
-                            className={`glass-card p-5 group hover:border-yellow-500/30 transition-all cursor-pointer relative ${isOverBudget ? 'animate-shake border-red-500/50 shadow-red-900/20' : ''
-                                }`}
-                            style={{ animationDelay: `${index * 50}ms` }}
-                            onClick={() => setSelectedProject(project)}
-                        >
-                            {/* Menu Button */}
-                            <div className="absolute top-4 right-4">
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setShowMenu(showMenu === project.id ? null : project.id);
-                                    }}
-                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                >
-                                    <MoreHorizontal className="w-5 h-5" />
-                                </button>
-
-                                {/* Dropdown Menu */}
-                                {showMenu === project.id && (
-                                    <div className="absolute right-0 top-full mt-1 w-48 glass-card rounded-xl shadow-2xl overflow-hidden z-10 animate-slide-up">
-                                        <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
-                                            <Edit2 className="w-4 h-4" />
-                                            Edit Project
-                                        </button>
-                                        <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
-                                            <Archive className="w-4 h-4" />
-                                            Archive
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                exportProjectToPDF(project);
-                                                setShowMenu(null);
-                                            }}
-                                            className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                            Export PDF
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDeleteProject(project.id);
-                                            }}
-                                            className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm text-left border-t border-slate-700"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                            Delete
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Project Icon */}
-                            <div className="w-12 h-12 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-xl flex items-center justify-center mb-4">
-                                <FolderOpen className="w-6 h-6 text-yellow-400" />
-                            </div>
-
-                            {/* Project Info */}
-                            <div className="flex items-start justify-between mb-3">
-                                <div className="flex-1 pr-8">
-                                    <h3 className="font-semibold text-white group-hover:text-yellow-400 transition-colors">
-                                        {project.name}
-                                    </h3>
-                                    <span className={`badge ${getStatusColor(project.status)} mt-2`}>
-                                        {project.status}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 text-sm text-slate-400 mb-4">
-                                <span className="flex items-center gap-1">
-                                    <MapPin className="w-3.5 h-3.5" />
-                                    {project.location}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center gap-1 text-xs text-slate-500 mb-4">
-                                <Clock className="w-3 h-3" />
-                                Created {new Date(project.createdAt).toLocaleDateString('en-ZA', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric'
-                                })}
-                            </div>
-
-                            {/* Budget Progress */}
-                            <div>
-                                <div className="flex items-center justify-between text-sm mb-2">
-                                    <span className="text-slate-400">Budget</span>
-                                    <span className={`font-medium ${isOverBudget ? 'text-red-400' : 'text-white'}`}>
-                                        {formatCurrency(project.spent)} / {formatCurrency(project.totalBudget)}
-                                    </span>
-                                </div>
-                                <div className="progress-bar">
-                                    <div
-                                        className="progress-bar-fill"
-                                        style={{
-                                            width: `${Math.min(progressPercent, 100)}%`,
-                                            background: isOverBudget
-                                                ? 'linear-gradient(90deg, #ef4444, #dc2626)'
-                                                : progressPercent > 80
-                                                    ? 'linear-gradient(90deg, #f97316, #ea580c)'
-                                                    : 'linear-gradient(90deg, #facc15, #eab308)'
+                        return (
+                            <div
+                                key={project.id}
+                                className={`glass-card p-5 group hover:border-yellow-500/30 transition-all cursor-pointer relative ${isOverBudget ? 'animate-shake border-red-500/50 shadow-red-900/20' : ''
+                                    }`}
+                                style={{ animationDelay: `${index * 50}ms` }}
+                                onClick={() => setSelectedProject(project)}
+                            >
+                                {/* Menu Button */}
+                                <div className="absolute top-4 right-4">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowMenu(showMenu === project.id ? null : project.id);
                                         }}
-                                    />
-                                </div>
-                            </div>
+                                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                    >
+                                        <MoreHorizontal className="w-5 h-5" />
+                                    </button>
 
-                            {/* Materials Count */}
-                            <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between">
-                                <div className="flex items-center gap-2 text-sm text-slate-400">
-                                    <Package className="w-4 h-4" />
-                                    {project.materials.length} materials
+                                    {/* Dropdown Menu */}
+                                    {showMenu === project.id && (
+                                        <div className="absolute right-0 top-full mt-1 w-48 glass-card rounded-xl shadow-2xl overflow-hidden z-10 animate-slide-up">
+                                            <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
+                                                <Edit2 className="w-4 h-4" />
+                                                Edit Project
+                                            </button>
+                                            <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
+                                                <Archive className="w-4 h-4" />
+                                                Archive
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    exportProjectToPDF(project);
+                                                    setShowMenu(null);
+                                                }}
+                                                className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                                Export PDF
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteProject(project.id);
+                                                }}
+                                                className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm text-left border-t border-slate-700"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                                Delete
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                                <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-yellow-400 transition-colors" />
+
+                                {/* Project Icon */}
+                                <div className="w-12 h-12 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-xl flex items-center justify-center mb-4">
+                                    <FolderOpen className="w-6 h-6 text-yellow-400" />
+                                </div>
+
+                                {/* Project Info */}
+                                <div className="flex items-start justify-between mb-3">
+                                    <div className="flex-1 pr-8">
+                                        <h3 className="font-semibold text-white group-hover:text-yellow-400 transition-colors">
+                                            {project.name}
+                                        </h3>
+                                        <span className={`badge ${getStatusColor(project.status)} mt-2`}>
+                                            {project.status}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-4 text-sm text-slate-400 mb-4">
+                                    <span className="flex items-center gap-1">
+                                        <MapPin className="w-3.5 h-3.5" />
+                                        {project.location}
+                                    </span>
+                                </div>
+
+                                <div className="flex items-center gap-1 text-xs text-slate-500 mb-4">
+                                    <Clock className="w-3 h-3" />
+                                    Created {new Date(project.createdAt).toLocaleDateString('en-ZA', {
+                                        day: 'numeric',
+                                        month: 'short',
+                                        year: 'numeric'
+                                    })}
+                                </div>
+
+                                {/* Budget Progress */}
+                                <div>
+                                    <div className="flex items-center justify-between text-sm mb-2">
+                                        <span className="text-slate-400">Budget</span>
+                                        <span className={`font-medium ${isOverBudget ? 'text-red-400' : 'text-white'}`}>
+                                            {formatCurrency(project.spent)} / {formatCurrency(project.totalBudget)}
+                                        </span>
+                                    </div>
+                                    <div className="progress-bar">
+                                        <div
+                                            className="progress-bar-fill"
+                                            style={{
+                                                width: `${Math.min(progressPercent, 100)}%`,
+                                                background: isOverBudget
+                                                    ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                                                    : progressPercent > 80
+                                                        ? 'linear-gradient(90deg, #f97316, #ea580c)'
+                                                        : 'linear-gradient(90deg, #facc15, #eab308)'
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Materials Count */}
+                                <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-sm text-slate-400">
+                                        <Package className="w-4 h-4" />
+                                        {project.materials.length} materials
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-yellow-400 transition-colors" />
+                                </div>
                             </div>
+                        );
+                    })}
+
+                    {/* Add New Project Card */}
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="glass-card p-5 border-2 border-dashed border-slate-600 hover:border-yellow-500/50 flex flex-col items-center justify-center gap-4 min-h-[280px] group transition-all"
+                    >
+                        <div className="w-16 h-16 bg-slate-800 group-hover:bg-yellow-500/20 rounded-2xl flex items-center justify-center transition-colors">
+                            <Plus className="w-8 h-8 text-slate-500 group-hover:text-yellow-400 transition-colors" />
                         </div>
-                    );
-                })}
-
-                {/* Add New Project Card */}
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="glass-card p-5 border-2 border-dashed border-slate-600 hover:border-yellow-500/50 flex flex-col items-center justify-center gap-4 min-h-[280px] group transition-all"
-                >
-                    <div className="w-16 h-16 bg-slate-800 group-hover:bg-yellow-500/20 rounded-2xl flex items-center justify-center transition-colors">
-                        <Plus className="w-8 h-8 text-slate-500 group-hover:text-yellow-400 transition-colors" />
-                    </div>
-                    <div className="text-center">
-                        <p className="font-medium text-slate-400 group-hover:text-white transition-colors">Create New Project</p>
-                        <p className="text-sm text-slate-500">Start tracking a new construction site</p>
-                    </div>
-                </button>
-            </div>
+                        <div className="text-center">
+                            <p className="font-medium text-slate-400 group-hover:text-white transition-colors">Create New Project</p>
+                            <p className="text-sm text-slate-500">Start tracking a new construction site</p>
+                        </div>
+                    </button>
+                </div>
+            )}
 
             {/* Empty State */}
-            {filteredProjects.length === 0 && (
+            {!isLoading && filteredProjects.length === 0 && (
                 <div className="glass-card p-12 text-center">
                     <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-800 rounded-2xl mb-4">
                         <FolderOpen className="w-8 h-8 text-slate-500" />
@@ -390,10 +587,10 @@ export default function ProjectsManager() {
                             </button>
                             <button
                                 onClick={handleCreateProject}
-                                disabled={!newProjectName || !newProjectLocation || !newProjectBudget}
+                                disabled={!newProjectName || !newProjectLocation || !newProjectBudget || isCreating}
                                 className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                             >
-                                <Check className="w-4 h-4" />
+                                {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                 Create Project
                             </button>
                         </div>
@@ -480,7 +677,10 @@ export default function ProjectsManager() {
                                 <div className="text-center py-8 bg-slate-800/30 rounded-xl">
                                     <Package className="w-12 h-12 text-slate-600 mx-auto mb-3" />
                                     <p className="text-slate-400">No materials added yet</p>
-                                    <button className="btn-secondary mt-4">
+                                    <button
+                                        onClick={() => setShowAddMaterialModal(true)}
+                                        className="btn-secondary mt-4"
+                                    >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Add Materials
                                     </button>
@@ -489,13 +689,90 @@ export default function ProjectsManager() {
                         </div>
 
                         <div className="flex gap-3 mt-6 pt-6 border-t border-slate-700">
-                            <button className="btn-secondary flex-1 flex items-center justify-center gap-2">
+                            <button
+                                onClick={() => {
+                                    if (onNavigateToAnalytics) onNavigateToAnalytics();
+                                    // Also could pass project context if needed
+                                }}
+                                className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                            >
                                 <TrendingUp className="w-4 h-4" />
                                 View Analytics
                             </button>
-                            <button className="btn-primary flex-1 flex items-center justify-center gap-2">
+                            <button
+                                onClick={() => {
+                                    if (onNavigateToCompare) onNavigateToCompare();
+                                }}
+                                className="btn-primary flex-1 flex items-center justify-center gap-2"
+                            >
                                 <Package className="w-4 h-4" />
                                 Compare Prices
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Material Modal */}
+            {showAddMaterialModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="glass-card w-full max-w-sm p-6 animate-slide-up">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-semibold text-white">Add Material</h3>
+                            <button onClick={() => setShowAddMaterialModal(false)} className="p-1 hover:bg-slate-700 rounded">
+                                <X className="w-4 h-4 text-slate-400" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <input
+                                type="text"
+                                placeholder="Material Name (e.g. Cement)"
+                                className="input-field"
+                                value={newMaterialName}
+                                onChange={e => setNewMaterialName(e.target.value)}
+                            />
+                            <div className="flex gap-2">
+                                <input
+                                    type="number"
+                                    placeholder="Qty"
+                                    className="input-field w-1/2"
+                                    value={newMaterialQuantity}
+                                    onChange={e => setNewMaterialQuantity(e.target.value)}
+                                />
+                                <select
+                                    className="input-field w-1/2 bg-slate-900"
+                                    value={newMaterialUnit}
+                                    onChange={e => setNewMaterialUnit(e.target.value)}
+                                >
+                                    <option value="units">units</option>
+                                    <option value="bags">bags</option>
+                                    <option value="m">meters</option>
+                                    <option value="m2">m²</option>
+                                    <option value="m3">m³</option>
+                                    <option value="liters">liters</option>
+                                </select>
+                            </div>
+                            <select
+                                className="input-field bg-slate-900"
+                                value={newMaterialCategory}
+                                onChange={e => setNewMaterialCategory(e.target.value)}
+                            >
+                                <option value="other">Other</option>
+                                <option value="cement">Cement</option>
+                                <option value="bricks">Bricks</option>
+                                <option value="steel">Steel</option>
+                                <option value="timber">Timber</option>
+                                <option value="paint">Paint</option>
+                            </select>
+
+                            <button
+                                onClick={handleAddMaterial}
+                                disabled={!newMaterialName || !newMaterialQuantity || isAddingMaterial}
+                                className="btn-primary w-full mt-2 flex justify-center items-center gap-2"
+                            >
+                                {isAddingMaterial ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                Add Item
                             </button>
                         </div>
                     </div>

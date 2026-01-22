@@ -8,13 +8,26 @@ import AIConcierge from '@/components/AIConcierge';
 import ProjectsManager from '@/components/ProjectsManager';
 import SmartEstimator from '@/components/SmartEstimator';
 import CostAnalysis from '@/components/CostAnalysis';
+import AccountProfile from '@/components/AccountProfile';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { MessageSquare, Menu } from 'lucide-react';
 
 export default function Home() {
+  const { signOut } = useAuthContext();
   const [activeTab, setActiveTab] = useState('compare');
   const [isConciergeOpen, setIsConciergeOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const handleTabChange = async (tab: string) => {
+    if (tab === 'sign-out') {
+      if (confirm('Are you sure you want to sign out?')) {
+        await signOut();
+      }
+      return;
+    }
+    setActiveTab(tab);
+  };
 
   // Render the appropriate component
   const renderContent = () => {
@@ -29,9 +42,15 @@ export default function Home() {
       case 'compare':
         return <PriceSearchHub />;
       case 'projects':
-        return <ProjectsManager />;
+        return <ProjectsManager
+          onNavigateToCompare={() => setActiveTab('compare')}
+          onNavigateToEstimator={() => setActiveTab('estimator')}
+          onNavigateToAnalytics={() => setActiveTab('cost-analysis')}
+        />;
       case 'cost-analysis':
         return <CostAnalysis />;
+      case 'account':
+        return <AccountProfile />;
       default:
         return <Dashboard
           onNavigateToProjects={() => setActiveTab('projects')}
@@ -47,7 +66,7 @@ export default function Home() {
         {/* Sidebar Navigation */}
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           isCollapsed={isSidebarCollapsed}
         />
 

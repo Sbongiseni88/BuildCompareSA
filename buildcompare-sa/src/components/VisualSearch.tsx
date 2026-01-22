@@ -27,6 +27,7 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
     const [isProcessing, setIsProcessing] = useState(false);
     const [steps, setSteps] = useState<ProcessingStep[]>(initialSteps);
     const [progress, setProgress] = useState(0);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     const handleDrop = useCallback(async (acceptedFiles: File[]) => {
         const file = acceptedFiles[0];
@@ -34,6 +35,7 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
 
         setFile(file);
         setIsProcessing(true);
+        setErrorMessage(null); // Clear previous errors
         setProgress(0);
         setSteps(initialSteps);
 
@@ -62,15 +64,17 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                 body: formData,
             });
 
-            if (!response.ok) throw new Error('Analysis failed');
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Analysis failed on server');
+            }
 
             setSteps(prev => prev.map((s, i) =>
                 i === 1 ? { ...s, status: 'completed' } :
                     i === 2 ? { ...s, status: 'active' } : s
             ));
             setProgress(70);
-
-            const data = await response.json();
 
             // Step 3: Extracting Data
             await new Promise(r => setTimeout(r, 600)); // Small UX pause
@@ -90,8 +94,9 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                 onMaterialsExtracted(data.materials);
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error analyzing file:', error);
+            setErrorMessage(error.message || "An unknown error occurred");
             // Fallback
             setSteps(prev => prev.map(s => ({ ...s, status: 'error' })));
         } finally {
@@ -110,6 +115,7 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
 
     const resetUpload = () => {
         setFile(null);
+        setErrorMessage(null);
         setIsProcessing(false);
         setSteps(initialSteps);
         setProgress(0);
@@ -231,6 +237,13 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                             </div>
                         ))}
                     </div>
+
+                    {errorMessage && (
+                        <div className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400 animate-slide-up">
+                            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                            <p className="text-sm font-medium">{errorMessage}</p>
+                        </div>
+                    )}
                 </div>
             )}
 
