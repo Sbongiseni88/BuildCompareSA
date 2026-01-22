@@ -234,7 +234,7 @@ export function useAuth(): UseAuthReturn {
 
     const clearError = useCallback(() => setError(null), []);
 
-    return {
+    return React.useMemo(() => ({
         user,
         session,
         userProfile,
@@ -245,5 +245,16 @@ export function useAuth(): UseAuthReturn {
         signInWithGoogle,
         signOut,
         clearError,
-    };
+    }), [
+        user,
+        session,
+        userProfile,
+        loading,
+        error,
+        signIn,
+        signUp,
+        signInWithGoogle,
+        signOut,
+        clearError
+    ]);
 }

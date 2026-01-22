@@ -104,7 +104,7 @@ export default function AccountProfile() {
         }
     };
 
-    if (authLoading || isLoading) {
+    if (authLoading || (isLoading && !profile)) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[50vh]">
                 <Loader2 className="w-10 h-10 text-yellow-400 animate-spin mb-4" />
