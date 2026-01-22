@@ -271,7 +271,7 @@ export default function SmartEstimator() {
                                 </span>
                             </div>
 
-                            <div className="p-0">
+                            <div className="table-container">
                                 <table className="data-table">
                                     <thead>
                                         <tr>

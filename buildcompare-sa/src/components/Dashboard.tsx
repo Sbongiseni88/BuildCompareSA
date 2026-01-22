@@ -142,7 +142,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     return (
         <div className="space-y-8 animate-fade-in pb-20">
             {/* 1. Market Ticker - Full Width */}
-            <div className="-mx-8 -mt-8 mb-8">
+            <div className="-mx-4 md:-mx-8 -mt-4 md:-mt-8 mb-8">
                 <MarketTicker />
             </div>
 

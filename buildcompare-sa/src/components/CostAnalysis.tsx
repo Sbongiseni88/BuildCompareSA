@@ -93,8 +93,8 @@ export default function CostAnalysis() {
                                 key={range}
                                 onClick={() => setTimeRange(range)}
                                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${timeRange === range
-                                        ? 'bg-yellow-400 text-black'
-                                        : 'text-slate-400 hover:text-white'
+                                    ? 'bg-yellow-400 text-black'
+                                    : 'text-slate-400 hover:text-white'
                                     }`}
                             >
                                 {range.toUpperCase()}
@@ -130,8 +130,8 @@ export default function CostAnalysis() {
                         key={item.id}
                         onClick={() => setSelectedMaterial(item.id)}
                         className={`glass-card p-5 text-left transition-all duration-300 group ${selectedMaterial === item.id
-                                ? 'border-yellow-500/50 bg-yellow-500/5'
-                                : 'hover:border-slate-600'
+                            ? 'border-yellow-500/50 bg-yellow-500/5'
+                            : 'hover:border-slate-600'
                             }`}
                     >
                         <div className="flex justify-between items-start mb-3">
@@ -163,7 +163,7 @@ export default function CostAnalysis() {
                                     <div
                                         key={i}
                                         className={`flex-1 rounded-t transition-all ${item.trend === 'up' ? 'bg-red-500/60' :
-                                                item.trend === 'down' ? 'bg-green-500/60' : 'bg-slate-600'
+                                            item.trend === 'down' ? 'bg-green-500/60' : 'bg-slate-600'
                                             } ${i === item.history.length - 1 ? 'opacity-100' : 'opacity-50'}`}
                                         style={{ height: `${Math.max(height, 10)}%` }}
                                     />
@@ -361,7 +361,7 @@ export default function CostAnalysis() {
                                             Lowest: {region.lowestCategory}
                                         </span>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                    <div className="grid grid-cols-1 xs:grid-cols-3 gap-2 text-center text-xs">
                                         <div className={`p-2 rounded ${region.lowestCategory === 'cement' ? 'bg-green-500/20 text-green-400' : 'bg-slate-800 text-slate-400'}`}>
                                             <span className="block text-[10px] uppercase mb-1">Cement</span>
                                             <span className="font-bold">R{region.cement}</span>
