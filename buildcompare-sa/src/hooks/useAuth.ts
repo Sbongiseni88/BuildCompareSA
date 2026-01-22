@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { UserRole, UserProfile } from '@/utils/authTypes';
+export type { UserRole, UserProfile };
 
 export interface AuthState {
     user: User | null;
