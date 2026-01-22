@@ -375,29 +375,31 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 </div>
 
                                 {/* Location Input */}
-                                <div className="w-full md:w-64 flex items-center px-4 py-2 relative border-b md:border-b-0 md:border-r border-slate-800">
-                                    <button
-                                        onClick={requestLocation}
-                                        disabled={isLocating}
-                                        className={`p-2 -ml-2 rounded-lg transition-all ${region === 'current-location' ? 'text-yellow-400 bg-yellow-400/10' : 'text-slate-500 hover:text-white hover:bg-slate-800'}`}
-                                        title="Use my current location"
-                                    >
-                                        {isLocating ? <Loader2 className="w-5 h-5 animate-spin" /> :
-                                            region === 'current-location' ? <Navigation className="w-5 h-5 animate-pulse" /> :
-                                                <MapPin className="w-5 h-5" />}
-                                    </button>
-                                    <select
-                                        value={region}
-                                        onChange={(e) => setRegion(e.target.value as any)}
-                                        className="w-full bg-transparent border-none outline-none text-white h-10 px-2 text-lg font-medium appearance-none cursor-pointer"
-                                    >
-                                        {regions.map(r => (
-                                            <option key={r.id} value={r.id} className="bg-slate-900 text-white">
-                                                {r.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="w-4 h-4 text-slate-600 absolute right-4 pointer-events-none" />
+                                <div className="w-full md:w-80 flex items-center px-4 py-2 relative border-b md:border-b-0 md:border-r border-slate-800">
+                                    <div className="flex flex-col w-full">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={requestLocation}
+                                                disabled={isLocating}
+                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all text-[10px] font-black uppercase tracking-tighter ${region === 'current-location' ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'}`}
+                                            >
+                                                {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className={`w-3 h-3 ${region === 'current-location' ? 'animate-pulse' : ''}`} />}
+                                                {region === 'current-location' ? 'GPS ACTIVE' : 'NEAR ME'}
+                                            </button>
+                                            <select
+                                                value={region}
+                                                onChange={(e) => setRegion(e.target.value as any)}
+                                                className="flex-1 bg-transparent border-none outline-none text-white h-10 px-1 text-base font-bold appearance-none cursor-pointer"
+                                            >
+                                                {regions.map(r => (
+                                                    <option key={r.id} value={r.id} className="bg-slate-900 text-white font-sans">
+                                                        {r.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown className="w-4 h-4 text-slate-600 pointer-events-none" />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Action Button */}
@@ -408,6 +410,19 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 >
                                     {isSearching ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'COMPARE NOW'}
                                 </button>
+                            </div>
+
+                            {/* Prominent Helper for Location */}
+                            <div className="mt-4 flex flex-wrap items-center justify-center gap-4 animate-fade-in">
+                                <button
+                                    onClick={requestLocation}
+                                    className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-yellow-400 transition-colors bg-slate-800/40 px-3 py-1.5 rounded-full border border-slate-700/50 hover:border-yellow-400/30"
+                                >
+                                    <MapPin className="w-3 h-3 text-yellow-500" />
+                                    <span>USE MY CURRENT LOCATION</span>
+                                </button>
+                                <div className="h-4 w-px bg-slate-800 hidden sm:block"></div>
+                                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest hidden sm:inline">OR SELECT A CITY MANUALLY</span>
                             </div>
                         </div>
 
