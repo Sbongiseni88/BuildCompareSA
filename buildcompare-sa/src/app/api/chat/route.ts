@@ -1,96 +1,66 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
-import { checkRateLimit, getRateLimitHeaders, getClientIP } from "@/lib/rate-limit";
 
-const apiKey = process.env.GEMINI_API_KEY;
-
-const systemPrompt = `
-You are BuildCompare Concierge, an expert South African construction assistant.
-Your goal is to help users with Bill of Quantities (BoQ), material estimation, and local building standards (SANS 10400, NHBRC).
-
-Key Traits:
-- Friendly South African persona ("Sawubona!", "Howzit").
-- Expert knowledge of South African brands (PPC, AfriSam, Corobrik, Cashbuild, Builders Warehouse).
-- Emphasis on compliance (NHBRC, SABS standards).
-- Practical advice for home builders.
-
-When asked about cement:
-- Explain specific grades (32.5 vs 42.5) for different uses (plaster vs structural).
-- Mention local brands.
-
-When asked about house planning (e.g., "3 bedroom house"):
-- Break down into stages: Legal, Professional Team, Structural, Internal Services, Finishes.
-- Mention budget estimates in ZAR (R8,000 - R12,000 per sqm).
-
-Always format your responses with nice Markdown (headers, bullet points) for readability.
-`;
+export const runtime = 'nodejs'; // Use Node.js runtime for fetch
 
 export async function POST(req: Request) {
-    // Rate limiting check
-    const clientIP = getClientIP(req);
-    const rateLimitResult = checkRateLimit(clientIP, 'default');
-
-    if (!rateLimitResult.success) {
-        return NextResponse.json(
-            { error: "Too many requests. Please try again later." },
-            {
-                status: 429,
-                headers: getRateLimitHeaders(rateLimitResult)
-            }
-        );
-    }
-
-    if (!apiKey) {
-        return NextResponse.json({ error: "No API key configured" }, { status: 500 });
-    }
-
-
     try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const body = await req.json();
+        const userMessage = body.message;
 
-        const data = await req.json();
-        const userMessage = data.message;
+        if (!userMessage) {
+            return NextResponse.json({ error: "Message is required" }, { status: 400 });
+        }
 
-        const chat = model.startChat({
-            history: [
-                {
-                    role: "user",
-                    parts: [{ text: "Hello, who are you?" }],
+        // Call the Python Backend (Groq RAG Service)
+        // Make sure your Python backend is running on port 8000
+        const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+
+        try {
+            const response = await fetch(`${backendUrl}/rag/query`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
                 },
-                {
-                    role: "model",
-                    parts: [{ text: "Sawubona! I'm your BuildCompare Concierge. Need help with a BoQ or estimating material for your next project?" }],
-                },
-            ],
-            generationConfig: {
-                maxOutputTokens: 1000,
-            },
-        });
+                body: JSON.stringify({
+                    query: userMessage,
+                    n_context_results: 3
+                }),
+            });
 
-        const result = await chat.sendMessageStream(`${systemPrompt}\n\nUser Question: ${userMessage}`);
+            if (!response.ok) {
+                console.error(`Backend error: ${response.statusText}`);
+                throw new Error("Failed to reach AI backend");
+            }
 
-        // Create a readable stream from the Gemini stream
-        const stream = new ReadableStream({
-            async start(controller) {
-                const encoder = new TextEncoder();
-                try {
-                    for await (const chunk of result.stream) {
-                        const chunkText = chunk.text();
-                        if (chunkText) {
-                            controller.enqueue(encoder.encode(chunkText));
-                        }
+            const data = await response.json();
+            const aiText = data.llm_response || "I apologize, but I couldn't generate a response.";
+
+            // Stream the text back to the client to simulate typing effect
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream({
+                async start(controller) {
+                    const chunkSize = 10; // Characters per chunk
+                    for (let i = 0; i < aiText.length; i += chunkSize) {
+                        const chunk = aiText.slice(i, i + chunkSize);
+                        controller.enqueue(encoder.encode(chunk));
+                        await new Promise(resolve => setTimeout(resolve, 15)); // Tiny delay for effect
                     }
                     controller.close();
-                } catch (err) {
-                    controller.error(err);
-                }
-            },
-        });
+                },
+            });
 
-        return new NextResponse(stream);
+            return new NextResponse(stream);
+
+        } catch (backendError) {
+            console.error("Connection to Python backend failed:", backendError);
+            // Fallback for when backend is offline
+            return NextResponse.json({
+                error: "AI Backend Offline. Please run 'python backend/main.py'"
+            }, { status: 503 });
+        }
+
     } catch (error) {
-        console.error("Gemini API Error:", error);
-        return NextResponse.json({ error: "Failed to process with AI" }, { status: 500 });
+        console.error("API Route Error:", error);
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }
