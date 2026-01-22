@@ -3,16 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
-
-export type UserRole = 'contractor' | 'supplier';
-
-export interface UserProfile {
-    uid: string;
-    email: string | null;
-    displayName: string | null;
-    role: UserRole | null;
-    createdAt: Date | null;
-}
+import { UserRole, UserProfile } from '@/utils/authTypes';
 
 export interface AuthState {
     user: User | null;
@@ -47,25 +38,34 @@ export function useAuth(): UseAuthReturn {
     // Fetch user profile from Database
     const fetchUserProfile = useCallback(async (uid: string) => {
         try {
-            // First try to get profile
             const { data, error } = await supabase
-                .from('profiles') // Assuming a 'profiles' or 'users' table exists
+                .from('profiles')
                 .select('*')
-                .eq('id', uid) // Supabase typically uses 'id' which matches auth.uid()
+                .eq('id', uid)
                 .single();
+
+            if (error) {
+                if (error.code === 'PGRST116') {
+                    // Profile not found
+                    console.warn('Profile not found for user:', uid);
+                } else {
+                    console.error('Error fetching user profile:', error);
+                }
+                return null;
+            }
 
             if (data) {
                 return {
                     uid: data.id,
                     email: data.email,
-                    displayName: data.full_name || data.display_name,
+                    displayName: data.full_name,
                     role: data.role as UserRole,
                     createdAt: new Date(data.created_at),
                 } as UserProfile;
             }
             return null;
         } catch (err) {
-            console.error('Error fetching user profile:', err);
+            console.error('Unexpected error fetching user profile:', err);
             return null;
         }
     }, [supabase]);
@@ -154,17 +154,22 @@ export function useAuth(): UseAuthReturn {
 
             if (error) throw error;
 
-            // In Supabase, we might need to manually create the profile record if a Trigger doesn't do it.
-            // Assuming we rely on a PostgreSQL Trigger for now, or just the metadata.
-            // If manual creation is needed:
+            // We use a database trigger to create the profile record, 
+            // but we can have an optional manual upsert as a fallback and for local UI update
             if (user) {
-                await supabase.from('profiles').upsert({
+                const profileData = {
                     id: user.id,
                     email: email,
                     full_name: displayName,
                     role: role,
-                    // user_id: user.id
-                });
+                };
+
+                const { error: profileError } = await supabase.from('profiles').upsert(profileData);
+
+                if (profileError) {
+                    console.error('Error creating profile:', profileError);
+                    // We don't throw here to avoid failing signup if the user record WAS created
+                }
             }
 
         } catch (err: unknown) {

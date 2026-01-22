@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { UserRole } from '@/hooks/useAuth';
+import { UserRole } from '@/utils/authTypes';
 
 export default function SignupPage() {
     const [displayName, setDisplayName] = useState('');
