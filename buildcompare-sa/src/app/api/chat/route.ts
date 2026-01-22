@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
+import Groq from "groq-sdk";
 
-export const runtime = 'nodejs'; // Use Node.js runtime for fetch
+export const runtime = 'nodejs';
 
+/**
+ * AI Chat Route
+ * - Primary: Python RAG Backend (127.0.0.1:8000)
+ * - Fallback: Direct Groq SDK (for Vercel/Production)
+ */
 export async function POST(req: Request) {
     try {
         const body = await req.json();
@@ -11,56 +17,84 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Message is required" }, { status: 400 });
         }
 
-        // Call the Python Backend (Groq RAG Service)
-        // Make sure your Python backend is running on port 8000
         const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+        const groqApiKey = process.env.GROQ_API_KEY;
 
+        // --- PHASE 1: Try Python RAG Backend ---
         try {
+            // Short timeout for backend check to avoid long hangs on Vercel
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+
             const response = await fetch(`${backendUrl}/rag/query`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
+                signal: controller.signal,
                 body: JSON.stringify({
                     query: userMessage,
                     n_context_results: 3
                 }),
             });
 
-            if (!response.ok) {
-                console.error(`Backend error: ${response.statusText}`);
-                throw new Error("Failed to reach AI backend");
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                const data = await response.json();
+                const aiText = data.llm_response || "I apologize, but I couldn't generate a response.";
+                return createStreamResponse(aiText);
             }
-
-            const data = await response.json();
-            const aiText = data.llm_response || "I apologize, but I couldn't generate a response.";
-
-            // Stream the text back to the client to simulate typing effect
-            const encoder = new TextEncoder();
-            const stream = new ReadableStream({
-                async start(controller) {
-                    const chunkSize = 10; // Characters per chunk
-                    for (let i = 0; i < aiText.length; i += chunkSize) {
-                        const chunk = aiText.slice(i, i + chunkSize);
-                        controller.enqueue(encoder.encode(chunk));
-                        await new Promise(resolve => setTimeout(resolve, 15)); // Tiny delay for effect
-                    }
-                    controller.close();
-                },
-            });
-
-            return new NextResponse(stream);
-
         } catch (backendError) {
-            console.error("Connection to Python backend failed:", backendError);
-            // Fallback for when backend is offline
-            return NextResponse.json({
-                error: "AI Backend Offline. Please run 'python backend/main.py'"
-            }, { status: 503 });
+            console.warn("Python backend unreachable, attempting Groq fallback...", backendError);
         }
+
+        // --- PHASE 2: Fallback to Direct Groq (Production/Vercel) ---
+        if (groqApiKey) {
+            try {
+                const groq = new Groq({ apiKey: groqApiKey });
+                const completion = await groq.chat.completions.create({
+                    messages: [
+                        {
+                            role: "system",
+                            content: "You are the BuildCompare SA AI Concierge. You help South African contractors and homeowners with material choices, quantities, and price trends. Use South African terminology (bricks, cement, rebar, 50kg bags, etc.). Be professional, helpful, and concise."
+                        },
+                        { role: "user", content: userMessage }
+                    ],
+                    model: "llama-3.3-70b-versatile",
+                });
+
+                const aiText = completion.choices[0]?.message?.content || "I'm having trouble connecting to my brain right now.";
+                return createStreamResponse(aiText);
+            } catch (groqError) {
+                console.error("Groq fallback failed:", groqError);
+            }
+        }
+
+        // --- PHASE 3: Error / Offline ---
+        return NextResponse.json({
+            error: "AI Services currently unavailable. Please check your connection."
+        }, { status: 503 });
 
     } catch (error) {
         console.error("API Route Error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
+}
+
+/**
+ * Helper to create a streaming response for the typing effect
+ */
+function createStreamResponse(text: string) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+        async start(controller) {
+            const chunkSize = 15; // Faster for production
+            for (let i = 0; i < text.length; i += chunkSize) {
+                const chunk = text.slice(i, i + chunkSize);
+                controller.enqueue(encoder.encode(chunk));
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            controller.close();
+        },
+    });
+    return new NextResponse(stream);
 }
