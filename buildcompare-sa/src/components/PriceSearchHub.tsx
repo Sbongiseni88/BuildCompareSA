@@ -22,10 +22,12 @@ import {
     ChevronDown,
     Map as MapIcon,
     Check,
-    Download
+    Download,
+    LayoutGrid
 } from 'lucide-react';
 import { Material, ComparisonResult, Region } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
+import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
 
 interface PriceSearchHubProps {
@@ -34,7 +36,7 @@ interface PriceSearchHubProps {
 
 export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
     // Mode State
-    const [searchMode, setSearchMode] = useState<'manual' | 'scan'>('manual');
+    const [searchMode, setSearchMode] = useState<'manual' | 'scan' | 'browse'>('manual');
 
     // Search Logic State
     const [searchQuery, setSearchQuery] = useState('');
@@ -84,7 +86,6 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             const results: ComparisonResult[] = [];
 
             // Perform individual searches for each material
-            // In a real production app, we'd batch this or use a more sophisticated endpoint
             for (const material of materials) {
                 try {
                     const response = await fetch(`/api/v1/prices?query=${encodeURIComponent(material.name)}`);
@@ -185,6 +186,25 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         performSearch(materials);
     };
 
+    const handleCategoryClick = (term: string) => {
+        setSearchMode('manual');
+        setSearchQuery(term);
+        // Trigger generic search for this term or a representative item
+        const match = mockMaterials.find(m => m.name.toLowerCase().includes(term.toLowerCase()));
+        if (match) {
+            performSearch([match]);
+        } else {
+            // Fallback generic search
+            performSearch([{
+                id: `gen-${Date.now()}`,
+                name: term,
+                category: 'other',
+                quantity: 1,
+                unit: 'unit'
+            }]);
+        }
+    };
+
     const handleOrderNow = (supplierName: string, productName: string) => {
         let url = '';
         if (supplierName.toLowerCase().includes('builders')) {
@@ -243,7 +263,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                 <div className="p-1 bg-slate-900/80 border border-slate-800 rounded-xl inline-flex relative">
                     <button
                         onClick={() => setSearchMode('manual')}
-                        className={`px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'manual'
+                        className={`px-4 md:px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'manual'
                             ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
                             : 'text-slate-400 hover:text-white'
                             }`}
@@ -252,8 +272,18 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                         Manual Search
                     </button>
                     <button
+                        onClick={() => setSearchMode('browse')}
+                        className={`px-4 md:px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'browse'
+                            ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
+                            : 'text-slate-400 hover:text-white'
+                            }`}
+                    >
+                        <LayoutGrid className="w-4 h-4" />
+                        Browse Phase
+                    </button>
+                    <button
                         onClick={() => setSearchMode('scan')}
-                        className={`px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'scan'
+                        className={`px-4 md:px-8 py-3 rounded-lg font-bold text-sm transition-all duration-300 flex items-center gap-2 ${searchMode === 'scan'
                             ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20'
                             : 'text-slate-400 hover:text-white'
                             }`}
@@ -266,7 +296,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
             {/* CONTENT AREA */}
             <div className="glass-card p-8 border border-slate-800/50 shadow-2xl bg-slate-900/40">
-                {searchMode === 'manual' ? (
+                {searchMode === 'manual' && (
                     <div className="space-y-8">
                         {/* THE PILL SEARCH BAR */}
                         <div className="max-w-4xl mx-auto relative z-20">
@@ -374,7 +404,6 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 </div>
 
                                 {/* Results List */}
-                                {/* Results List - Grid Layout */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {comparisonResults.map((result, idx) => (
                                         <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 flex flex-col">
@@ -464,8 +493,39 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                             </div>
                         )}
                     </div>
-                ) : (
-                    /* SCAN MODE */
+                )}
+
+                {searchMode === 'browse' && (
+                    <div className="animate-fade-in">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+                            {constructionCategories.map(cat => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => handleCategoryClick(cat.subcategories[0])}
+                                    className="p-6 bg-slate-900/50 border border-slate-800 hover:border-yellow-500/50 rounded-2xl flex flex-col items-center gap-4 group transition-all hover:bg-slate-800/50 hover:shadow-xl hover:shadow-black/50"
+                                >
+                                    <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center group-hover:bg-yellow-500/10 group-hover:text-yellow-400 transition-colors shadow-lg shadow-black/30">
+                                        <cat.icon className="w-8 h-8 text-slate-400 group-hover:text-yellow-400 transition-colors" />
+                                    </div>
+                                    <div className="text-center space-y-2">
+                                        <h3 className="text-lg font-bold text-white group-hover:text-yellow-400 transition-colors">{cat.label}</h3>
+                                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{cat.description}</p>
+                                    </div>
+                                    <div className="w-full mt-2 pt-4 border-t border-slate-800/50 hidden md:block">
+                                        <div className="flex flex-wrap gap-2 justify-center">
+                                            {cat.subcategories.slice(0, 2).map((sub, i) => (
+                                                <span key={i} className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400">{sub}</span>
+                                            ))}
+                                            {cat.subcategories.length > 2 && <span className="text-[10px] text-slate-600">+{cat.subcategories.length - 2} more</span>}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {searchMode === 'scan' && (
                     <div className="animate-fade-in">
                         <VisualSearch onMaterialsExtracted={handleMaterialsExtracted} />
                     </div>

@@ -74,7 +74,14 @@ export async function POST(req: NextRequest) {
             IMPORTANT: Return ONLY the JSON. No Markdown. No text before or after.
             `;
 
-            const MODELS = ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview"];
+            // 3. Prompt Groq Vision (Llama 3.2) with Fallback
+            // Preview models are often decommissioned. Trying stable versions first.
+            const MODELS = [
+                "llama-3.2-90b-vision-preview", // sometimes re-enabled
+                "llama-3.2-11b-vision-preview",
+                "llama-3.2-90b-vision",
+                "llama-3.2-11b-vision"
+            ];
             let successContent = null;
             let loopError = null;
 

@@ -35,7 +35,7 @@ export default function ProjectsManager({
     onNavigateToEstimator,
     onNavigateToAnalytics
 }: ProjectsManagerProps) {
-    const { user } = useAuthContext();
+    const { user, loading: authLoading } = useAuthContext();
     const supabase = createClient();
 
     const [projects, setProjects] = useState<Project[]>([]);
@@ -45,6 +45,8 @@ export default function ProjectsManager({
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showMenu, setShowMenu] = useState<string | null>(null);
+
+    // ... (state remains same)
 
     // New project form state
     const [newProjectName, setNewProjectName] = useState('');
@@ -104,6 +106,8 @@ export default function ProjectsManager({
 
     // Initial Fetch
     React.useEffect(() => {
+        if (authLoading) return;
+
         if (user) {
             fetchProjects();
         } else {
@@ -111,7 +115,7 @@ export default function ProjectsManager({
             setProjects([]);
             setIsLoading(false);
         }
-    }, [user]);
+    }, [user, authLoading]);
 
     const filteredProjects = projects.filter(project => {
         const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
