@@ -103,6 +103,53 @@ Provide a helpful, practical answer:"""
             "llm_response": response,
             "model_used": self.model_name
         }
+    
+    def generate_boq(self, specs: dict) -> dict:
+        """
+        Generate a structured Bill of Quantities (BoQ) from project specifications.
+        """
+        if not self.groq_client:
+            return {"error": "Groq API key not configured"}
+            
+        system_prompt = """You are an expert Quantity Surveyor AI for BuildCompare SA.
+Your task is to convert project specifications into a detailed Bill of Quantities (BoQ).
+You must output ONLY valid JSON.
+The JSON structure must be a list of objects under the key "materials".
+Each material object must have:
+- "name": string (e.g. "PPC Surebuild Cement 42.5N")
+- "category": string (one of: cement, bricks, steel, timber, plumbing, electrical, paint, roofing, tiles, hardware, labor, other)
+- "quantity": number (integer or float)
+- "unit": string (e.g. bags, m3, units, rolls, m2)
+- "brand": string (optional, suggest a common SA brand like PPC, Corobrik, etc.)
+
+Estimate quantities conservatively including 10% waste.
+"""
+        
+        user_prompt = f"""Generate a BoQ for the following project specifications:
+        
+Foundation: {specs.get('foundation', 'Standard strip footings')}
+Structure: {specs.get('structure', 'Double skin brick walls')}
+Roofing: {specs.get('roofing', 'Concrete roof tiles')}
+Finishing: {specs.get('finishing', 'Standard plaster and paint')}
+
+Provide a comprehensive list of materials needed."""
+
+        try:
+            chat_completion = self.groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model=self.model_name,
+                temperature=0.2, # Low temperature for consistent JSON
+                max_tokens=2048,
+                response_format={"type": "json_object"}
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            # Fallback for error handling
+            print(f"BoQ Generation Error: {e}")
+            return '{"materials": []}'
 
 
 # Singleton instance

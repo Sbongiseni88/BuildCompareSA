@@ -64,3 +64,11 @@ class CalculationResponse(BaseModel):
     calc_type: str
     input_area: float
     results: dict
+
+
+class EstimatorRequest(BaseModel):
+    """Request model for AI BoQ estimation."""
+    foundation: str = ""
+    structure: str = ""
+    roofing: str = ""
+    finishing: str = ""

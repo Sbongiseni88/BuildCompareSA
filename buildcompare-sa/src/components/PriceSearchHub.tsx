@@ -78,10 +78,77 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
     const performSearch = async (materials: Material[]) => {
         setIsSearching(true);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const results = generateComparisonResults(materials, region);
-        setComparisonResults(results);
-        setIsSearching(false);
+        setComparisonResults([]);
+
+        try {
+            const results: ComparisonResult[] = [];
+
+            // Perform individual searches for each material
+            // In a real production app, we'd batch this or use a more sophisticated endpoint
+            for (const material of materials) {
+                try {
+                    const response = await fetch(`/api/v1/prices?query=${encodeURIComponent(material.name)}`);
+
+                    if (!response.ok) {
+                        console.warn(`Failed to fetch prices for ${material.name}`);
+                        continue;
+                    }
+
+                    const priceItems: any[] = await response.json();
+
+                    // Transform Backend PriceItem to Frontend PriceQuote
+                    const quotes = priceItems.map((item, index) => ({
+                        supplierId: `sup-${index}`,
+                        supplierName: item.supplier,
+                        supplierLogo: '', // Placeholder
+                        price: item.price,
+                        inStock: item.in_stock,
+                        stockQuantity: item.stock_quantity,
+                        deliveryFee: 150, // Default estimate
+                        deliveryDays: item.in_stock ? 1 : 3,
+                        distance: Math.floor(Math.random() * 20) + 1, // Mock distance for now (backend needs geo)
+                        lastUpdated: new Date()
+                    }));
+
+                    if (quotes.length > 0) {
+                        // Find best price
+                        const best = quotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
+
+                        // Calculate average
+                        const avg = quotes.reduce((acc, curr) => acc + curr.price, 0) / quotes.length;
+
+                        // Savings vs Average (or vs highest)
+                        const savings = avg - best.price;
+
+                        results.push({
+                            material: material,
+                            quotes: quotes,
+                            bestPrice: best,
+                            averagePrice: avg,
+                            potentialSavings: savings > 0 ? savings * material.quantity : 0
+                        });
+                    }
+
+                } catch (err) {
+                    console.error(`Error searching for ${material.name}:`, err);
+                }
+            }
+
+            // If API fails completely or returns nothing, fallback to mock data (so demo doesn't break)
+            if (results.length === 0) {
+                console.log("Using fallback mock data for demo...");
+                await new Promise(resolve => setTimeout(resolve, 800)); // Simulate delay
+                const mockResults = generateComparisonResults(materials, region);
+                setComparisonResults(mockResults);
+            } else {
+                setComparisonResults(results);
+            }
+
+        } catch (error) {
+            console.error("Search failed:", error);
+        } finally {
+            setIsSearching(false);
+        }
     };
 
     const handleSearch = () => {

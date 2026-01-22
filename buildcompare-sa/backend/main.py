@@ -17,7 +17,7 @@ from backend.calculations import (
     calculate_roof_tiles
 )
 from backend.services.groq_rag import groq_rag_service
-from backend.routers import prices, ocr
+from backend.routers import prices, ocr, estimator
 
 # Load environment variables
 load_dotenv()
@@ -40,6 +40,7 @@ app.add_middleware(
 # Include routers
 app.include_router(prices.router)
 app.include_router(ocr.router)
+app.include_router(estimator.router)
 
 
 # --- Routes ---
