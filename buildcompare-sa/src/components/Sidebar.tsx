@@ -11,7 +11,8 @@ import {
     LogOut,
     HardHat,
     User,
-    MessageSquare
+    MessageSquare,
+    Info
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -33,6 +34,7 @@ export default function Sidebar({ activeTab, onTabChange, onFeedbackClick, isCol
     ];
 
     const bottomItems = [
+        { id: 'about', label: 'About', icon: Info },
         { id: 'account', label: 'Account', icon: User },
         { id: 'feedback', label: 'Send Feedback', icon: MessageSquare },
         { id: 'sign-out', label: 'Sign Out', icon: LogOut },

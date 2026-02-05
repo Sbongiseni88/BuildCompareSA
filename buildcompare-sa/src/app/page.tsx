@@ -9,6 +9,7 @@ import ProjectsManager from '@/components/ProjectsManager';
 import SmartEstimator from '@/components/SmartEstimator';
 import CostAnalysis from '@/components/CostAnalysis';
 import AccountProfile from '@/components/AccountProfile';
+import About from '@/components/About';
 import FeedbackModal from '@/components/FeedbackModal';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -52,6 +53,8 @@ export default function Home() {
         />;
       case 'cost-analysis':
         return <CostAnalysis />;
+      case 'about':
+        return <About />;
       case 'account':
         return <AccountProfile />;
       default:
