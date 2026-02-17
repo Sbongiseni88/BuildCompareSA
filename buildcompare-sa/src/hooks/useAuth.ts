@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { UserRole, UserProfile } from '@/utils/authTypes';
@@ -24,6 +24,9 @@ export interface AuthActions {
 
 export type UseAuthReturn = AuthState & AuthActions;
 
+// Maximum time we wait for auth to resolve before showing the app anyway
+const AUTH_TIMEOUT_MS = 8000;
+
 /**
  * Custom hook for Supabase Authentication
  */
@@ -34,10 +37,15 @@ export function useAuth(): UseAuthReturn {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const supabase = createClient();
+    // Use a ref for the supabase client to prevent re-render dependency issues
+    const supabaseRef = useRef(createClient());
+    const supabase = supabaseRef.current;
+
+    // Track whether initial auth check has completed (prevent double-execution)
+    const initializedRef = useRef(false);
 
     // Fetch user profile from Database
-    const fetchUserProfile = useCallback(async (uid: string) => {
+    const fetchUserProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
         try {
             const { data, error } = await supabase
                 .from('profiles')
@@ -47,7 +55,6 @@ export function useAuth(): UseAuthReturn {
 
             if (error) {
                 if (error.code === 'PGRST116') {
-                    // Profile not found
                     console.warn('Profile not found for user:', uid);
                 } else {
                     console.error('Error fetching user profile:', error);
@@ -69,27 +76,43 @@ export function useAuth(): UseAuthReturn {
             console.error('Unexpected error fetching user profile:', err);
             return null;
         }
-    }, [supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    // Initial session check
+    // Initial session check - runs only ONCE
     useEffect(() => {
+        // Guard against double-execution in StrictMode
+        if (initializedRef.current) return;
+        initializedRef.current = true;
+
+        // Safety timeout - if auth doesn't resolve, stop loading anyway
+        const timeoutId = setTimeout(() => {
+            setLoading(prevLoading => {
+                if (prevLoading) {
+                    console.warn(`⚠️ Auth check timed out after ${AUTH_TIMEOUT_MS}ms. Proceeding without auth.`);
+                    return false;
+                }
+                return prevLoading;
+            });
+        }, AUTH_TIMEOUT_MS);
+
         async function getSession() {
-            setLoading(true);
             try {
-                // Get session directly without timeout race (let Supabase handle its own timeouts)
+                console.log('🔐 Starting auth session check...');
                 const { data: { session }, error } = await supabase.auth.getSession();
 
                 if (error) {
                     console.error('Error getting session:', error);
                     setLoading(false);
+                    clearTimeout(timeoutId);
                     return;
                 }
 
+                console.log('🔐 Session result:', session ? 'Authenticated' : 'No session');
                 setSession(session);
                 setUser(session?.user ?? null);
 
                 if (session?.user) {
-                    // This fetch is critical but shouldn't block app forever if it fails
                     try {
                         const profile = await fetchUserProfile(session.user.id);
                         setUserProfile(profile);
@@ -99,9 +122,9 @@ export function useAuth(): UseAuthReturn {
                 }
             } catch (err) {
                 console.error("Auth initialization failed:", err);
-                // Even on error, stop loading so the app doesn't hang
             } finally {
                 setLoading(false);
+                clearTimeout(timeoutId);
             }
         }
 
@@ -110,6 +133,7 @@ export function useAuth(): UseAuthReturn {
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
+            console.log('🔐 Auth state changed:', _event);
             setSession(session);
             setUser(session?.user ?? null);
 
@@ -122,8 +146,13 @@ export function useAuth(): UseAuthReturn {
             setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
-    }, [supabase, fetchUserProfile]);
+        return () => {
+            clearTimeout(timeoutId);
+            subscription.unsubscribe();
+        };
+        // Empty deps - this runs only once on mount
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Sign in with email and password
     const signIn = useCallback(async (email: string, password: string) => {
@@ -142,7 +171,8 @@ export function useAuth(): UseAuthReturn {
         } finally {
             setLoading(false);
         }
-    }, [supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Sign up
     const signUp = useCallback(async (
@@ -167,8 +197,6 @@ export function useAuth(): UseAuthReturn {
 
             if (error) throw error;
 
-            // We use a database trigger to create the profile record, 
-            // but we can have an optional manual upsert as a fallback and for local UI update
             if (user) {
                 const profileData = {
                     id: user.id,
@@ -181,7 +209,6 @@ export function useAuth(): UseAuthReturn {
 
                 if (profileError) {
                     console.error('Error creating profile:', profileError);
-                    // We don't throw here to avoid failing signup if the user record WAS created
                 }
             }
 
@@ -192,7 +219,8 @@ export function useAuth(): UseAuthReturn {
         } finally {
             setLoading(false);
         }
-    }, [supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Sign in with Google
     const signInWithGoogle = useCallback(async () => {
@@ -213,7 +241,8 @@ export function useAuth(): UseAuthReturn {
         } finally {
             setLoading(false);
         }
-    }, [supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Sign out
     const signOut = useCallback(async () => {
@@ -230,7 +259,8 @@ export function useAuth(): UseAuthReturn {
         } finally {
             setLoading(false);
         }
-    }, [supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const clearError = useCallback(() => setError(null), []);
 

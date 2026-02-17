@@ -41,5 +41,34 @@ A floating or sidebar component for the RAG-based assistant.
 - Use `next-pwa` to cache static assets (logos, fonts, core layout).
 - Store "Saved Projects" in `localStorage` or IndexedDB for offline viewing, syncing when online.
 
+## 6. UX Enhancement Components (Added Feb 2026)
+
+### Skeleton Loaders (`src/components/SkeletonLoader.tsx`)
+Exports: `SkeletonBar`, `StatsSkeleton`, `ProjectCardSkeleton`, `WelcomeSkeleton`, `SpendAnalysisSkeleton`, `SearchResultsSkeleton`.
+Uses CSS `shimmer` keyframe animation defined in `globals.css`.
+
+### Confirm Dialog (`src/components/ConfirmDialog.tsx`)
+Styled modal replacement for native `confirm()`. Supports `danger`, `warning`, `info` variants with matching colors/icons.
+Used in: `ProjectsManager` (delete project), `page.tsx` (sign out).
+
+### Floating Action Button (`src/components/FloatingActionButton.tsx`)
+Mobile-only (lg:hidden) FAB with expandable quick actions: New Project, Search, Scan BoQ, Ask AI.
+
+### Onboarding Tour (`src/components/OnboardingTour.tsx`)
+5-step guided tour for first-time users. Persists completion state in `localStorage` key `buildcompare_onboarding_complete`.
+
+### Keyboard Shortcuts (`src/hooks/useKeyboardShortcuts.ts`)
+Global keyboard shortcut hook. Shortcuts: `Ctrl+K` (search), `Ctrl+/` (AI), `Ctrl+N` (projects), `Esc` (close), `Ctrl+Shift+?` (help).
+
+### Forgot Password (`src/app/forgot-password/page.tsx`)
+Supabase `resetPasswordForEmail` integration. Linked from login page password field.
+
+### Dynamic Breadcrumbs (in `page.tsx`)
+Header shows `Home > [Current Page]` with page icon. Tab metadata defined in `TAB_META` map.
+
+### CSS Additions (`globals.css`)
+- `shimmer` keyframe for skeleton loaders
+- `.tooltip-trigger` / `.tooltip-content` classes for hover tooltips
+
 ---
 *Created by Lead Systems Architect*

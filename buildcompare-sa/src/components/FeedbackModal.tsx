@@ -20,7 +20,8 @@ interface FeedbackModalProps {
 
 export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
     const { user } = useAuthContext();
-    const supabase = createClient();
+    const supabaseRef = React.useRef(createClient());
+    const supabase = supabaseRef.current;
 
     const [rating, setRating] = useState<number>(0);
     const [feedbackType, setFeedbackType] = useState<'bug' | 'suggestion' | 'praise' | 'other'>('suggestion');
@@ -122,8 +123,8 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
                                     >
                                         <Star
                                             className={`w-8 h-8 ${star <= rating
-                                                    ? 'fill-yellow-400 text-yellow-400'
-                                                    : 'text-slate-700 hover:text-slate-500'
+                                                ? 'fill-yellow-400 text-yellow-400'
+                                                : 'text-slate-700 hover:text-slate-500'
                                                 } transition-colors`}
                                         />
                                     </button>
@@ -141,8 +142,8 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
                                         type="button"
                                         onClick={() => setFeedbackType(type)}
                                         className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all border ${feedbackType === type
-                                                ? 'bg-yellow-400 text-slate-900 border-yellow-400 shadow-lg shadow-yellow-400/10'
-                                                : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-white'
+                                            ? 'bg-yellow-400 text-slate-900 border-yellow-400 shadow-lg shadow-yellow-400/10'
+                                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-white'
                                             }`}
                                     >
                                         {type}

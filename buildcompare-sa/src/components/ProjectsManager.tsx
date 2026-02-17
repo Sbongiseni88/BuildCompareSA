@@ -17,12 +17,16 @@ import {
     TrendingUp,
     X,
     Check,
-    Loader2
+    Loader2,
+    Calculator,
+    Zap,
 } from 'lucide-react';
 import { Project } from '@/types';
 import { exportProjectToPDF } from '@/lib/pdfExport';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import { ProjectCardSkeleton } from '@/components/SkeletonLoader';
 
 interface ProjectsManagerProps {
     onNavigateToCompare?: () => void;
@@ -36,7 +40,8 @@ export default function ProjectsManager({
     onNavigateToAnalytics
 }: ProjectsManagerProps) {
     const { user, loading: authLoading } = useAuthContext();
-    const supabase = createClient();
+    const supabaseRef = React.useRef(createClient());
+    const supabase = supabaseRef.current;
 
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +50,7 @@ export default function ProjectsManager({
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showMenu, setShowMenu] = useState<string | null>(null);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
     // ... (state remains same)
 
@@ -208,8 +214,6 @@ export default function ProjectsManager({
     };
 
     const handleDeleteProject = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this project? This cannot be undone.')) return;
-
         try {
             const { error } = await supabase
                 .from('projects')
@@ -220,6 +224,7 @@ export default function ProjectsManager({
 
             setProjects(projects.filter(p => p.id !== id));
             setShowMenu(null);
+            setDeleteConfirmId(null);
             if (selectedProject?.id === id) setSelectedProject(null);
         } catch (error) {
             console.error('Error deleting project:', error);
@@ -354,11 +359,12 @@ export default function ProjectsManager({
                 </div>
             </div>
 
-            {/* Loading State */}
+            {/* Loading State – Skeleton */}
             {(authLoading || (isLoading && projects.length === 0)) && (
-                <div className="flex flex-col items-center justify-center py-20">
-                    <Loader2 className="w-10 h-10 text-yellow-400 animate-spin mb-4" />
-                    <p className="text-slate-400">Loading your projects...</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                        <ProjectCardSkeleton key={i} />
+                    ))}
                 </div>
             )}
 
@@ -414,7 +420,8 @@ export default function ProjectsManager({
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleDeleteProject(project.id);
+                                                    setDeleteConfirmId(project.id);
+                                                    setShowMenu(null);
                                                 }}
                                                 className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm text-left border-t border-slate-700"
                                             >
@@ -509,26 +516,39 @@ export default function ProjectsManager({
                 </div>
             )}
 
-            {/* Empty State */}
+            {/* Empty State – Enhanced */}
             {!isLoading && filteredProjects.length === 0 && (
                 <div className="glass-card p-12 text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-800 rounded-2xl mb-4">
-                        <FolderOpen className="w-8 h-8 text-slate-500" />
+                    <div className="w-20 h-20 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float">
+                        <FolderOpen className="w-10 h-10 text-yellow-500" />
                     </div>
-                    <h3 className="text-xl font-semibold text-white mb-2">No Projects Found</h3>
-                    <p className="text-slate-400 mb-6">
+                    <h3 className="text-xl font-bold text-white mb-2">
+                        {searchQuery ? 'No Matching Projects' : 'No Projects Yet'}
+                    </h3>
+                    <p className="text-slate-400 mb-6 max-w-sm mx-auto leading-relaxed">
                         {searchQuery
-                            ? 'Try adjusting your search or filters'
-                            : 'Create your first project to start tracking materials and costs'}
+                            ? 'Try adjusting your search or filters to find what you\'re looking for.'
+                            : 'Create your first project to start tracking materials, budgets, and savings across all your construction sites.'}
                     </p>
                     {!searchQuery && (
-                        <button
-                            onClick={() => setShowCreateModal(true)}
-                            className="btn-primary"
-                        >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Create Project
-                        </button>
+                        <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
+                            <button
+                                onClick={() => setShowCreateModal(true)}
+                                className="btn-primary flex items-center gap-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Create Your First Project
+                            </button>
+                            {onNavigateToEstimator && (
+                                <button
+                                    onClick={onNavigateToEstimator}
+                                    className="btn-secondary flex items-center gap-2 text-sm"
+                                >
+                                    <Calculator className="w-4 h-4" />
+                                    Or Estimate a BoQ First
+                                </button>
+                            )}
+                        </div>
                     )}
                 </div>
             )}
@@ -782,6 +802,20 @@ export default function ProjectsManager({
                     </div>
                 </div>
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={!!deleteConfirmId}
+                onClose={() => setDeleteConfirmId(null)}
+                onConfirm={() => {
+                    if (deleteConfirmId) handleDeleteProject(deleteConfirmId);
+                }}
+                title="Delete Project"
+                message="Are you sure you want to delete this project and all its materials? This action cannot be undone."
+                confirmLabel="Delete Project"
+                cancelLabel="Keep It"
+                variant="danger"
+            />
         </div>
     );
 }

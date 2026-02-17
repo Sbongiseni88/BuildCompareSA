@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { createClient } from '@/utils/supabase/client';
 import {
@@ -25,7 +25,8 @@ interface UserProfileData {
 
 export default function AccountProfile() {
     const { user, loading: authLoading, signOut } = useAuthContext();
-    const supabase = createClient();
+    const supabaseRef = useRef(createClient());
+    const supabase = supabaseRef.current;
 
     const [profile, setProfile] = useState<UserProfileData | null>(null);
     const [isLoading, setIsLoading] = useState(false);

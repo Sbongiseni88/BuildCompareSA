@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
+import * as XLSX from 'xlsx';
 import { Material } from '@/types';
 import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
@@ -9,6 +10,126 @@ import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-lim
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY || ''
 });
+
+// Llama 4 multimodal models (replacements for decommissioned Llama 3.2 vision models)
+const VISION_MODELS = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct"
+];
+
+// Text-only models for parsed document analysis
+const TEXT_MODELS = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct"
+];
+
+// Helper: detect if the file is a spreadsheet/CSV document
+function isDocumentFile(mimeType: string, fileName: string, buffer?: ArrayBuffer): boolean {
+    const lowerName = fileName.toLowerCase();
+
+    // 1. Extension check (most reliable — browsers sometimes lie about MIME)
+    const docExtensions = ['.xlsx', '.xls', '.csv'];
+    if (docExtensions.some(ext => lowerName.endsWith(ext))) return true;
+
+    // 2. MIME type check
+    const docMimes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+        'text/csv',
+        'application/csv',
+    ];
+    if (docMimes.includes(mimeType)) return true;
+
+    // 3. Magic bytes check: XLSX files are ZIP archives (starts with PK\x03\x04)
+    if (buffer && buffer.byteLength >= 4) {
+        const header = new Uint8Array(buffer.slice(0, 4));
+        if (header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04) {
+            return true; // ZIP-based file (likely xlsx)
+        }
+    }
+
+    return false;
+}
+
+// Helper: detect if the file is a PDF
+function isPdfFile(mimeType: string, fileName: string): boolean {
+    return mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+}
+
+// Helper: parse Excel/CSV file to text using SheetJS
+function parseSpreadsheetToText(buffer: ArrayBuffer, fileName: string): string {
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const allText: string[] = [];
+
+    for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
+
+        allText.push(`--- Sheet: ${sheetName} ---`);
+
+        // Convert to CSV text (preserves structure well for LLM)
+        const csvText = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+        allText.push(csvText);
+    }
+
+    const result = allText.join('\n');
+
+    // Truncate if too large (context window limit)
+    const MAX_CHARS = 12000;
+    if (result.length > MAX_CHARS) {
+        return result.substring(0, MAX_CHARS) + '\n\n[...TRUNCATED - document too large, showing first portion...]';
+    }
+
+    return result;
+}
+
+// Helper: run AI analysis with model fallback
+async function runGroqCompletion(
+    messages: any[],
+    models: string[]
+): Promise<string> {
+    let lastError: any = null;
+
+    for (const modelId of models) {
+        try {
+            console.log(`Attempting Groq model: ${modelId}`);
+            const completion = await groq.chat.completions.create({
+                messages,
+                model: modelId,
+                temperature: 0.1,
+                max_tokens: 2048,
+                top_p: 1,
+                stream: false,
+                response_format: { type: "json_object" }
+            });
+
+            const content = completion.choices[0]?.message?.content;
+            if (content) return content;
+        } catch (err: any) {
+            console.warn(`Groq Model ${modelId} failed:`, err.message);
+            lastError = err;
+            continue; // Try next model
+        }
+    }
+
+    throw lastError || new Error("All Groq models failed");
+}
+
+// Shared prompt structure for BoQ extraction
+const BOQ_JSON_STRUCTURE = `
+Return a VALID JSON array with this structure:
+[
+  {
+    "id": "item-1",
+    "name": "Detailed Name (e.g. 50kg Cement Bag)",
+    "brand": "Brand Name if visible (e.g. PPC, AfriSam)",
+    "category": "cement" (or bricks, steel, timber, paint, roofing, plumbing, electrical, other),
+    "quantity": 1,
+    "unit": "unit" (or bag, m3, length, kg, each, lot)
+  }
+]
+
+IMPORTANT: Return ONLY the JSON. No Markdown. No text before or after.`;
 
 export async function POST(req: NextRequest) {
     // Rate limiting check
@@ -44,98 +165,105 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
         }
 
-        // 2. Prepare image for Groq (Base64 Data URL)
         const arrayBuffer = await file.arrayBuffer();
-        const base64Image = Buffer.from(arrayBuffer).toString('base64');
-        const mimeType = file.type || 'image/jpeg';
-        const dataUrl = `data:${mimeType};base64,${base64Image}`;
+        const mimeType = file.type || 'application/octet-stream';
+        const safeName = fileName || file.name || 'unknown';
 
-        // 3. Prompt Groq Vision (Llama 3.2)
+        // Debug logging to identify file type issues
+        console.log(`📋 File received: name="${safeName}", mime="${mimeType}", size=${arrayBuffer.byteLength} bytes`);
+
         try {
-            console.log('Attemping analysis with Groq Llama-3.2 Vision...');
+            let rawContent: string;
 
-            const prompt = `
-            You are an expert Quantity Surveyor.
-            Analyze this image of construction material.
-            Identify the MAIN item visible. Do not list background items.
-            
-            Return a VALID JSON array with this structure:
-            [
-              {
-                "id": "item-1",
-                "name": "Detailed Name (e.g. 50kg Cement Bag)",
-                "brand": "Brand Name if visible (e.g. PPC, AfriSam)",
-                "category": "cement" (or bricks, steel, timber, paint, roofing, other),
-                "quantity": 1,
-                "unit": "unit" (or bag, m3, length)
-              }
-            ]
-            
-            IMPORTANT: Return ONLY the JSON. No Markdown. No text before or after.
-            `;
+            // ─── DOCUMENT PATH: Excel / CSV ───
+            if (isDocumentFile(mimeType, safeName, arrayBuffer)) {
+                console.log(`📄 Document detected (${mimeType}): parsing with SheetJS...`);
 
-            // 3. Prompt Groq Vision (Llama 3.2) with Fallback
-            // Preview models are often decommissioned. Trying stable versions first.
-            const MODELS = [
-                "llama-3.2-90b-vision-preview", // sometimes re-enabled
-                "llama-3.2-11b-vision-preview",
-                "llama-3.2-90b-vision",
-                "llama-3.2-11b-vision"
-            ];
-            let successContent = null;
-            let loopError = null;
+                const documentText = parseSpreadsheetToText(arrayBuffer, safeName);
 
-            for (const modelId of MODELS) {
-                try {
-                    console.log(`Attempting Groq model: ${modelId}`);
-                    const completion = await groq.chat.completions.create({
-                        messages: [
-                            {
-                                role: "user",
-                                content: [
-                                    { type: "text", text: prompt },
-                                    {
-                                        type: "image_url",
-                                        image_url: {
-                                            url: dataUrl,
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                        model: modelId,
-                        temperature: 0.1,
-                        max_tokens: 1024,
-                        top_p: 1,
-                        stream: false,
-                        response_format: { type: "json_object" }
-                    });
-
-                    if (completion.choices[0]?.message?.content) {
-                        successContent = completion.choices[0].message.content;
-                        break;
-                    }
-                } catch (err: any) {
-                    console.warn(`Groq Model ${modelId} failed:`, err.message);
-                    loopError = err;
-                    if (err.message.includes('decommissioned') || err.message.includes('not found')) {
-                        continue;
-                    }
+                if (!documentText.trim()) {
+                    return NextResponse.json(
+                        { error: 'The uploaded document appears to be empty.' },
+                        { status: 400 }
+                    );
                 }
+
+                console.log(`Extracted ${documentText.length} chars from document. Sending to text model...`);
+
+                const textPrompt = `
+You are an expert South African Quantity Surveyor.
+The user has uploaded a Bill of Quantities (BoQ) document. Below is the extracted text/data from the spreadsheet.
+
+Analyze this data and extract ALL construction materials, products, and items listed.
+For each item, identify the name, brand (if mentioned), category, quantity, and unit.
+If quantities or units are unclear, use reasonable defaults.
+
+--- DOCUMENT CONTENT ---
+${documentText}
+--- END DOCUMENT ---
+
+${BOQ_JSON_STRUCTURE}`;
+
+                rawContent = await runGroqCompletion(
+                    [{ role: "user", content: textPrompt }],
+                    TEXT_MODELS
+                );
+
+                // ─── PDF PATH: Use vision (may contain scans/handwriting) ───
+            } else if (isPdfFile(mimeType, safeName)) {
+                console.log(`📑 PDF detected: sending to vision model...`);
+
+                const base64Image = Buffer.from(arrayBuffer).toString('base64');
+                const dataUrl = `data:${mimeType};base64,${base64Image}`;
+
+                const visionPrompt = `
+You are an expert South African Quantity Surveyor.
+Analyze this PDF document image. It may be a Bill of Quantities (BoQ), material list, or quotation.
+Extract ALL construction materials and items visible.
+
+${BOQ_JSON_STRUCTURE}`;
+
+                rawContent = await runGroqCompletion(
+                    [{
+                        role: "user",
+                        content: [
+                            { type: "text", text: visionPrompt },
+                            { type: "image_url", image_url: { url: dataUrl } },
+                        ],
+                    }],
+                    VISION_MODELS
+                );
+
+                // ─── IMAGE PATH: Photos of materials ───
+            } else {
+                console.log(`📸 Image detected (${mimeType}): sending to vision model...`);
+
+                const base64Image = Buffer.from(arrayBuffer).toString('base64');
+                const dataUrl = `data:${mimeType};base64,${base64Image}`;
+
+                const visionPrompt = `
+You are an expert Quantity Surveyor.
+Analyze this image of construction material.
+Identify the MAIN item visible. Do not list background items.
+
+${BOQ_JSON_STRUCTURE}`;
+
+                rawContent = await runGroqCompletion(
+                    [{
+                        role: "user",
+                        content: [
+                            { type: "text", text: visionPrompt },
+                            { type: "image_url", image_url: { url: dataUrl } },
+                        ],
+                    }],
+                    VISION_MODELS
+                );
             }
 
-            if (!successContent) throw loopError || new Error("All Groq models failed");
+            console.log("Groq Raw Response:", rawContent);
 
-            const content = successContent;
-
-            if (!content) {
-                throw new Error("No content received from Groq");
-            }
-
-            console.log("Groq Raw Response:", content);
-
-            // Clean up response if it contains markdown code blocks (even with json_object mode sometimes)
-            const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
+            // Clean up response if it contains markdown code blocks
+            const cleanJson = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
 
             let materials: Material[] = [];
 

@@ -23,7 +23,8 @@ import {
     Map as MapIcon,
     Check,
     Download,
-    LayoutGrid
+    LayoutGrid,
+    FileText
 } from 'lucide-react';
 import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
@@ -328,8 +329,8 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                             : 'text-slate-400 hover:text-white'
                             }`}
                     >
-                        <Camera className="w-4 h-4" />
-                        Upload/Scan
+                        <FileText className="w-4 h-4" />
+                        Upload BoQ
                     </button>
                 </div>
             </div>

@@ -13,9 +13,13 @@ import {
     MoreHorizontal,
     Plus,
     PieChart,
-    BarChart3
+    BarChart3,
+    Search,
+    Calculator,
+    Info,
 } from 'lucide-react';
 import MarketTicker from './MarketTicker';
+import { StatsSkeleton, ProjectCardSkeleton, WelcomeSkeleton, SpendAnalysisSkeleton } from './SkeletonLoader';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { Project } from '@/types';
@@ -26,8 +30,9 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }: DashboardProps) {
-    const { user, loading: authLoading } = useAuthContext();
-    const supabase = createClient();
+    const { user, userProfile, loading: authLoading } = useAuthContext();
+    const supabaseRef = React.useRef(createClient());
+    const supabase = supabaseRef.current;
     const [projects, setProjects] = React.useState<Project[]>([]);
     const [dataLoading, setDataLoading] = React.useState(false);
 
@@ -77,10 +82,14 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
         };
 
         fetchDashboardData();
-    }, [user, authLoading]);
+    }, [user, authLoading, supabase]);
 
     // Derived Stats
     const activeCount = projects.filter(p => p.status === 'active').length;
+
+    // Display name
+    const displayName = userProfile?.displayName || 'Builder';
+    const greeting = getGreeting();
 
     // Stats Array
     const stats = [
@@ -127,13 +136,39 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
         }).format(value);
     };
 
-    // Global loading state (Auth or Data)
-    if (authLoading || (dataLoading && projects.length === 0)) {
+    // Skeleton loading state
+    const isLoading = authLoading || (dataLoading && projects.length === 0);
+
+    if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-96">
-                <div className="text-center space-y-4">
-                    <div className="w-12 h-12 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p className="text-slate-400">Loading Dashboard...</p>
+            <div className="space-y-8 animate-fade-in pb-20">
+                {/* Market Ticker */}
+                <div className="-mx-4 md:-mx-8 -mt-4 md:-mt-8 mb-8">
+                    <MarketTicker />
+                </div>
+
+                {/* Welcome Skeleton */}
+                <WelcomeSkeleton />
+
+                {/* Stats Skeleton */}
+                <StatsSkeleton />
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-2 space-y-6">
+                        <div className="flex items-center justify-between">
+                            <div className="h-6 w-40 bg-slate-800 rounded-lg" />
+                            <div className="h-4 w-32 bg-slate-800 rounded-lg" />
+                        </div>
+                        <div className="grid gap-4">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                                <ProjectCardSkeleton key={i} />
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-6">
+                        <div className="h-6 w-36 bg-slate-800 rounded-lg" />
+                        <SpendAnalysisSkeleton />
+                    </div>
                 </div>
             </div>
         );
@@ -151,10 +186,14 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                 <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                     <div>
                         <h1 className="text-3xl font-black text-white tracking-tight">
-                            Good morning, <span className="text-gradient">Builder</span> 👷
+                            {greeting}, <span className="text-gradient">{displayName}</span> 👷
                         </h1>
                         <p className="text-slate-400 mt-2 text-lg">
-                            You have <span className="text-white font-bold">{activeCount} active projects</span>. Let's get to work!
+                            {projects.length === 0 ? (
+                                <>Welcome! Get started by comparing prices or creating your first project.</>
+                            ) : (
+                                <>You have <span className="text-white font-bold">{activeCount} active project{activeCount !== 1 ? 's' : ''}</span>. Let&apos;s get to work!</>
+                            )}
                         </p>
                     </div>
                     <div className="flex gap-3">
@@ -282,15 +321,23 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                                 );
                             })
                         ) : (
-                            <div className="p-8 bg-slate-900/50 border border-slate-800 rounded-2xl text-center">
-                                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <FolderOpen className="w-8 h-8 text-slate-500" />
+                            /* Empty State - Enhanced */
+                            <div className="p-10 bg-slate-900/50 border border-dashed border-slate-700 rounded-2xl text-center transition-all hover:border-yellow-500/30">
+                                <div className="w-20 h-20 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float">
+                                    <FolderOpen className="w-10 h-10 text-yellow-500" />
                                 </div>
-                                <h3 className="text-white font-bold mb-2">No Projects Yet</h3>
-                                <p className="text-slate-400 mb-6 text-sm">Create your first project to start tracking costs.</p>
-                                <button onClick={onNavigateToProjects} className="btn-primary flex items-center gap-2 mx-auto">
-                                    <Plus className="w-4 h-4" /> Create Project
-                                </button>
+                                <h3 className="text-xl font-bold text-white mb-2">No Projects Yet</h3>
+                                <p className="text-slate-400 mb-6 text-sm max-w-xs mx-auto leading-relaxed">
+                                    Create your first project to start tracking materials, budgets, and savings across all your sites.
+                                </p>
+                                <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
+                                    <button onClick={onNavigateToProjects} className="btn-primary flex items-center gap-2">
+                                        <Plus className="w-4 h-4" /> Create Project
+                                    </button>
+                                    <button onClick={onNavigateToCompare} className="btn-secondary flex items-center gap-2 text-sm">
+                                        <Search className="w-4 h-4" /> Or Compare Prices First
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -301,6 +348,10 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                         <PieChart className="w-5 h-5 text-purple-500" />
                         Spend Analysis
+                        <span className="tooltip-trigger ml-1">
+                            <Info className="w-4 h-4 text-slate-600 cursor-help" />
+                            <span className="tooltip-content">Budget breakdown across your active projects. Percentages update as you add materials.</span>
+                        </span>
                     </h2>
 
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
@@ -371,4 +422,12 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
             </div>
         </div>
     );
+}
+
+/** Returns a time-appropriate greeting */
+function getGreeting(): string {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
 }

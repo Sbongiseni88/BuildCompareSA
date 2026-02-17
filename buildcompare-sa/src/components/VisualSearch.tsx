@@ -37,7 +37,18 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
         setIsProcessing(true);
         setErrorMessage(null); // Clear previous errors
         setProgress(0);
-        setSteps(initialSteps);
+        
+        // Custom steps based on file type
+        const isDocument = file.type.includes('pdf') || file.type.includes('sheet') || file.type.includes('csv');
+        const customSteps = [
+            { id: 1, label: 'Uploading file securely...', status: 'pending' },
+            { id: 2, label: isDocument ? 'Analyzing BoQ Document...' : 'AI Visual Analysis...', status: 'pending' },
+            { id: 3, label: 'Extracting Materials & Quantities...', status: 'pending' },
+            { id: 4, label: 'Estimating Labour Costs...', status: 'pending' }, // New Step
+            { id: 5, label: 'Finding Best Suppliers...', status: 'pending' },
+        ];
+        
+        setSteps(customSteps as ProcessingStep[]);
 
         // Create format data for API
         const formData = new FormData();
@@ -56,7 +67,7 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                 i === 0 ? { ...s, status: 'completed' } :
                     i === 1 ? { ...s, status: 'active' } : s
             ));
-            setProgress(40);
+            setProgress(30);
 
             // Step 2: Analyzing (The Real API Call)
             const response = await fetch('/api/analyze', {
@@ -74,14 +85,23 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                 i === 1 ? { ...s, status: 'completed' } :
                     i === 2 ? { ...s, status: 'active' } : s
             ));
-            setProgress(70);
+            setProgress(50);
 
             // Step 3: Extracting Data
-            await new Promise(r => setTimeout(r, 600)); // Small UX pause
+            await new Promise(r => setTimeout(r, 600)); 
 
             setSteps(prev => prev.map((s, i) =>
                 i === 2 ? { ...s, status: 'completed' } :
                     i === 3 ? { ...s, status: 'active' } : s
+            ));
+            setProgress(70);
+            
+            // Step 4: Labour Costs
+            await new Promise(r => setTimeout(r, 800)); // Simulate labour calc
+
+            setSteps(prev => prev.map((s, i) =>
+                i === 3 ? { ...s, status: 'completed' } :
+                    i === 4 ? { ...s, status: 'active' } : s
             ));
             setProgress(90);
 
@@ -108,7 +128,10 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
         onDrop: handleDrop,
         accept: {
             'image/*': ['.jpeg', '.jpg', '.png', '.webp'],
-            'application/pdf': ['.pdf']
+            'application/pdf': ['.pdf'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+            'application/vnd.ms-excel': ['.xls'],
+            'text/csv': ['.csv']
         },
         maxFiles: 1
     });
@@ -139,18 +162,18 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                         </div>
 
                         <h3 className="text-2xl font-bold text-white">
-                            {isDragActive ? 'Drop it here!' : 'Drag & drop your files'}
+                            {isDragActive ? 'Drop your BoQ here!' : 'Upload BoQ or Material List'}
                         </h3>
                         <p className="text-slate-400 max-w-md">
-                            Upload photos of materials or handwritten Bill of Quantities
+                            Drag & drop your Bill of Quantities (PDF, Excel) or site photos to get an instant price comparison & labour estimate.
                         </p>
 
-                        <div className="flex items-center gap-4 text-xs text-slate-500 mt-4">
+                        <div className="flex items-center gap-4 text-xs text-slate-500 mt-4 flex-wrap justify-center">
+                            <span className="flex items-center gap-1"><FileText className="w-4 h-4" /> PDF / Excel</span>
+                            <span className="w-1 h-1 bg-slate-700 rounded-full" />
                             <span className="flex items-center gap-1"><ImageIcon className="w-4 h-4" /> Images</span>
                             <span className="w-1 h-1 bg-slate-700 rounded-full" />
-                            <span className="flex items-center gap-1"><FileText className="w-4 h-4" /> PDF</span>
-                            <span className="w-1 h-1 bg-slate-700 rounded-full" />
-                            <span className="flex items-center gap-1"><Upload className="w-4 h-4" /> Photos</span>
+                            <span className="flex items-center gap-1"><Upload className="w-4 h-4" /> CSV</span>
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-4 mt-6 w-full justify-center">
