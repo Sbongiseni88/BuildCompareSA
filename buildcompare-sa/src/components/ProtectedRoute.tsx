@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
     fallbackUrl?: string;
 }
 
-// Maximum time to show loading spinner before giving up
+// Bail out of loading after this many ms
 const LOADING_TIMEOUT_MS = 6000;
 
 /**
@@ -27,7 +27,7 @@ export function ProtectedRoute({ children, fallbackUrl = '/login' }: ProtectedRo
         }
     }, [user, loading, router, fallbackUrl]);
 
-    // Safety: if loading hangs, force past the loading screen
+    // Failsafe: don't let a stuck auth state block the whole app
     useEffect(() => {
         if (!loading) return; // Already resolved, no need for timeout
 
@@ -39,7 +39,7 @@ export function ProtectedRoute({ children, fallbackUrl = '/login' }: ProtectedRo
         return () => clearTimeout(timer);
     }, [loading]);
 
-    // Show loading state while checking auth (but not forever)
+    // Spinner while auth resolves (capped by timeout above)
     if (loading && !forceReady) {
         return (
             <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -51,7 +51,7 @@ export function ProtectedRoute({ children, fallbackUrl = '/login' }: ProtectedRo
         );
     }
 
-    // Don't render children if not authenticated
+    // Auth failed or not logged in — bail
     if (!user) {
         return null;
     }

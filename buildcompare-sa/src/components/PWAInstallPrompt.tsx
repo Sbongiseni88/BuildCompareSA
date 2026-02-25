@@ -26,13 +26,13 @@ export default function PWAInstallPrompt() {
                 });
         }
 
-        // Check if already installed
+        // Already running as an installed app — no need to show the banner
         if (window.matchMedia('(display-mode: standalone)').matches) {
             setIsInstalled(true);
             return;
         }
 
-        // Check if user dismissed banner before
+        // Respect if user dismissed this recently
         const dismissed = localStorage.getItem('pwa-banner-dismissed');
         if (dismissed) {
             const dismissedTime = parseInt(dismissed);
@@ -42,11 +42,11 @@ export default function PWAInstallPrompt() {
             }
         }
 
-        // Listen for the install prompt event
+        // Capture the browser's install prompt so we can trigger it later
         const handler = (e: Event) => {
             e.preventDefault();
             setDeferredPrompt(e as BeforeInstallPromptEvent);
-            // Show banner after a 3-second delay (don't interrupt initial load)
+            // Wait a bit before showing — don't interrupt the initial load
             setTimeout(() => setShowBanner(true), 3000);
         };
 

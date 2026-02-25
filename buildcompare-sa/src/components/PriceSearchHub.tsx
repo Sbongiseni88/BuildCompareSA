@@ -26,7 +26,8 @@ import {
     LayoutGrid,
     FileText,
     MessageCircle,
-    Share2
+    Share2,
+    ExternalLink
 } from 'lucide-react';
 import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
@@ -40,11 +41,11 @@ interface PriceSearchHubProps {
 
 export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
     const { showWarning, showSuccess, showInfo } = useToast();
+    const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
-    // Mode State
     const [searchMode, setSearchMode] = useState<'manual' | 'scan' | 'browse'>('manual');
 
-    // Search Logic State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedMaterials, setSelectedMaterials] = useState<Material[]>(initialMaterials);
     const [region, setRegion] = useState<Region | 'current-location'>(() => {
@@ -61,7 +62,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchSuggestions, setSearchSuggestions] = useState<Material[]>([]);
 
-    // Persist search preferences
+    // Save region and sort prefs so they survive tab switches
     React.useEffect(() => {
         try { sessionStorage.setItem('bc_search_region', region); } catch { }
     }, [region]);
@@ -101,7 +102,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         );
     };
 
-    // Initialize if props provided
+    // Kick off search immediately when materials are passed in from another tab
     useEffect(() => {
         if (initialMaterials.length > 0) {
             setSelectedMaterials(initialMaterials);
@@ -109,19 +110,36 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         }
     }, [initialMaterials]);
 
-    // Autocomplete
-    useEffect(() => {
+    // Debounced autocomplete — waits 200ms after typing stops
+    React.useEffect(() => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
         if (searchQuery.length > 1) {
-            const filtered = mockMaterials.filter(m =>
-                m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                (m.brand && m.brand.toLowerCase().includes(searchQuery.toLowerCase()))
-            );
-            setSearchSuggestions(filtered.slice(0, 6));
-            setShowSuggestions(true);
+            debounceRef.current = setTimeout(() => {
+                const q = searchQuery.toLowerCase();
+                // Match against known materials + category names
+                const materialMatches = mockMaterials.filter(m =>
+                    m.name.toLowerCase().includes(q) ||
+                    (m.brand && m.brand.toLowerCase().includes(q))
+                );
+                // Pull in subcategory names too for wider coverage
+                const catMatches: Material[] = [];
+                constructionCategories.forEach(cat => {
+                    cat.subcategories.forEach(sub => {
+                        if (sub.toLowerCase().includes(q) && !materialMatches.find(m => m.name.toLowerCase() === sub.toLowerCase())) {
+                            catMatches.push({ id: `cat-${sub}`, name: sub, category: cat.id as any, quantity: 1, unit: 'unit' });
+                        }
+                    });
+                });
+                setSearchSuggestions([...materialMatches, ...catMatches].slice(0, 6));
+                setShowSuggestions(true);
+                setHighlightedIndex(-1);
+            }, 200);
         } else {
             setSearchSuggestions([]);
             setShowSuggestions(false);
+            setHighlightedIndex(-1);
         }
+        return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     }, [searchQuery]);
 
     const performSearch = async (materials: Material[]) => {
@@ -131,10 +149,10 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         try {
             const results: ComparisonResult[] = [];
 
-            // Perform individual searches for each material
+            // Hit the API for each material separately
             for (const material of materials) {
                 try {
-                    // Build query with location params
+                    // Build URL with region/GPS filters
                     let url = `/api/v1/prices?query=${encodeURIComponent(material.name)}`;
 
                     if (region === 'current-location' && userCoords) {
@@ -152,31 +170,30 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
                     const priceItems: any[] = await response.json();
 
-                    // Transform Backend PriceItem to Frontend PriceQuote
+                    // Map the backend response shape into our PriceQuote type
                     const quotes: PriceQuote[] = priceItems.map((item, index) => ({
                         supplierId: `sup-${index}`,
                         supplierName: item.supplier,
-                        supplierLogo: '', // Placeholder
+                        supplierLogo: '',
                         price: item.price,
                         inStock: item.in_stock,
                         stockQuantity: item.stock_quantity,
-                        deliveryFee: 150, // Default estimate
+                        deliveryFee: 150,
                         deliveryDays: item.in_stock ? 1 : 3,
-                        // If GPS active, simulate closer distances
+                        // GPS users get tighter distance estimates
                         distance: Number(region === 'current-location'
                             ? (Math.random() * 5 + 1).toFixed(1)
                             : (Math.random() * 25 + 5).toFixed(1)),
+                        productUrl: item.url || undefined,
                         lastUpdated: new Date()
                     } as PriceQuote));
 
                     if (quotes.length > 0) {
-                        // Find best price
+                        // Cheapest option wins
                         const best = quotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
 
-                        // Calculate average
                         const avg = quotes.reduce((acc, curr) => acc + curr.price, 0) / quotes.length;
 
-                        // Savings vs Average (or vs highest)
                         const savings = avg - best.price;
 
                         results.push({
@@ -193,7 +210,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                 }
             }
 
-            // If API fails completely or returns nothing, fallback to mock data (so demo doesn't break)
+            // If the API returned nothing, use mock data so the demo still works
             if (results.length === 0) {
                 console.log("Using fallback mock data for demo...");
                 await new Promise(resolve => setTimeout(resolve, 800)); // Simulate delay
@@ -211,14 +228,14 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     };
 
     const handleSearch = () => {
-        // If we have text but no selected material, try to add it as generic
+        // Typed something but didn't pick from dropdown — just search the raw text
         if (searchQuery && selectedMaterials.length === 0) {
-            // For demo, if text matches a mock item, use it, else generic
+            // Try matching a known mock item first, otherwise treat it as freeform
             const distinctItem = mockMaterials.find(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
             if (distinctItem) {
                 performSearch([distinctItem]);
             } else {
-                // Fallback generic search
+                // Freeform search
                 performSearch([{
                     id: `gen-${Date.now()}`,
                     name: searchQuery,
@@ -247,12 +264,12 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     const handleCategoryClick = (term: string) => {
         setSearchMode('manual');
         setSearchQuery(term);
-        // Trigger generic search for this term or a representative item
+        // Try to find a matching material, otherwise search the raw term
         const match = mockMaterials.find(m => m.name.toLowerCase().includes(term.toLowerCase()));
         if (match) {
             performSearch([match]);
         } else {
-            // Fallback generic search
+            // No match — freeform search
             performSearch([{
                 id: `gen-${Date.now()}`,
                 name: term,
@@ -263,7 +280,12 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         }
     };
 
-    const handleOrderNow = (supplierName: string, productName: string) => {
+    const handleOrderNow = (supplierName: string, productName: string, manualUrl?: string) => {
+        if (manualUrl) {
+            window.open(manualUrl, '_blank');
+            return;
+        }
+
         let url = '';
         if (supplierName.toLowerCase().includes('builders')) {
             url = `https://www.builders.co.za/search/?text=${encodeURIComponent(productName)}`;
@@ -304,7 +326,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         a.click();
     };
 
-    // WhatsApp Share — formats best deals into a shareable message
+    // Build a WhatsApp-friendly message with the best deals and send via wa.me
     const handleShareWhatsApp = () => {
         const lines = comparisonResults
             .filter(r => r.bestPrice)
@@ -317,7 +339,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         window.open(url, '_blank');
     };
 
-    // Generic share via Web Share API or clipboard fallback
+    // Uses Web Share API on mobile, falls back to clipboard on desktop
     const handleShareGeneral = async () => {
         const lines = comparisonResults
             .filter(r => r.bestPrice)
@@ -330,7 +352,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             try {
                 await navigator.share({ title: 'BuildCompare SA Quote', text });
             } catch (e) {
-                // User cancelled or not supported
+                // User cancelled the share dialog — nothing to handle
             }
         } else {
             await navigator.clipboard.writeText(text);
@@ -402,26 +424,63 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                         placeholder="Material (e.g. 50kg Cement)"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                        onKeyDown={(e) => {
+                                            if (showSuggestions && searchSuggestions.length > 0) {
+                                                if (e.key === 'ArrowDown') {
+                                                    e.preventDefault();
+                                                    setHighlightedIndex(prev => Math.min(prev + 1, searchSuggestions.length - 1));
+                                                } else if (e.key === 'ArrowUp') {
+                                                    e.preventDefault();
+                                                    setHighlightedIndex(prev => Math.max(prev - 1, -1));
+                                                } else if (e.key === 'Enter' && highlightedIndex >= 0) {
+                                                    e.preventDefault();
+                                                    handleAddMaterial(searchSuggestions[highlightedIndex]);
+                                                    setShowSuggestions(false);
+                                                } else if (e.key === 'Escape') {
+                                                    setShowSuggestions(false);
+                                                } else if (e.key === 'Enter') {
+                                                    handleSearch();
+                                                }
+                                            } else if (e.key === 'Enter') {
+                                                handleSearch();
+                                            }
+                                        }}
+                                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                                         className="w-full bg-transparent border-none outline-none text-white placeholder-slate-500 h-10 px-3 text-lg font-medium"
                                     />
 
-                                    {/* Suggestions Dropdown */}
+                                    {/* Smart Suggestions Dropdown */}
                                     {showSuggestions && searchSuggestions.length > 0 && (
                                         <div className="absolute top-full left-0 right-0 mt-4 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-30">
-                                            {searchSuggestions.map((item) => (
-                                                <div
-                                                    key={item.id}
-                                                    onClick={() => handleAddMaterial(item)}
-                                                    className="px-4 py-3 hover:bg-slate-800 cursor-pointer flex items-center gap-3 border-b border-slate-800/50 last:border-0"
-                                                >
-                                                    <Search className="w-4 h-4 text-slate-600" />
-                                                    <div>
-                                                        <p className="font-medium text-white">{item.name}</p>
-                                                        {item.brand && <p className="text-xs text-yellow-500">{item.brand}</p>}
+                                            {searchSuggestions.map((item, idx) => {
+                                                // Bold the part of the name that matches the user's query
+                                                const q = searchQuery.toLowerCase();
+                                                const nameIdx = item.name.toLowerCase().indexOf(q);
+                                                const nameDisplay = nameIdx >= 0 ? (
+                                                    <>{item.name.slice(0, nameIdx)}<span className="text-yellow-400 font-bold">{item.name.slice(nameIdx, nameIdx + q.length)}</span>{item.name.slice(nameIdx + q.length)}</>
+                                                ) : item.name;
+
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        onClick={() => handleAddMaterial(item)}
+                                                        onMouseEnter={() => setHighlightedIndex(idx)}
+                                                        className={`px-4 py-3 cursor-pointer flex items-center gap-3 border-b border-slate-800/50 last:border-0 transition-colors ${idx === highlightedIndex ? 'bg-slate-800 border-l-2 border-l-yellow-400' : 'hover:bg-slate-800/50'}`}
+                                                    >
+                                                        <Search className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                                                        <div className="min-w-0">
+                                                            <p className="font-medium text-white truncate">{nameDisplay}</p>
+                                                            {item.brand && <p className="text-xs text-yellow-500">{item.brand}</p>}
+                                                            {!item.brand && item.category !== 'other' && <p className="text-xs text-slate-500 capitalize">{item.category}</p>}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
+                                            <div className="px-4 py-2 text-xs text-slate-600 bg-slate-900/80 flex items-center gap-2">
+                                                <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-[10px]">↑↓</kbd> navigate
+                                                <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-[10px]">↵</kbd> select
+                                                <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-[10px]">esc</kbd> close
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -580,10 +639,10 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                             <p className="text-[10px] text-slate-500">per unit</p>
                                                         </div>
                                                         <button
-                                                            onClick={() => handleOrderNow(result.bestPrice!.supplierName, result.material.name)}
+                                                            onClick={() => handleOrderNow(result.bestPrice!.supplierName, result.material.name, result.bestPrice!.productUrl)}
                                                             className="px-3 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-black text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
                                                         >
-                                                            ORDER <ArrowRight className="w-3 h-3" />
+                                                            ORDER <ExternalLink className="w-3 h-3" />
                                                         </button>
                                                     </div>
                                                 </div>
@@ -614,8 +673,18 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                                <div className="text-right">
+                                                                <div className="flex flex-col items-end gap-1">
                                                                     <p className="text-sm font-bold text-slate-200">{formatCurrency(quote.price)}</p>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleOrderNow(quote.supplierName, result.material.name, quote.productUrl);
+                                                                        }}
+                                                                        className="px-2 py-1 bg-slate-800 hover:bg-yellow-400 hover:text-slate-900 text-[10px] font-bold rounded-md transition-all flex items-center gap-1 active:scale-95"
+                                                                    >
+                                                                        ORDER
+                                                                        <ExternalLink className="w-2.5 h-2.5" />
+                                                                    </button>
                                                                 </div>
                                                             </div>
                                                         </div>

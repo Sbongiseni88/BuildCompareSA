@@ -74,6 +74,11 @@ export default function ProjectsManager({
     const [newMaterialCategory, setNewMaterialCategory] = useState('other');
     const [isAddingMaterial, setIsAddingMaterial] = useState(false);
 
+    // Swipe-to-dismiss state for modals
+    const [swipeOffset, setSwipeOffset] = useState(0);
+    const swipeStartY = React.useRef(0);
+    const isSwiping = React.useRef(false);
+
     // Persist search/filter
     React.useEffect(() => {
         try { sessionStorage.setItem('bc_projects_search', searchQuery); } catch { }
@@ -163,67 +168,77 @@ export default function ProjectsManager({
     };
 
     const handleCreateProject = async () => {
-        console.log("Attempting to create project...");
-        console.log("User:", user?.id);
-        console.log("Inputs:", { newProjectName, newProjectLocation, newProjectBudget });
-
-        if (!newProjectName || !newProjectLocation || !newProjectBudget) {
-            console.warn("Validation failed: Missing fields");
-            return;
-        }
-
+        if (!newProjectName || !newProjectLocation || !newProjectBudget) return;
         if (!user) {
-            console.error("Validation failed: No user logged in");
             showWarning("You must be logged in to create a project.");
             return;
         }
 
-        setIsCreating(true);
+        // Optimistic: add placeholder immediately
+        const tempId = `_pending_${Date.now()}`;
+        const placeholderProject: Project & { _pending?: boolean } = {
+            id: tempId,
+            name: newProjectName,
+            location: newProjectLocation,
+            createdAt: new Date(),
+            totalBudget: parseFloat(newProjectBudget),
+            spent: 0,
+            status: 'active',
+            materials: [],
+            _pending: true,
+        };
+
+        // Save form values for rollback
+        const savedName = newProjectName;
+        const savedLocation = newProjectLocation;
+        const savedBudget = newProjectBudget;
+
+        setProjects(prev => [placeholderProject, ...prev]);
+        setShowCreateModal(false);
+        setNewProjectName('');
+        setNewProjectLocation('');
+        setNewProjectBudget('');
+
         try {
-            const newProjectPayload = {
-                user_id: user.id,
-                name: newProjectName,
-                location: newProjectLocation,
-                total_budget: parseFloat(newProjectBudget),
-                status: 'active',
-                spent: 0
-            };
-
-            console.log("Sending payload to Supabase:", newProjectPayload);
-
             const { data, error } = await supabase
                 .from('projects')
-                .insert([newProjectPayload])
+                .insert([{
+                    user_id: user.id,
+                    name: savedName,
+                    location: savedLocation,
+                    total_budget: parseFloat(savedBudget),
+                    status: 'active',
+                    spent: 0
+                }])
                 .select()
                 .single();
 
-            if (error) {
-                console.error("Supabase Insert Error:", error);
-                throw error;
-            }
+            if (error) throw error;
 
             if (data) {
-                const newProject: Project = {
-                    id: data.id,
-                    name: data.name,
-                    location: data.location,
-                    createdAt: new Date(data.created_at),
-                    totalBudget: Number(data.total_budget),
-                    spent: Number(data.spent),
-                    status: data.status,
-                    materials: []
-                };
-                setProjects([newProject, ...projects]);
-                setShowCreateModal(false);
-                setNewProjectName('');
-                setNewProjectLocation('');
-                setNewProjectBudget('');
+                // Replace placeholder with real data
+                setProjects(prev => prev.map(p =>
+                    p.id === tempId ? {
+                        id: data.id,
+                        name: data.name,
+                        location: data.location,
+                        createdAt: new Date(data.created_at),
+                        totalBudget: Number(data.total_budget),
+                        spent: Number(data.spent),
+                        status: data.status,
+                        materials: []
+                    } : p
+                ));
+                showSuccess('Project created!');
             }
         } catch (error: any) {
-            console.error('Error creating project:', error);
+            // Rollback: remove placeholder, re-open modal with saved values
+            setProjects(prev => prev.filter(p => p.id !== tempId));
+            setNewProjectName(savedName);
+            setNewProjectLocation(savedLocation);
+            setNewProjectBudget(savedBudget);
+            setShowCreateModal(true);
             showError(`Failed to create project: ${error.message || 'Unknown error'}`);
-        } finally {
-            setIsCreating(false);
         }
     };
 
@@ -392,7 +407,7 @@ export default function ProjectsManager({
                         return (
                             <div
                                 key={project.id}
-                                className={`glass-card p-5 group hover:border-yellow-500/30 transition-all cursor-pointer relative ${isOverBudget ? 'animate-shake border-red-500/50 shadow-red-900/20' : ''
+                                className={`glass-card p-5 group hover:border-yellow-500/30 transition-all cursor-pointer relative ${isOverBudget ? 'animate-shake border-red-500/50 shadow-red-900/20' : ''} ${(project as any)._pending ? 'animate-pulse border-yellow-500/30' : ''
                                     }`}
                                 style={{ animationDelay: `${index * 50}ms` }}
                                 onClick={() => setSelectedProject(project)}
@@ -457,8 +472,8 @@ export default function ProjectsManager({
                                         <h3 className="font-semibold text-white group-hover:text-yellow-400 transition-colors">
                                             {project.name}
                                         </h3>
-                                        <span className={`badge ${getStatusColor(project.status)} mt-2`}>
-                                            {project.status}
+                                        <span className={`badge ${(project as any)._pending ? 'badge-warning' : getStatusColor(project.status)} mt-2`}>
+                                            {(project as any)._pending ? 'Saving...' : project.status}
                                         </span>
                                     </div>
                                 </div>
@@ -636,10 +651,35 @@ export default function ProjectsManager({
                 </div>
             )}
 
-            {/* Project Detail Modal */}
+            {/* Project Detail — full-screen on mobile, centered modal on desktop */}
             {selectedProject && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-                    <div className="glass-card w-full max-w-2xl p-6 animate-slide-up max-h-[80vh] overflow-y-auto">
+                <div className="fixed inset-0 z-50 md:flex md:items-center md:justify-center md:p-4 bg-black/60 md:backdrop-blur-sm animate-fade-in">
+                    <div
+                        className="bg-slate-900 md:glass-card w-full h-full md:h-auto md:max-w-2xl p-6 animate-slide-up md:max-h-[80vh] overflow-y-auto md:rounded-2xl transition-transform"
+                        style={{ transform: swipeOffset > 0 ? `translateY(${swipeOffset}px)` : undefined, opacity: swipeOffset > 0 ? Math.max(0.4, 1 - swipeOffset / 300) : 1 }}
+                        onTouchStart={(e) => {
+                            swipeStartY.current = e.touches[0].clientY;
+                            isSwiping.current = true;
+                        }}
+                        onTouchMove={(e) => {
+                            if (!isSwiping.current) return;
+                            const target = e.currentTarget;
+                            if (target.scrollTop > 0) { setSwipeOffset(0); return; }
+                            const diff = e.touches[0].clientY - swipeStartY.current;
+                            if (diff > 0) setSwipeOffset(diff * 0.6);
+                        }}
+                        onTouchEnd={() => {
+                            isSwiping.current = false;
+                            if (swipeOffset > 120) {
+                                setSelectedProject(null);
+                            }
+                            setSwipeOffset(0);
+                        }}
+                    >
+                        {/* Swipe indicator (mobile only) */}
+                        <div className="md:hidden flex justify-center mb-4">
+                            <div className="w-10 h-1 rounded-full bg-slate-600" />
+                        </div>
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-xl flex items-center justify-center">

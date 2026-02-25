@@ -36,16 +36,15 @@ export default function AccountProfile() {
     const [isLoading, setIsLoading] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
 
-    // Form State
     const [fullName, setFullName] = useState('');
     const [role, setRole] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        // Wait for auth to load before doing anything
+        // Skip until auth finishes loading
         if (authLoading) return;
 
-        // If user is available, fetch profile
+        // Once we have a user, pull their profile data
         if (user) {
             fetchProfile();
         }

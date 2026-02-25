@@ -19,7 +19,6 @@ import { useToast } from '@/contexts/ToastContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Interfaces for the Form
 interface SpecForm {
     foundation: string;
     structure: string;
@@ -40,7 +39,7 @@ export default function SmartEstimator() {
     const [step, setStep] = useState(1);
     const [includeLabor, setIncludeLabor] = useState(false);
 
-    // AI Logic (Connected to Groq Backend)
+    // Send specs to the Groq backend and parse the response
     const generateBoQ = async () => {
         setIsGenerating(true);
 
@@ -59,7 +58,7 @@ export default function SmartEstimator() {
 
             const data = await response.json();
 
-            // Map the parsed JSON to our Material type with IDs
+            // Assign stable IDs for React keys
             if (data.materials && Array.isArray(data.materials)) {
                 const materials: Material[] = data.materials.map((m: any, index: number) => ({
                     id: `est-${Date.now()}-${index}`,
@@ -70,7 +69,7 @@ export default function SmartEstimator() {
                     brand: m.brand
                 }));
 
-                // Add Labor if requested (Local logic mixed with AI data)
+                // Tack on labor line items if the checkbox was ticked
                 if (includeLabor) {
                     materials.push({ id: `lab-${Date.now()}-1`, name: 'General Labor', category: 'labor', quantity: Math.ceil(materials.length / 5) * 2, unit: 'days' });
                     materials.push({ id: `lab-${Date.now()}-2`, name: 'Artisan (Bricklayer/Plasterer)', category: 'labor', quantity: Math.ceil(materials.length / 5) * 3, unit: 'days' });
@@ -79,14 +78,13 @@ export default function SmartEstimator() {
                 setGeneratedBoQ(materials);
                 setStep(2);
             } else {
-                console.warn("AI returned unexpected format, falling back to basic logic");
-                // Fallback logic could go here
+                // Fallback logic could go here if needed
                 setGeneratedBoQ([]);
             }
 
         } catch (error) {
             console.error("Estimation failed:", error);
-            // Fallback for demo if backend is offline
+            // Let the user know if the backend can't be reached
             showError("AI Service is offline. Check backend connection.");
         } finally {
             setIsGenerating(false);

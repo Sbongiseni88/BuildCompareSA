@@ -23,6 +23,8 @@ import { StatsSkeleton, ProjectCardSkeleton, WelcomeSkeleton, SpendAnalysisSkele
 import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { Project } from '@/types';
+import usePullToRefresh from '@/hooks/usePullToRefresh';
+import PullToRefreshIndicator from '@/components/PullToRefreshIndicator';
 
 interface DashboardProps {
     onNavigateToProjects: () => void;
@@ -36,53 +38,54 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     const [projects, setProjects] = React.useState<Project[]>([]);
     const [dataLoading, setDataLoading] = React.useState(false);
 
-    React.useEffect(() => {
-        // If auth is global loading, do nothing yet
-        if (authLoading) return;
-
-        // If no user, we can't fetch. Just stop.
+    const fetchDashboardData = React.useCallback(async () => {
         if (!user) return;
+        setDataLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('projects')
+                .select('*, project_materials(*)')
+                .order('created_at', { ascending: false })
+                .limit(5);
 
-        const fetchDashboardData = async () => {
-            setDataLoading(true);
-            try {
-                const { data, error } = await supabase
-                    .from('projects')
-                    .select('*, project_materials(*)')
-                    .order('created_at', { ascending: false })
-                    .limit(5);
+            if (error) throw error;
 
-                if (error) throw error;
-
-                if (data) {
-                    const mappedProjects: Project[] = data.map((p: any) => ({
-                        id: p.id,
-                        name: p.name,
-                        location: p.location || '',
-                        createdAt: new Date(p.created_at),
-                        totalBudget: Number(p.total_budget),
-                        spent: Number(p.spent),
-                        status: p.status,
-                        materials: (p.project_materials || []).map((m: any) => ({
-                            id: m.id,
-                            name: m.name,
-                            quantity: Number(m.quantity),
-                            unit: m.unit,
-                            category: m.category
-                        }))
-                    }));
-                    setProjects(mappedProjects);
-                }
-            } catch (e) {
-                console.error("Dashboard fetch error:", e);
-                // Optionally show toast error
-            } finally {
-                setDataLoading(false);
+            if (data) {
+                const mappedProjects: Project[] = data.map((p: any) => ({
+                    id: p.id,
+                    name: p.name,
+                    location: p.location || '',
+                    createdAt: new Date(p.created_at),
+                    totalBudget: Number(p.total_budget),
+                    spent: Number(p.spent),
+                    status: p.status,
+                    materials: (p.project_materials || []).map((m: any) => ({
+                        id: m.id,
+                        name: m.name,
+                        quantity: Number(m.quantity),
+                        unit: m.unit,
+                        category: m.category
+                    }))
+                }));
+                setProjects(mappedProjects);
             }
-        };
+        } catch (e) {
+            console.error("Dashboard fetch error:", e);
+        } finally {
+            setDataLoading(false);
+        }
+    }, [user, supabase]);
 
+    React.useEffect(() => {
+        if (authLoading) return;
+        if (!user) return;
         fetchDashboardData();
-    }, [user, authLoading, supabase]);
+    }, [user, authLoading, fetchDashboardData]);
+
+    // Pull-to-refresh (mobile)
+    const { containerRef, isRefreshing, pullDistance, progress } = usePullToRefresh({
+        onRefresh: fetchDashboardData,
+    });
 
     // Derived Stats
     const activeCount = projects.filter(p => p.status === 'active').length;
@@ -175,7 +178,9 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     }
 
     return (
-        <div className="space-y-8 animate-fade-in pb-20">
+        <div ref={containerRef} className="space-y-8 animate-fade-in pb-20 overflow-auto">
+            {/* Pull-to-refresh indicator */}
+            <PullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshing} progress={progress} />
             {/* 1. Market Ticker - Full Width */}
             <div className="-mx-4 md:-mx-8 -mt-4 md:-mt-8 mb-8">
                 <MarketTicker />

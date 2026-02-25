@@ -1,7 +1,7 @@
 # UX Upgrade Plan — BuildCompare SA
 
 > **Created**: 25 Feb 2026  
-> **Status**: 🟡 In Progress  
+> **Status**: ✅ Complete  
 > **Goal**: Transform the app from functional to **premium-feeling** across phone and desktop.  
 > **Reference**: See `frontend_dev.md` for existing component docs.
 
@@ -17,14 +17,14 @@
 | 4  | Password visibility toggle        | 🔴 P0    | ~10m   | ✅ DONE |
 | 5  | Page transition animations        | 🟡 P1    | ~20m   | ✅ DONE |
 | 6  | Inline form validation            | 🟡 P1    | ~30m   | ✅ DONE |
-| 7  | Optimistic UI for project creation| 🟡 P1    | ~25m   | ⬜ TODO |
+| 7  | Optimistic UI for project creation| 🟡 P1    | ~25m   | ✅ DONE |
 | 8  | Search/filter persistence         | 🟡 P1    | ~10m   | ✅ DONE |
 | 9  | Sidebar collapse memory           | 🟡 P1    | ~5m    | ✅ DONE |
-| 10 | Smart search autocomplete         | 🟢 P2    | ~30m   | ⬜ TODO |
-| 11 | Swipe-to-dismiss modals (mobile)  | 🟢 P2    | ~25m   | ⬜ TODO |
-| 12 | Notification center               | 🟢 P2    | ~45m   | ⬜ TODO |
-| 13 | Full-screen project detail view   | 🟢 P2    | ~40m   | ⬜ TODO |
-| 14 | Pull-to-refresh (mobile)          | 🟢 P2    | ~20m   | ⬜ TODO |
+| 10 | Smart search autocomplete         | 🟢 P2    | ~30m   | ✅ DONE |
+| 11 | Swipe-to-dismiss modals (mobile)  | 🟢 P2    | ~25m   | ✅ DONE |
+| 12 | Notification center               | 🟢 P2    | ~45m   | ✅ DONE |
+| 13 | Full-screen project detail view   | 🟢 P2    | ~40m   | ✅ DONE |
+| 14 | Pull-to-refresh (mobile)          | 🟢 P2    | ~20m   | ✅ DONE |
 | 15 | Button tap feedback (micro-anim)  | 🟢 P2    | ~10m   | ✅ DONE |
 
 **Legend**: ⬜ TODO · 🔨 IN PROGRESS · ✅ DONE · ⏭️ SKIPPED
@@ -475,4 +475,4 @@ Phase 3 (P2) — Advanced
 
 ---
 
-*Last updated: 25 Feb 2026*
+*Last updated: 25 Feb 2026 — All 15 tasks complete*

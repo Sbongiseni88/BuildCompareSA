@@ -37,11 +37,11 @@ export function useAuth(): UseAuthReturn {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Use a ref for the supabase client to prevent re-render dependency issues
+    // Stable ref so hot re-renders don't recreate the client
     const supabaseRef = useRef(createClient());
     const supabase = supabaseRef.current;
 
-    // Fetch user profile from Database
+    // Pull the user's profile row from the DB
     const fetchUserProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
         try {
             const { data, error } = await supabase
@@ -76,7 +76,7 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Safety timeout — always runs independently to guarantee loading resolves
+    // Hard timeout — if auth hasn't resolved after a few seconds, just continue
     useEffect(() => {
         const timeoutId = setTimeout(() => {
             setLoading(prevLoading => {
@@ -91,7 +91,7 @@ export function useAuth(): UseAuthReturn {
         return () => clearTimeout(timeoutId);
     }, []);
 
-    // Initial session check + auth state listener
+    // Get the initial session + subscribe to future auth changes
     useEffect(() => {
         let cancelled = false;
 
@@ -153,7 +153,7 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Sign in with email and password
+    // Email + password login
     const signIn = useCallback(async (email: string, password: string) => {
         setLoading(true);
         setError(null);
@@ -173,7 +173,7 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Sign up
+    // Create a new account
     const signUp = useCallback(async (
         email: string,
         password: string,
@@ -221,7 +221,7 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Sign in with Google
+    // OAuth — Google login
     const signInWithGoogle = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -243,7 +243,7 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Sign out
+    // Log the user out and wipe local state
     const signOut = useCallback(async () => {
         setLoading(true);
         setError(null);

@@ -15,6 +15,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import OnboardingTour from '@/components/OnboardingTour';
 import BottomNav from '@/components/BottomNav';
+import NotificationCenter from '@/components/NotificationCenter';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -252,6 +253,9 @@ export default function Home() {
                 <Keyboard className="w-3.5 h-3.5" />
                 <kbd className="px-1.5 py-0.5 bg-slate-800 rounded text-[10px] border border-slate-700">Ctrl+K</kbd>
               </button>
+
+              {/* Notification Center */}
+              <NotificationCenter />
 
               <button
                 onClick={() => setIsConciergeOpen(true)}

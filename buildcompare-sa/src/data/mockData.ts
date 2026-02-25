@@ -382,9 +382,22 @@ export function generateMockQuotes(material: Material, region: string = 'gauteng
             deliveryFee: profile.deliveryFee,
             deliveryDays: index + 1,
             distance: distance,
+            productUrl: getMockProductUrl(supplier.name, material.name),
             lastUpdated: new Date(),
         };
     });
+}
+
+function getMockProductUrl(supplierName: string, productName: string): string {
+    const q = encodeURIComponent(productName);
+    if (supplierName.toLowerCase().includes('builders')) {
+        return `https://www.builders.co.za/search/?text=${q}`;
+    } else if (supplierName.toLowerCase().includes('leroy')) {
+        return `https://leroymerlin.co.za/catalogsearch/result/?q=${q}`;
+    } else if (supplierName.toLowerCase().includes('cashbuild')) {
+        return `https://www.cashbuild.co.za/search?q=${q}`;
+    }
+    return `https://www.google.com/search?q=${q}+price+at+${encodeURIComponent(supplierName)}`;
 }
 
 // Generate comparison results

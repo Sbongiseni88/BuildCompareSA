@@ -65,6 +65,7 @@ export interface PriceQuote {
     deliveryFee: number;
     deliveryDays: number;
     distance: number;
+    productUrl?: string;
     lastUpdated: Date;
 }
 

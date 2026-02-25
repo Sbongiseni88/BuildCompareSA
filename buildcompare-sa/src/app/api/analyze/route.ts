@@ -5,33 +5,32 @@ import { Material } from '@/types';
 import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 
-// Initialize Groq
-// NOTE: user needs to add GROQ_API_KEY to .env.local
+// Groq client — needs GROQ_API_KEY in .env.local
 const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY || ''
 });
 
-// Llama 4 multimodal models (replacements for decommissioned Llama 3.2 vision models)
+// Llama 4 multimodal models (used after Llama 3.2 vision got retired)
 const VISION_MODELS = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-4-maverick-17b-128e-instruct"
 ];
 
-// Text-only models for parsed document analysis
+// Text-only models for spreadsheet/CSV analysis
 const TEXT_MODELS = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-4-maverick-17b-128e-instruct"
 ];
 
-// Helper: detect if the file is a spreadsheet/CSV document
+// Is this file a spreadsheet or CSV?
 function isDocumentFile(mimeType: string, fileName: string, buffer?: ArrayBuffer): boolean {
     const lowerName = fileName.toLowerCase();
 
-    // 1. Extension check (most reliable — browsers sometimes lie about MIME)
+    // Check extension first — browsers sometimes lie about MIME types
     const docExtensions = ['.xlsx', '.xls', '.csv'];
     if (docExtensions.some(ext => lowerName.endsWith(ext))) return true;
 
-    // 2. MIME type check
+    // Also check MIME type
     const docMimes = [
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'application/vnd.ms-excel',
@@ -40,7 +39,7 @@ function isDocumentFile(mimeType: string, fileName: string, buffer?: ArrayBuffer
     ];
     if (docMimes.includes(mimeType)) return true;
 
-    // 3. Magic bytes check: XLSX files are ZIP archives (starts with PK\x03\x04)
+    // Last resort: check for ZIP magic bytes (xlsx files are zipped)
     if (buffer && buffer.byteLength >= 4) {
         const header = new Uint8Array(buffer.slice(0, 4));
         if (header[0] === 0x50 && header[1] === 0x4B && header[2] === 0x03 && header[3] === 0x04) {
@@ -51,12 +50,12 @@ function isDocumentFile(mimeType: string, fileName: string, buffer?: ArrayBuffer
     return false;
 }
 
-// Helper: detect if the file is a PDF
+// Is this file a PDF?
 function isPdfFile(mimeType: string, fileName: string): boolean {
     return mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
 }
 
-// Helper: parse Excel/CSV file to text using SheetJS
+// Turn an Excel/CSV file into plain text for the LLM
 function parseSpreadsheetToText(buffer: ArrayBuffer, fileName: string): string {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const allText: string[] = [];
@@ -67,14 +66,14 @@ function parseSpreadsheetToText(buffer: ArrayBuffer, fileName: string): string {
 
         allText.push(`--- Sheet: ${sheetName} ---`);
 
-        // Convert to CSV text (preserves structure well for LLM)
+        // CSV preserves table structure well enough for the model to understand
         const csvText = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
         allText.push(csvText);
     }
 
     const result = allText.join('\n');
 
-    // Truncate if too large (context window limit)
+    // Don't blow the context window
     const MAX_CHARS = 12000;
     if (result.length > MAX_CHARS) {
         return result.substring(0, MAX_CHARS) + '\n\n[...TRUNCATED - document too large, showing first portion...]';
@@ -83,7 +82,7 @@ function parseSpreadsheetToText(buffer: ArrayBuffer, fileName: string): string {
     return result;
 }
 
-// Helper: run AI analysis with model fallback
+// Try each model in order — if one fails, move to the next
 async function runGroqCompletion(
     messages: any[],
     models: string[]
@@ -115,7 +114,7 @@ async function runGroqCompletion(
     throw lastError || new Error("All Groq models failed");
 }
 
-// Shared prompt structure for BoQ extraction
+// Expected shape for the JSON the model should return
 const BOQ_JSON_STRUCTURE = `
 Return a VALID JSON array with this structure:
 [
@@ -132,7 +131,7 @@ Return a VALID JSON array with this structure:
 IMPORTANT: Return ONLY the JSON. No Markdown. No text before or after.`;
 
 export async function POST(req: NextRequest) {
-    // Rate limiting check
+    // Rate limit check
     const clientIP = getClientIP(req);
     const rateLimitResult = checkRateLimit(clientIP, 'scraping');
 
@@ -169,7 +168,7 @@ export async function POST(req: NextRequest) {
         const mimeType = file.type || 'application/octet-stream';
         const safeName = fileName || file.name || 'unknown';
 
-        // Debug logging to identify file type issues
+        // Log for debugging file type detection issues
         console.log(`📋 File received: name="${safeName}", mime="${mimeType}", size=${arrayBuffer.byteLength} bytes`);
 
         try {
@@ -262,21 +261,21 @@ ${BOQ_JSON_STRUCTURE}`;
 
             console.log("Groq Raw Response:", rawContent);
 
-            // Clean up response if it contains markdown code blocks
+            // Strip markdown fences if the model wrapped its output
             const cleanJson = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
 
             let materials: Material[] = [];
 
-            // Parse and Validate
+            // Normalize response shape — could be array, {materials:[]}, or {items:[]}
             let parsed = JSON.parse(cleanJson);
 
-            // Handle if it returns object { materials: [...] } or just array [...]
+            // Handle different possible response shapes from the model
             if (!Array.isArray(parsed) && parsed.materials) {
                 parsed = parsed.materials;
             } else if (!Array.isArray(parsed) && parsed.items) {
                 parsed = parsed.items;
             } else if (!Array.isArray(parsed) && typeof parsed === 'object') {
-                // Single object, wrap in array
+                // Single item — wrap it
                 parsed = [parsed];
             }
 
@@ -302,7 +301,7 @@ ${BOQ_JSON_STRUCTURE}`;
         } catch (aiError: any) {
             console.error('⚠️ Groq API Error:', aiError);
 
-            // Return 500 to frontend
+            // Send the error back to the frontend
             return NextResponse.json(
                 { error: `AI Analysis Failed: ${aiError.message || 'Unknown error'}` },
                 { status: 500 }

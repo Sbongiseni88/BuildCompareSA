@@ -4,9 +4,8 @@ import Groq from "groq-sdk";
 export const runtime = 'nodejs';
 
 /**
- * AI Chat Route
- * - Primary: Python RAG Backend (127.0.0.1:8000)
- * - Fallback: Direct Groq SDK (for Vercel/Production)
+ * AI Chat endpoint
+ * Tries the Python RAG backend first, falls back to direct Groq calls.
  */
 export async function POST(req: Request) {
     try {
@@ -20,9 +19,9 @@ export async function POST(req: Request) {
         const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
         const groqApiKey = process.env.GROQ_API_KEY;
 
-        // --- PHASE 1: Try Python RAG Backend ---
+        // Try the Python RAG backend first
         try {
-            // Short timeout for backend check to avoid long hangs on Vercel
+            // Quick timeout so we don't hang forever if the backend is down
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -47,7 +46,7 @@ export async function POST(req: Request) {
             console.warn("Python backend unreachable, attempting Groq fallback...", backendError);
         }
 
-        // --- PHASE 2: Fallback to Direct Groq (Production/Vercel) ---
+        // Backend unavailable — go straight to Groq
         if (groqApiKey) {
             try {
                 const groq = new Groq({ apiKey: groqApiKey });
@@ -69,7 +68,7 @@ export async function POST(req: Request) {
             }
         }
 
-        // --- PHASE 3: Error / Offline ---
+        // Nothing worked — tell the user
         return NextResponse.json({
             error: "AI Services currently unavailable. Please check your connection."
         }, { status: 503 });
@@ -80,9 +79,7 @@ export async function POST(req: Request) {
     }
 }
 
-/**
- * Helper to create a streaming response for the typing effect
- */
+/** Wraps a completed text string in a streaming response for the typing effect */
 function createStreamResponse(text: string) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
