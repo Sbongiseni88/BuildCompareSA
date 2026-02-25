@@ -27,7 +27,8 @@ import {
     FileText,
     MessageCircle,
     Share2,
-    ExternalLink
+    ExternalLink,
+    CheckCircle2
 } from 'lucide-react';
 import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
@@ -215,9 +216,9 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                 console.log("Using fallback mock data for demo...");
                 await new Promise(resolve => setTimeout(resolve, 800)); // Simulate delay
                 const mockResults = generateComparisonResults(materials, region);
-                setComparisonResults(mockResults);
+                setComparisonResults(mockResults.map(r => ({ ...r, isLive: false })));
             } else {
-                setComparisonResults(results);
+                setComparisonResults(results.map(r => ({ ...r, isLive: true })));
             }
 
         } catch (error) {
@@ -596,7 +597,20 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 {/* Results List */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {comparisonResults.map((result, idx) => (
-                                        <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 flex flex-col">
+                                        <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 flex flex-col relative group">
+                                            {/* Price Verification Badge */}
+                                            <div className="absolute top-2 right-2 z-10">
+                                                {result.isLive ? (
+                                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 text-green-400 text-[9px] font-bold rounded-full border border-green-500/30 backdrop-blur-sm">
+                                                        <CheckCircle2 className="w-2.5 h-2.5" /> LIVE VERIFIED
+                                                    </span>
+                                                ) : (
+                                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 text-yellow-500/70 text-[9px] font-bold rounded-full border border-yellow-500/20 backdrop-blur-sm">
+                                                        <AlertCircle className="w-2.5 h-2.5" /> MARKET ESTIMATE
+                                                    </span>
+                                                )}
+                                            </div>
+
                                             {/* Material Header */}
                                             <div className="p-4 bg-black/20 border-b border-slate-800 flex items-start justify-between gap-4">
                                                 <div className="flex items-center gap-3">
@@ -692,6 +706,13 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+
+                                {/* Price Disclaimer */}
+                                <div className="mt-8 p-4 bg-slate-900/50 border border-slate-800 rounded-xl text-center">
+                                    <p className="text-xs text-slate-500 max-w-2xl mx-auto italic">
+                                        Note: Material prices fluctuate daily based on retailer updates and regional stock levels. {comparisonResults.some(r => !r.isLive) ? 'Some results are currently shown as "Market Estimates". ' : ''}Always confirm final pricing on the supplier's checkout page before completing your order.
+                                    </p>
                                 </div>
                             </div>
                         )}

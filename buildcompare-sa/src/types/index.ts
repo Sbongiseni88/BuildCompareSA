@@ -75,6 +75,7 @@ export interface ComparisonResult {
     bestPrice: PriceQuote | null;
     averagePrice: number;
     potentialSavings: number;
+    isLive?: boolean;
 }
 
 // Search Types

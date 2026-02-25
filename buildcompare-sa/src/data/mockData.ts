@@ -308,6 +308,8 @@ export function generateMockQuotes(material: Material, region: string = 'gauteng
         basePrice = 185;
     } else if (lowerName.includes('cement') && lowerName.includes('rapid')) {
         basePrice = 135;
+    } else if (lowerName.includes('sephaku') && lowerName.includes('42.5')) {
+        basePrice = 114.95;
     } else if (lowerName.includes('cement') && !lowerName.includes('primer') && !lowerName.includes('brick')) {
         basePrice = 109;
     } else if (lowerName.includes('face brick') || lowerName.includes('satin')) {
