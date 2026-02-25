@@ -234,9 +234,6 @@ export default function AccountProfile() {
                                     >
                                         <option value="contractor">Contractor</option>
                                         <option value="supplier">Supplier</option>
-                                        <option value="homeowner">Homeowner</option>
-                                        <option value="builder">Builder</option>
-                                        <option value="architect">Architect</option>
                                     </select>
                                     <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                 </div>

@@ -302,16 +302,20 @@ export default function Home() {
             variant="warning"
           />
 
-          {/* Mobile FAB */}
-          <FloatingActionButton
-            onNewProject={() => setActiveTab('projects')}
-            onQuickSearch={() => setActiveTab('compare')}
-            onScanBoQ={() => setActiveTab('compare')}
-            onAskAI={() => setIsConciergeOpen(true)}
-          />
+          {/* Mobile FAB — hidden when AI Concierge is open */}
+          {!isConciergeOpen && (
+            <FloatingActionButton
+              onNewProject={() => setActiveTab('projects')}
+              onQuickSearch={() => setActiveTab('compare')}
+              onScanBoQ={() => setActiveTab('compare')}
+              onAskAI={() => setIsConciergeOpen(true)}
+            />
+          )}
 
-          {/* Mobile Bottom Navigation */}
-          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          {/* Mobile Bottom Navigation — hidden when AI Concierge is open */}
+          {!isConciergeOpen && (
+            <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+          )}
 
           {/* Onboarding Tour */}
           {showOnboarding && (
