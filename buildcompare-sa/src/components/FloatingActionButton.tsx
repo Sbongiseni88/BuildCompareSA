@@ -26,13 +26,13 @@ export default function FloatingActionButton({
     ];
 
     return (
-        <div className="fixed bottom-6 right-6 z-50 lg:hidden flex flex-col-reverse items-end gap-3">
+        <div className="fixed bottom-20 right-6 z-50 lg:hidden flex flex-col-reverse items-end gap-3">
             {/* Main FAB */}
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 ${isExpanded
-                        ? 'bg-slate-700 rotate-45 shadow-slate-700/30'
-                        : 'bg-yellow-400 hover:bg-yellow-300 shadow-yellow-400/30 hover:scale-110'
+                    ? 'bg-slate-700 rotate-45 shadow-slate-700/30'
+                    : 'bg-yellow-400 hover:bg-yellow-300 shadow-yellow-400/30 hover:scale-110'
                     }`}
             >
                 {isExpanded ? (

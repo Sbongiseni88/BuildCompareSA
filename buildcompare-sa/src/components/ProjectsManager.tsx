@@ -25,6 +25,7 @@ import { Project } from '@/types';
 import { exportProjectToPDF } from '@/lib/pdfExport';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { ProjectCardSkeleton } from '@/components/SkeletonLoader';
 
@@ -40,13 +41,18 @@ export default function ProjectsManager({
     onNavigateToAnalytics
 }: ProjectsManagerProps) {
     const { user, loading: authLoading } = useAuthContext();
+    const { showSuccess, showError, showWarning } = useToast();
     const supabaseRef = React.useRef(createClient());
     const supabase = supabaseRef.current;
 
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'on-hold'>('all');
+    const [searchQuery, setSearchQuery] = useState(() => {
+        try { return sessionStorage.getItem('bc_projects_search') || ''; } catch { return ''; }
+    });
+    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'on-hold'>(() => {
+        try { return (sessionStorage.getItem('bc_projects_filter') as any) || 'all'; } catch { return 'all'; }
+    });
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showMenu, setShowMenu] = useState<string | null>(null);
@@ -67,6 +73,14 @@ export default function ProjectsManager({
     const [newMaterialUnit, setNewMaterialUnit] = useState('units');
     const [newMaterialCategory, setNewMaterialCategory] = useState('other');
     const [isAddingMaterial, setIsAddingMaterial] = useState(false);
+
+    // Persist search/filter
+    React.useEffect(() => {
+        try { sessionStorage.setItem('bc_projects_search', searchQuery); } catch { }
+    }, [searchQuery]);
+    React.useEffect(() => {
+        try { sessionStorage.setItem('bc_projects_filter', filterStatus); } catch { }
+    }, [filterStatus]);
 
     // Fetch Projects from Supabase
     const fetchProjects = async () => {
@@ -160,7 +174,7 @@ export default function ProjectsManager({
 
         if (!user) {
             console.error("Validation failed: No user logged in");
-            alert("You must be logged in to create a project.");
+            showWarning("You must be logged in to create a project.");
             return;
         }
 
@@ -207,7 +221,7 @@ export default function ProjectsManager({
             }
         } catch (error: any) {
             console.error('Error creating project:', error);
-            alert(`Failed to create project: ${error.message || 'Unknown error'}`);
+            showError(`Failed to create project: ${error.message || 'Unknown error'}`);
         } finally {
             setIsCreating(false);
         }
@@ -228,7 +242,7 @@ export default function ProjectsManager({
             if (selectedProject?.id === id) setSelectedProject(null);
         } catch (error) {
             console.error('Error deleting project:', error);
-            alert('Failed to delete project.');
+            showError('Failed to delete project.');
         }
     };
 
@@ -276,7 +290,7 @@ export default function ProjectsManager({
             }
         } catch (error: any) {
             console.error('Error adding material:', error);
-            alert(`Failed to add material: ${error.message}`);
+            showError(`Failed to add material: ${error.message}`);
         } finally {
             setIsAddingMaterial(false);
         }

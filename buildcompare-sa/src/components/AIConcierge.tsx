@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ChatMessage } from '@/types';
 import { mockChatMessages, generateAIResponse } from '@/data/mockData';
+import { useToast } from '@/contexts/ToastContext';
 
 interface AIConciergeProps {
     isOpen: boolean;
@@ -22,6 +23,7 @@ interface AIConciergeProps {
 }
 
 export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
+    const { showWarning } = useToast();
     const [messages, setMessages] = useState<ChatMessage[]>(mockChatMessages);
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -33,7 +35,7 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
     const startVoiceRecognition = () => {
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            alert('Voice recognition is not supported in your browser. Please use Chrome or Edge.');
+            showWarning('Voice recognition is not supported in your browser. Please use Chrome or Edge.');
             return;
         }
 

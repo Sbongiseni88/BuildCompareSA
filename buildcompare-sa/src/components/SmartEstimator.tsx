@@ -15,6 +15,7 @@ import {
     Download
 } from 'lucide-react';
 import { Material } from '@/types';
+import { useToast } from '@/contexts/ToastContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -27,6 +28,7 @@ interface SpecForm {
 }
 
 export default function SmartEstimator() {
+    const { showError } = useToast();
     const [specs, setSpecs] = useState<SpecForm>({
         foundation: '',
         structure: '',
@@ -85,7 +87,7 @@ export default function SmartEstimator() {
         } catch (error) {
             console.error("Estimation failed:", error);
             // Fallback for demo if backend is offline
-            alert("AI Service is offline. Check backend connection.");
+            showError("AI Service is offline. Check backend connection.");
         } finally {
             setIsGenerating(false);
         }

@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
 import { createClient } from '@/utils/supabase/client';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import {
     User,
     Mail,
@@ -25,8 +27,10 @@ interface UserProfileData {
 
 export default function AccountProfile() {
     const { user, loading: authLoading, signOut } = useAuthContext();
+    const { showSuccess, showError } = useToast();
     const supabaseRef = useRef(createClient());
     const supabase = supabaseRef.current;
+    const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
     const [profile, setProfile] = useState<UserProfileData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -90,19 +94,22 @@ export default function AccountProfile() {
 
             setProfile(prev => prev ? { ...prev, full_name: fullName, role } : null);
             setIsEditing(false);
-            alert('Profile updated successfully!');
+            showSuccess('Profile updated successfully!');
         } catch (error: any) {
             console.error('Error updating profile:', error);
-            alert(`Failed to update profile: ${error.message}`);
+            showError(`Failed to update profile: ${error.message}`);
         } finally {
             setIsSaving(false);
         }
     };
 
     const handleSignOut = async () => {
-        if (confirm('Are you sure you want to sign out?')) {
-            await signOut();
-        }
+        setShowSignOutConfirm(true);
+    };
+
+    const confirmSignOut = async () => {
+        setShowSignOutConfirm(false);
+        await signOut();
     };
 
     if (authLoading || (isLoading && !profile)) {
@@ -284,6 +291,17 @@ export default function AccountProfile() {
                     </div>
                 </div>
             </div>
+
+            {/* Sign Out Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={showSignOutConfirm}
+                onClose={() => setShowSignOutConfirm(false)}
+                onConfirm={confirmSignOut}
+                title="Sign Out"
+                message="Are you sure you want to sign out of your account?"
+                confirmLabel="Sign Out"
+                variant="warning"
+            />
         </div>
     );
 }

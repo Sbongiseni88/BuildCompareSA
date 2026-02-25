@@ -5,18 +5,39 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
+    const [emailError, setEmailError] = useState('');
+    const [passwordError, setPasswordError] = useState('');
     const router = useRouter();
     const { signIn, signInWithGoogle } = useAuthContext();
     const { showError, showSuccess } = useToast();
 
+    const validateEmail = (value: string) => {
+        if (!value) { setEmailError('Email is required'); return false; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { setEmailError('Please enter a valid email'); return false; }
+        setEmailError(''); return true;
+    };
+
+    const validatePassword = (value: string) => {
+        if (!value) { setPasswordError('Password is required'); return false; }
+        if (value.length < 6) { setPasswordError('Password must be at least 6 characters'); return false; }
+        setPasswordError(''); return true;
+    };
+
+    const isFormValid = email && password.length >= 6 && !emailError && !passwordError;
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+        const emailOk = validateEmail(email);
+        const passOk = validatePassword(password);
+        if (!emailOk || !passOk) return;
         setLoading(true);
 
         try {
@@ -107,12 +128,14 @@ export default function LoginPage() {
                                 type="email"
                                 autoComplete="email"
                                 required
-                                className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-white placeholder-slate-500 focus:border-yellow-500 focus:ring-yellow-500 hover:border-slate-600 transition-colors"
+                                className={`mt-1 block w-full rounded-lg border bg-slate-900 px-4 py-3 text-white placeholder-slate-500 focus:ring-yellow-500 hover:border-slate-600 transition-colors ${emailError ? 'border-red-500 focus:border-red-500' : 'border-slate-700 focus:border-yellow-500'}`}
                                 placeholder="contractor@example.com"
                                 value={email}
-                                onChange={(e) => setEmail(e.target.value)}
+                                onChange={(e) => { setEmail(e.target.value); if (emailError) validateEmail(e.target.value); }}
+                                onBlur={() => email && validateEmail(email)}
                                 disabled={loading || googleLoading}
                             />
+                            {emailError && <p className="mt-1 text-xs text-red-400">{emailError}</p>}
                         </div>
                         <div>
                             <div className="flex items-center justify-between">
@@ -123,24 +146,36 @@ export default function LoginPage() {
                                     Forgot password?
                                 </Link>
                             </div>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                autoComplete="current-password"
-                                required
-                                className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-white placeholder-slate-500 focus:border-yellow-500 focus:ring-yellow-500 hover:border-slate-600 transition-colors"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                disabled={loading || googleLoading}
-                            />
+                            <div className="relative">
+                                <input
+                                    id="password"
+                                    name="password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    autoComplete="current-password"
+                                    required
+                                    className={`mt-1 block w-full rounded-lg border bg-slate-900 px-4 py-3 pr-12 text-white placeholder-slate-500 focus:ring-yellow-500 hover:border-slate-600 transition-colors ${passwordError ? 'border-red-500 focus:border-red-500' : 'border-slate-700 focus:border-yellow-500'}`}
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => { setPassword(e.target.value); if (passwordError) validatePassword(e.target.value); }}
+                                    onBlur={() => password && validatePassword(password)}
+                                    disabled={loading || googleLoading}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 mt-0.5 text-slate-400 hover:text-white transition-colors"
+                                    tabIndex={-1}
+                                >
+                                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                                </button>
+                            </div>
+                            {passwordError && <p className="mt-1 text-xs text-red-400">{passwordError}</p>}
                         </div>
                     </div>
 
                     <button
                         type="submit"
-                        disabled={loading || googleLoading}
+                        disabled={loading || googleLoading || !isFormValid}
                         className="group relative flex w-full justify-center rounded-lg bg-yellow-500 px-4 py-3 text-sm font-bold text-slate-900 hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-[0_4px_14px_rgba(250,204,21,0.3)] hover:shadow-[0_6px_20px_rgba(250,204,21,0.4)]"
                     >
                         {loading ? (

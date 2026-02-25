@@ -32,27 +32,42 @@ import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
+import { useToast } from '@/contexts/ToastContext';
 
 interface PriceSearchHubProps {
     initialMaterials?: Material[];
 }
 
 export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
+    const { showWarning, showSuccess, showInfo } = useToast();
+
     // Mode State
     const [searchMode, setSearchMode] = useState<'manual' | 'scan' | 'browse'>('manual');
 
     // Search Logic State
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedMaterials, setSelectedMaterials] = useState<Material[]>(initialMaterials);
-    const [region, setRegion] = useState<Region | 'current-location'>('gauteng');
+    const [region, setRegion] = useState<Region | 'current-location'>(() => {
+        try { return (sessionStorage.getItem('bc_search_region') as any) || 'gauteng'; } catch { return 'gauteng'; }
+    });
     const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [radius, setRadius] = useState(20);
-    const [sortBy, setSortBy] = useState<'price' | 'distance' | 'rating'>('price');
+    const [sortBy, setSortBy] = useState<'price' | 'distance' | 'rating'>(() => {
+        try { return (sessionStorage.getItem('bc_search_sort') as any) || 'price'; } catch { return 'price'; }
+    });
     const [isSearching, setIsSearching] = useState(false);
     const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchSuggestions, setSearchSuggestions] = useState<Material[]>([]);
+
+    // Persist search preferences
+    React.useEffect(() => {
+        try { sessionStorage.setItem('bc_search_region', region); } catch { }
+    }, [region]);
+    React.useEffect(() => {
+        try { sessionStorage.setItem('bc_search_sort', sortBy); } catch { }
+    }, [sortBy]);
 
     const regions = [
         { id: 'gauteng', label: 'Johannesburg', fullLabel: 'Gauteng, JHB' },
@@ -63,7 +78,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
     const requestLocation = () => {
         if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser');
+            showWarning('Geolocation is not supported by your browser');
             return;
         }
 
@@ -79,7 +94,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             },
             (error) => {
                 console.error('Error getting location:', error);
-                alert('Could not get your location. Please select a city manually.');
+                showWarning('Could not get your location. Please select a city manually.');
                 setIsLocating(false);
             },
             { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
@@ -319,7 +334,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             }
         } else {
             await navigator.clipboard.writeText(text);
-            alert('Quote copied to clipboard!');
+            showSuccess('Quote copied to clipboard!');
         }
     };
 

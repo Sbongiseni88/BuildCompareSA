@@ -14,6 +14,7 @@ import FeedbackModal from '@/components/FeedbackModal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import FloatingActionButton from '@/components/FloatingActionButton';
 import OnboardingTour from '@/components/OnboardingTour';
+import BottomNav from '@/components/BottomNav';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -46,10 +47,16 @@ const TAB_META: Record<string, { label: string; icon: React.ElementType }> = {
 
 export default function Home() {
   const { signOut, userProfile } = useAuthContext();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return localStorage.getItem('buildcompare_active_tab') || 'dashboard';
+    } catch { return 'dashboard'; }
+  });
   const [isConciergeOpen, setIsConciergeOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('buildcompare_sidebar_collapsed') === 'true'; } catch { return false; }
+  });
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -68,6 +75,16 @@ export default function Home() {
       // localStorage not available
     }
   }, []);
+
+  // Persist active tab
+  useEffect(() => {
+    try { localStorage.setItem('buildcompare_active_tab', activeTab); } catch { }
+  }, [activeTab]);
+
+  // Persist sidebar collapse
+  useEffect(() => {
+    try { localStorage.setItem('buildcompare_sidebar_collapsed', String(isSidebarCollapsed)); } catch { }
+  }, [isSidebarCollapsed]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -257,7 +274,7 @@ export default function Home() {
           </header>
 
           {/* Dynamic Content */}
-          <div className="p-4 md:p-8 pb-32 max-w-[1600px] mx-auto w-full animate-fade-in overflow-x-hidden">
+          <div key={activeTab} className="p-4 md:p-8 pb-24 lg:pb-8 max-w-[1600px] mx-auto w-full animate-page-enter overflow-x-hidden">
             {renderContent()}
           </div>
 
@@ -292,6 +309,9 @@ export default function Home() {
             onScanBoQ={() => setActiveTab('compare')}
             onAskAI={() => setIsConciergeOpen(true)}
           />
+
+          {/* Mobile Bottom Navigation */}
+          <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
           {/* Onboarding Tour */}
           {showOnboarding && (
