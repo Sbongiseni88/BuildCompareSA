@@ -70,5 +70,25 @@ Header shows `Home > [Current Page]` with page icon. Tab metadata defined in `TA
 - `shimmer` keyframe for skeleton loaders
 - `.tooltip-trigger` / `.tooltip-content` classes for hover tooltips
 
+### Deterministic Price Engine (`src/data/mockData.ts`) — Feb 2026
+Replaced `Math.random()` price generation with a stable hash-based system. Each supplier has fixed price multipliers (Cashbuild cheapest at 0.93x, Leroy Merlin premium at 1.12x). Prices are now consistent across page refreshes — critical for user trust when testers screenshot and share results.
+
+### WhatsApp & Share Integration (`PriceSearchHub.tsx`) — Feb 2026
+- **Share via WhatsApp** button: Opens `wa.me` with pre-formatted message including best deals, prices, and supplier names.
+- **Share button**: Uses Web Share API (mobile) or clipboard fallback (desktop).
+- Both are in the results success banner alongside Export CSV.
+
+### PWA Support — Feb 2026
+- **`public/manifest.json`**: App manifest with BuildCompare branding, shortcuts, and icon references.
+- **`public/sw.js`**: Service worker with network-first caching (works offline for loadshedding scenarios).
+- **`public/offline.html`**: Branded offline fallback page.
+- **`src/components/PWAInstallPrompt.tsx`**: Smart install banner that:
+  - Shows 3s after page load
+  - Remembers dismissals for 7 days via `localStorage`
+  - Highlights benefits: faster loading, works offline, no app store
+- **`src/app/layout.tsx`**: Added `manifest`, `viewport` (themeColor), and `appleWebApp` metadata.
+- **`src/components/ClientLayout.tsx`**: PWAInstallPrompt rendered after splash screen.
+
 ---
 *Created by Lead Systems Architect*
+

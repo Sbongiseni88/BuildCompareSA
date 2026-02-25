@@ -237,21 +237,103 @@ export const mockMaterials: Material[] = [
     { id: 'hwd-2', name: 'Grip-Rite 75mm Nail Box (5kg)', brand: 'Grip-Rite', category: 'hardware', quantity: 1, unit: 'box' },
 ];
 
-// Generate mock price quotes with LOCATION DATA
+// ============================================================
+// DETERMINISTIC PRICE ENGINE — No more Math.random() chaos
+// Each supplier has a fixed price multiplier so prices are
+// consistent across page refreshes. This builds trust with
+// testers who screenshot & share results.
+// ============================================================
+
+// Fixed supplier pricing profiles (multiplier relative to base)
+const SUPPLIER_PRICE_PROFILES: Record<string, { multiplier: number; deliveryFee: number; stockChance: number; distance: Record<string, number> }> = {
+    'builders-sandton': { multiplier: 1.08, deliveryFee: 350, stockChance: 0.95, distance: { gauteng: 8.2, 'cape-town': 0, durban: 0 } },
+    'builders-fourways': { multiplier: 1.05, deliveryFee: 350, stockChance: 0.90, distance: { gauteng: 12.5, 'cape-town': 0, durban: 0 } },
+    'leroy-midrand': { multiplier: 1.12, deliveryFee: 150, stockChance: 0.85, distance: { gauteng: 15.3, 'cape-town': 0, durban: 0 } },
+    'leroy-greenstone': { multiplier: 1.10, deliveryFee: 150, stockChance: 0.88, distance: { gauteng: 18.7, 'cape-town': 0, durban: 0 } },
+    'cashbuild-midrand': { multiplier: 0.95, deliveryFee: 0, stockChance: 0.92, distance: { gauteng: 10.1, 'cape-town': 0, durban: 0 } },
+    'cashbuild-roodepoort': { multiplier: 0.93, deliveryFee: 0, stockChance: 0.80, distance: { gauteng: 22.4, 'cape-town': 0, durban: 0 } },
+    'mica-randburg': { multiplier: 1.02, deliveryFee: 250, stockChance: 0.75, distance: { gauteng: 14.8, 'cape-town': 0, durban: 0 } },
+    'local-jhb-supplies': { multiplier: 0.88, deliveryFee: 200, stockChance: 0.70, distance: { gauteng: 6.3, 'cape-town': 0, durban: 0 } },
+    'local-pretoria': { multiplier: 0.90, deliveryFee: 180, stockChance: 0.78, distance: { gauteng: 45.2, 'cape-town': 0, durban: 0 } },
+    'local-capetown': { multiplier: 0.92, deliveryFee: 200, stockChance: 0.82, distance: { gauteng: 0, 'cape-town': 9.5, durban: 0 } },
+};
+
+// Realistic SA base prices per category (Feb 2026 market rates)
+function getBasePriceForCategory(category: string): number {
+    const prices: Record<string, number> = {
+        cement: 109,       // 50kg bag average
+        bricks: 3.80,      // per brick
+        steel: 165,         // Y10/Y12 rebar per bar
+        timber: 89,         // per length
+        plumbing: 220,      // average item
+        electrical: 165,    // average item
+        paint: 1650,        // 20L bucket average
+        roofing: 285,       // per sheet/tile
+        tiles: 42,          // per m²
+        hardware: 68,       // per box/unit
+        other: 95,
+    };
+    return prices[category] || 95;
+}
+
+// Deterministic hash for consistent "variety" without randomness
+function stableHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+}
+
+// Generate mock price quotes with LOCATION DATA — DETERMINISTIC
 export function generateMockQuotes(material: Material, region: string = 'gauteng'): PriceQuote[] {
     let basePrice = getBasePriceForCategory(material.category);
 
-    // Dynamic Price Overrides based on Name Context
+    // Dynamic Price Overrides based on Name Context (more accurate)
     const lowerName = material.name.toLowerCase();
 
     if (lowerName.includes('primer')) {
-        basePrice = lowerName.includes('20l') ? 1150 : 350; // 20L Primer vs 5L
-    } else if (lowerName.includes('paint') || lowerName.includes('dulux') || lowerName.includes('plascon')) {
-        basePrice = lowerName.includes('20l') ? 1600 : 450;
-    } else if (lowerName.includes('cement') && !lowerName.includes('primer')) {
-        basePrice = 110; // Standard Cement bag
-    } else if (lowerName.includes('brick')) {
-        basePrice = 3.5;
+        basePrice = lowerName.includes('20l') ? 1150 : 350;
+    } else if (lowerName.includes('weatherguard') || lowerName.includes('micatex')) {
+        basePrice = 1899;
+    } else if (lowerName.includes('supercover') || lowerName.includes('double velvet')) {
+        basePrice = 1549;
+    } else if (lowerName.includes('fired earth')) {
+        basePrice = 689;
+    } else if ((lowerName.includes('paint') || lowerName.includes('dulux') || lowerName.includes('plascon')) && lowerName.includes('20l')) {
+        basePrice = 1750;
+    } else if (lowerName.includes('cement') && lowerName.includes('white')) {
+        basePrice = 185;
+    } else if (lowerName.includes('cement') && lowerName.includes('rapid')) {
+        basePrice = 135;
+    } else if (lowerName.includes('cement') && !lowerName.includes('primer') && !lowerName.includes('brick')) {
+        basePrice = 109;
+    } else if (lowerName.includes('face brick') || lowerName.includes('satin')) {
+        basePrice = 4.50;
+    } else if (lowerName.includes('stock brick') || lowerName.includes('maxi brick')) {
+        basePrice = 3.20;
+    } else if (lowerName.includes('paving')) {
+        basePrice = 5.80;
+    } else if (lowerName.includes('y16')) {
+        basePrice = 210;
+    } else if (lowerName.includes('y12')) {
+        basePrice = 175;
+    } else if (lowerName.includes('y10')) {
+        basePrice = 145;
+    } else if (lowerName.includes('mesh') && lowerName.includes('245')) {
+        basePrice = 1250;
+    } else if (lowerName.includes('mesh') && lowerName.includes('193')) {
+        basePrice = 980;
+    } else if (lowerName.includes('geyser')) {
+        basePrice = 4500;
+    } else if (lowerName.includes('110mm')) {
+        basePrice = 320;
+    } else if (lowerName.includes('ibr') || lowerName.includes('corrugated')) {
+        basePrice = 285;
+    } else if (lowerName.includes('maxitile')) {
+        basePrice = 42;
     }
 
     // Filter suppliers by region
@@ -262,12 +344,28 @@ export function generateMockQuotes(material: Material, region: string = 'gauteng
         return true;
     });
 
-    const suppliersToUse = regionSuppliers.length >= 4 ? regionSuppliers.slice(0, 5) : mockSuppliers.slice(0, 5);
+    const suppliersToUse = regionSuppliers.length >= 4 ? regionSuppliers.slice(0, 6) : mockSuppliers.slice(0, 6);
 
     return suppliersToUse.map((supplier, index) => {
-        const variance = (Math.random() - 0.5) * 0.3; // ±15% variance
-        const price = Math.round(basePrice * (1 + variance) * 100) / 100;
-        const hasDiscount = Math.random() > 0.7;
+        const profile = SUPPLIER_PRICE_PROFILES[supplier.id] || { multiplier: 1.0, deliveryFee: 250, stockChance: 0.85, distance: {} };
+
+        // Deterministic small variance per material+supplier combo
+        const hash = stableHash(`${material.id}-${supplier.id}`);
+        const microVariance = ((hash % 100) - 50) / 1000; // ±5% deterministic wobble
+
+        const price = Math.round(basePrice * (profile.multiplier + microVariance) * 100) / 100;
+
+        // Deterministic discount (hash-based, not random)
+        const hasDiscount = hash % 5 === 0; // ~20% of items on "sale"
+
+        // Deterministic stock (based on hash, not random)
+        const inStock = (hash % 10) < (profile.stockChance * 10);
+
+        // Deterministic stock quantity
+        const stockQuantity = 50 + (hash % 450);
+
+        // Fixed distance per region
+        const distance = profile.distance[region] || (5 + (hash % 250) / 10);
 
         return {
             supplierId: supplier.id,
@@ -279,30 +377,14 @@ export function generateMockQuotes(material: Material, region: string = 'gauteng
             supplierPhone: supplier.phone || '',
             price: price,
             originalPrice: hasDiscount ? Math.round(price * 1.15 * 100) / 100 : undefined,
-            inStock: Math.random() > 0.2,
-            stockQuantity: Math.floor(Math.random() * 500) + 50,
-            deliveryFee: supplier.type === 'chain' ? 350 : 200 + Math.floor(Math.random() * 150),
+            inStock: inStock,
+            stockQuantity: stockQuantity,
+            deliveryFee: profile.deliveryFee,
             deliveryDays: index + 1,
-            distance: Math.round((5 + Math.random() * 25) * 10) / 10,
+            distance: distance,
             lastUpdated: new Date(),
         };
     });
-}
-function getBasePriceForCategory(category: string): number {
-    const prices: Record<string, number> = {
-        cement: 125,
-        bricks: 3.50,
-        steel: 185,
-        timber: 95,
-        plumbing: 250,
-        electrical: 180,
-        paint: 850,
-        roofing: 320,
-        tiles: 45,
-        hardware: 75,
-        other: 100,
-    };
-    return prices[category] || 100;
 }
 
 // Generate comparison results

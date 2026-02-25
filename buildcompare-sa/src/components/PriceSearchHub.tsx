@@ -24,7 +24,9 @@ import {
     Check,
     Download,
     LayoutGrid,
-    FileText
+    FileText,
+    MessageCircle,
+    Share2
 } from 'lucide-react';
 import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
@@ -287,6 +289,40 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         a.click();
     };
 
+    // WhatsApp Share — formats best deals into a shareable message
+    const handleShareWhatsApp = () => {
+        const lines = comparisonResults
+            .filter(r => r.bestPrice)
+            .map(r => `• ${r.material.name}: ${formatCurrency(r.bestPrice!.price)} at ${r.bestPrice!.supplierName} (${r.bestPrice!.distance}km away)`)
+            .join('\n');
+
+        const message = `🏗️ *BuildCompare SA — Price Alert*\n\nI found these deals:\n${lines}\n\n💰 Total potential savings: ${formatCurrency(totalSavings)}\n\nCompare prices yourself 👉 https://buildcompare-sa.vercel.app`;
+
+        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+        window.open(url, '_blank');
+    };
+
+    // Generic share via Web Share API or clipboard fallback
+    const handleShareGeneral = async () => {
+        const lines = comparisonResults
+            .filter(r => r.bestPrice)
+            .map(r => `${r.material.name}: ${formatCurrency(r.bestPrice!.price)} at ${r.bestPrice!.supplierName}`)
+            .join('\n');
+
+        const text = `BuildCompare SA — Price Comparison\n\n${lines}\n\nSavings: ${formatCurrency(totalSavings)}\n\nhttps://buildcompare-sa.vercel.app`;
+
+        if (navigator.share) {
+            try {
+                await navigator.share({ title: 'BuildCompare SA Quote', text });
+            } catch (e) {
+                // User cancelled or not supported
+            }
+        } else {
+            await navigator.clipboard.writeText(text);
+            alert('Quote copied to clipboard!');
+        }
+    };
+
     return (
         <div className="w-full max-w-6xl mx-auto space-y-8 animate-fade-in pb-20">
             {/* Header / Hero Section */}
@@ -452,7 +488,22 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                             <p className="text-3xl font-bold text-white">{formatCurrency(totalSavings)}</p>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2">
+                                        {/* WhatsApp Share */}
+                                        <button
+                                            onClick={handleShareWhatsApp}
+                                            className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-bold text-white flex items-center gap-2 transition-all hover:scale-105 shadow-lg shadow-green-600/20"
+                                        >
+                                            <MessageCircle className="w-4 h-4" /> Share via WhatsApp
+                                        </button>
+                                        {/* Generic Share */}
+                                        <button
+                                            onClick={handleShareGeneral}
+                                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-medium text-white border border-slate-700 flex items-center gap-2 transition-colors"
+                                        >
+                                            <Share2 className="w-4 h-4" /> Share
+                                        </button>
+                                        {/* CSV Export */}
                                         <button
                                             onClick={handleDownload}
                                             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-medium text-white border border-slate-700 flex items-center gap-2 transition-colors"

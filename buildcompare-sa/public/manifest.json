@@ -1,0 +1,58 @@
+{
+    "name": "BuildCompare SA",
+    "short_name": "BuildCompare",
+    "description": "Compare building material prices across South Africa's top suppliers. Save time and money on every construction project.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0f172a",
+    "theme_color": "#facc15",
+    "orientation": "any",
+    "scope": "/",
+    "categories": [
+        "business",
+        "shopping",
+        "utilities"
+    ],
+    "lang": "en-ZA",
+    "icons": [
+        {
+            "src": "/images/logo.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/images/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "screenshots": [],
+    "shortcuts": [
+        {
+            "name": "Compare Prices",
+            "short_name": "Prices",
+            "description": "Search and compare material prices",
+            "url": "/?tab=prices",
+            "icons": [
+                {
+                    "src": "/images/logo.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "AI Concierge",
+            "short_name": "AI Chat",
+            "description": "Ask the AI assistant about materials",
+            "url": "/?tab=ai",
+            "icons": [
+                {
+                    "src": "/images/logo.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ]
+}

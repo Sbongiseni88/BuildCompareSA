@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BuildCompare SA - Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#020617;color:#f1f5f9;overflow:hidden;height:100vh;width:100vw}
+.slide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(0.95);transition:opacity 0.8s ease,transform 0.8s ease;pointer-events:none}
+.slide.active{opacity:1;transform:scale(1);pointer-events:auto}
+/* Splash */
+.splash-logo{width:120px;height:120px;background:#facc15;border-radius:24px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 60px rgba(250,204,21,0.3);animation:pulse-glow 2s infinite}
+.splash-title{font-family:'Outfit',sans-serif;font-size:3.5rem;font-weight:900;letter-spacing:4px;margin-top:32px}
+.splash-title span{color:#facc15}
+.splash-sub{color:#64748b;font-size:1rem;letter-spacing:3px;text-transform:uppercase;margin-top:8px}
+.progress-track{width:200px;height:4px;background:#1e293b;border-radius:4px;margin-top:48px;overflow:hidden}
+.progress-fill{height:100%;background:#facc15;border-radius:4px;animation:grow 2.5s ease-in-out forwards;box-shadow:0 0 10px rgba(250,204,21,0.5)}
+/* Feature slides */
+.feature-slide{flex-direction:column;gap:40px;padding:60px 80px}
+.feature-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 20px;border-radius:100px;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;border:1px solid rgba(250,204,21,0.3);color:#facc15;background:rgba(250,204,21,0.08)}
+.feature-title{font-family:'Outfit',sans-serif;font-size:3rem;font-weight:900;line-height:1.15;max-width:900px;text-align:center}
+.feature-title em{font-style:normal;background:linear-gradient(135deg,#facc15,#fef08a,#eab308);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.feature-desc{font-size:1.15rem;color:#94a3b8;max-width:700px;text-align:center;line-height:1.7}
+/* Mock UI panels */
+.mock-panel{background:rgba(15,23,42,0.9);border:1px solid #1e293b;border-radius:20px;padding:32px;width:100%;max-width:950px;box-shadow:0 25px 60px rgba(0,0,0,0.5)}
+.mock-header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.mock-dot{width:12px;height:12px;border-radius:50%}
+.mock-dots{display:flex;gap:6px}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:20px}
+.stat-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;font-size:1.2rem}
+.stat-val{font-size:1.75rem;font-weight:900;color:#fff}
+.stat-label{font-size:0.8rem;color:#64748b;margin-top:4px}
+.project-row{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;animation:slideIn 0.6s ease forwards;opacity:0}
+.project-row:nth-child(1){animation-delay:0.2s}
+.project-row:nth-child(2){animation-delay:0.4s}
+.project-row:nth-child(3){animation-delay:0.6s}
+.proj-name{font-weight:700;font-size:1rem;color:#fff}
+.proj-loc{font-size:0.8rem;color:#64748b;margin-top:2px}
+.proj-badge{padding:4px 12px;border-radius:100px;font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+.proj-badge.active{background:rgba(34,197,94,0.15);color:#22c55e}
+.proj-badge.completed{background:rgba(59,130,246,0.15);color:#3b82f6}
+.budget-bar{width:120px;height:6px;background:#1e293b;border-radius:6px;overflow:hidden}
+.budget-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,#facc15,#eab308)}
+/* Search mock */
+.search-box{display:flex;align-items:center;gap:12px;background:#0f172a;border:2px solid #334155;border-radius:14px;padding:14px 20px;margin-bottom:20px;transition:border-color 0.3s}
+.search-box.focused{border-color:#facc15;box-shadow:0 0 0 3px rgba(250,204,21,0.15)}
+.search-text{color:#94a3b8;font-size:1rem}
+.search-text.typed{color:#fff}
+.result-table{width:100%;border-collapse:separate;border-spacing:0}
+.result-table th{text-align:left;padding:12px 16px;color:#facc15;font-size:0.7rem;text-transform:uppercase;letter-spacing:1.5px;border-bottom:2px solid rgba(250,204,21,0.2);background:rgba(250,204,21,0.05)}
+.result-table td{padding:14px 16px;border-bottom:1px solid #1e293b;font-size:0.9rem}
+.best-price{background:rgba(34,197,94,0.08)}
+.best-price td{color:#22c55e;font-weight:700}
+.price{font-weight:800;font-size:1.05rem}
+.stock-yes{color:#22c55e;font-weight:600}
+.stock-low{color:#f97316;font-weight:600}
+/* AI Chat */
+.chat-container{max-width:420px;width:100%;background:#0f172a;border:1px solid #1e293b;border-radius:20px;overflow:hidden}
+.chat-header{background:linear-gradient(135deg,#facc15,#eab308);padding:18px 24px;display:flex;align-items:center;gap:12px}
+.chat-header-text{color:#0f172a;font-weight:800;font-size:1.1rem}
+.chat-body{padding:20px;min-height:280px;display:flex;flex-direction:column;gap:14px}
+.bubble-user{background:linear-gradient(135deg,#facc15,#eab308);color:#0f172a;padding:14px 18px;border-radius:20px 20px 4px 20px;align-self:flex-end;max-width:85%;font-weight:600;font-size:0.9rem}
+.bubble-ai{background:#1e293b;border:1px solid rgba(250,204,21,0.15);color:#e2e8f0;padding:14px 18px;border-radius:20px 20px 20px 4px;align-self:flex-start;max-width:85%;font-size:0.9rem;line-height:1.6}
+.typing-dots{display:flex;gap:4px;padding:14px 18px;align-self:flex-start}
+.typing-dots span{width:8px;height:8px;background:#64748b;border-radius:50%;animation:bounce 1.2s infinite}
+.typing-dots span:nth-child(2){animation-delay:0.2s}
+.typing-dots span:nth-child(3){animation-delay:0.4s}
+/* CTA */
+.cta-slide{flex-direction:column;gap:32px;text-align:center}
+.cta-title{font-family:'Outfit',sans-serif;font-size:3.5rem;font-weight:900}
+.cta-url{font-size:1.5rem;color:#facc15;font-weight:700;padding:16px 40px;border:2px solid #facc15;border-radius:16px;background:rgba(250,204,21,0.08);letter-spacing:1px}
+.cta-tagline{font-size:1.1rem;color:#94a3b8;max-width:600px;line-height:1.7}
+.cta-features{display:flex;gap:24px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+.cta-feat{display:flex;align-items:center;gap:8px;padding:10px 20px;background:#0f172a;border:1px solid #1e293b;border-radius:12px;font-size:0.85rem;font-weight:600}
+.cta-feat .check{color:#22c55e;font-size:1.1rem}
+/* Progress indicator */
+.slide-progress{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:100}
+.prog-dot{width:10px;height:10px;border-radius:50%;background:#1e293b;transition:all 0.4s}
+.prog-dot.active{background:#facc15;box-shadow:0 0 12px rgba(250,204,21,0.4);width:32px;border-radius:5px}
+/* Timer bar */
+.timer-bar{position:fixed;top:0;left:0;height:3px;background:#facc15;z-index:200;transition:width 0.1s linear;box-shadow:0 0 10px rgba(250,204,21,0.5)}
+/* Watermark */
+.watermark{position:fixed;top:20px;right:30px;z-index:100;display:flex;align-items:center;gap:10px;padding:8px 16px;background:rgba(2,6,23,0.8);border:1px solid #1e293b;border-radius:12px;backdrop-filter:blur(8px)}
+.wm-logo{width:28px;height:28px;background:#facc15;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;color:#0f172a;font-size:0.8rem}
+.wm-text{font-weight:700;font-size:0.85rem;color:#94a3b8}
+.wm-text span{color:#facc15}
+/* Animations */
+@keyframes pulse-glow{0%,100%{box-shadow:0 0 30px rgba(250,204,21,0.3)}50%{box-shadow:0 0 60px rgba(250,204,21,0.5)}}
+@keyframes grow{from{width:0}to{width:100%}}
+@keyframes slideIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp 0.7s ease forwards}
+.delay-1{animation-delay:0.15s;opacity:0}
+.delay-2{animation-delay:0.3s;opacity:0}
+.delay-3{animation-delay:0.45s;opacity:0}
+.delay-4{animation-delay:0.6s;opacity:0}
+</style>
+</head>
+<body>
+<!-- Watermark -->
+<div class="watermark">
+  <div class="wm-logo">BC</div>
+  <div class="wm-text">BUILD<span>COMPARE</span> SA</div>
+</div>
+
+<!-- Timer Bar -->
+<div class="timer-bar" id="timerBar"></div>
+
+<!-- SLIDE 0: Splash -->
+<div class="slide active" id="s0">
+  <div style="display:flex;flex-direction:column;align-items:center">
+    <div class="splash-logo"><span style="font-family:Outfit;font-weight:900;font-size:2.5rem;color:#0f172a">BC</span></div>
+    <div class="splash-title">BUILD<span>COMPARE</span></div>
+    <div class="splash-sub">South Africa</div>
+    <div class="progress-track"><div class="progress-fill"></div></div>
+  </div>
+</div>
+
+<!-- SLIDE 1: Problem Statement -->
+<div class="slide feature-slide" id="s1">
+  <div class="feature-badge fade-up">🏗️ The Problem</div>
+  <div class="feature-title fade-up delay-1">South African contractors <em>waste hours</em> calling suppliers for prices</div>
+  <div class="feature-desc fade-up delay-2">Driving between Builders Warehouse, Cashbuild, and local yards. Comparing quotes on paper. Losing thousands in savings they never knew existed.</div>
+  <div class="feature-desc fade-up delay-3" style="color:#facc15;font-weight:700;font-size:1.3rem">BuildCompare SA fixes this. Instantly.</div>
+</div>
+
+<!-- SLIDE 2: Dashboard -->
+<div class="slide feature-slide" id="s2">
+  <div class="feature-badge fade-up">📊 Dashboard</div>
+  <div class="feature-title fade-up delay-1">Your entire operation. <em>One screen.</em></div>
+  <div class="mock-panel fade-up delay-2">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#3b82f6,#2563eb)">📁</div><div class="stat-val">4</div><div class="stat-label">Active Projects</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#22c55e,#16a34a)">💰</div><div class="stat-val">R47,200</div><div class="stat-label">Total Savings</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706)">⚡</div><div class="stat-val">12</div><div class="stat-label">Comparisons Today</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#a855f7,#7c3aed)">📈</div><div class="stat-val">18%</div><div class="stat-label">Avg. Savings</div></div>
+    </div>
+    <div class="project-row"><div><div class="proj-name">Sandton Office Block</div><div class="proj-loc">📍 Sandton, GP</div></div><div style="display:flex;align-items:center;gap:16px"><div class="budget-bar"><div class="budget-fill" style="width:67%"></div></div><span class="proj-badge active">Active</span></div></div>
+    <div class="project-row"><div><div class="proj-name">Soweto Housing Phase 2</div><div class="proj-loc">📍 Soweto, GP</div></div><div style="display:flex;align-items:center;gap:16px"><div class="budget-bar"><div class="budget-fill" style="width:34%"></div></div><span class="proj-badge active">Active</span></div></div>
+    <div class="project-row"><div><div class="proj-name">Cape Town Villa</div><div class="proj-loc">📍 Camps Bay, WC</div></div><div style="display:flex;align-items:center;gap:16px"><div class="budget-bar"><div class="budget-fill" style="width:100%"></div></div><span class="proj-badge completed">Done</span></div></div>
+  </div>
+</div>
+
+<!-- SLIDE 3: Price Search -->
+<div class="slide feature-slide" id="s3">
+  <div class="feature-badge fade-up">🔍 Live Price Comparison</div>
+  <div class="feature-title fade-up delay-1">Compare prices across <em>all major suppliers</em></div>
+  <div class="mock-panel fade-up delay-2">
+    <div class="search-box focused"><span style="font-size:1.2rem">🔍</span><span class="search-text typed">CEM II 42.5N Cement 50kg</span></div>
+    <table class="result-table">
+      <thead><tr><th>Supplier</th><th>Price (per bag)</th><th>Stock</th><th>Delivery</th><th>Distance</th></tr></thead>
+      <tbody>
+        <tr class="best-price"><td>🏪 Cashbuild Soweto</td><td class="price">R89.90 ✨</td><td class="stock-yes">In Stock (240)</td><td>Free</td><td>3.2 km</td></tr>
+        <tr><td>🏬 Builders Warehouse</td><td class="price" style="color:#fff">R94.50</td><td class="stock-yes">In Stock</td><td>R150</td><td>5.8 km</td></tr>
+        <tr><td>🔨 Mica Hardware</td><td class="price" style="color:#fff">R97.00</td><td class="stock-low">Low (18)</td><td>R200</td><td>8.1 km</td></tr>
+        <tr><td>🏠 Leroy Merlin</td><td class="price" style="color:#fff">R99.90</td><td class="stock-yes">In Stock</td><td>Free</td><td>12.5 km</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:16px;padding:12px 16px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:12px;display:flex;align-items:center;gap:10px">
+      <span style="color:#22c55e;font-weight:800;font-size:1.1rem">💡 Potential savings: R10.00/bag × 200 bags = R2,000</span>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 4: AI Concierge -->
+<div class="slide feature-slide" id="s4" style="flex-direction:row;gap:60px;justify-content:center">
+  <div style="max-width:420px">
+    <div class="feature-badge fade-up" style="margin-bottom:20px">🤖 AI Construction Assistant</div>
+    <div class="feature-title fade-up delay-1" style="text-align:left;font-size:2.2rem">Your AI-powered <em>building advisor</em></div>
+    <div class="feature-desc fade-up delay-2" style="text-align:left;margin-top:16px;font-size:1rem">Ask anything about quantities, materials, or pricing. Get expert answers instantly — powered by Groq AI.</div>
+  </div>
+  <div class="chat-container fade-up delay-3">
+    <div class="chat-header"><span style="font-size:1.3rem">🤖</span><span class="chat-header-text">AI Concierge</span></div>
+    <div class="chat-body">
+      <div class="bubble-user">How many bricks for a 10m wall?</div>
+      <div class="bubble-ai">For a standard 10m × 2.4m wall using stock bricks (230×110×75mm):<br><br>📐 <strong>~1,200 bricks</strong><br>🧱 Plus 12 bags mortar mix<br>💰 Est. cost: <strong>R4,800 - R6,200</strong><br><br>Would you like me to compare prices across suppliers?</div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 5: More Features -->
+<div class="slide feature-slide" id="s5">
+  <div class="feature-badge fade-up">✨ More Features</div>
+  <div class="feature-title fade-up delay-1">Everything a <em>modern contractor</em> needs</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:900px;width:100%" class="fade-up delay-2">
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;text-align:center"><div style="font-size:2rem;margin-bottom:12px">📸</div><div style="font-weight:700;color:#fff;margin-bottom:6px">OCR Scanning</div><div style="font-size:0.8rem;color:#64748b">Upload a BoQ photo and auto-extract materials</div></div>
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;text-align:center"><div style="font-size:2rem;margin-bottom:12px">📊</div><div style="font-weight:700;color:#fff;margin-bottom:6px">Cost Analysis</div><div style="font-size:0.8rem;color:#64748b">Visual spend breakdowns across all projects</div></div>
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;text-align:center"><div style="font-size:2rem;margin-bottom:12px">🧮</div><div style="font-weight:700;color:#fff;margin-bottom:6px">Smart Estimator</div><div style="font-size:0.8rem;color:#64748b">AI-powered material quantity calculator</div></div>
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;text-align:center"><div style="font-size:2rem;margin-bottom:12px">📁</div><div style="font-weight:700;color:#fff;margin-bottom:6px">Project Manager</div><div style="font-size:0.8rem;color:#64748b">Track budgets, materials & timelines per site</div></div>
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;text-align:center"><div style="font-size:2rem;margin-bottom:12px">📱</div><div style="font-weight:700;color:#fff;margin-bottom:6px">Mobile Ready</div><div style="font-size:0.8rem;color:#64748b">Works perfectly on phones and tablets on-site</div></div>
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:28px;text-align:center"><div style="font-size:2rem;margin-bottom:12px">🔒</div><div style="font-weight:700;color:#fff;margin-bottom:6px">Secure Auth</div><div style="font-size:0.8rem;color:#64748b">Google SSO & email login with Supabase</div></div>
+  </div>
+</div>
+
+<!-- SLIDE 6: CTA -->
+<div class="slide cta-slide" id="s6">
+  <div class="splash-logo" style="width:80px;height:80px"><span style="font-family:Outfit;font-weight:900;font-size:2rem;color:#0f172a">BC</span></div>
+  <div class="cta-title fade-up">Stop overpaying. <span style="color:#facc15">Start comparing.</span></div>
+  <div class="cta-tagline fade-up delay-1">Built for South African contractors. Free during beta. We need YOUR feedback to make it better.</div>
+  <div class="cta-features fade-up delay-2">
+    <div class="cta-feat"><span class="check">✅</span> 100% Free Beta</div>
+    <div class="cta-feat"><span class="check">✅</span> No credit card</div>
+    <div class="cta-feat"><span class="check">✅</span> Works on any device</div>
+    <div class="cta-feat"><span class="check">✅</span> SA suppliers only</div>
+  </div>
+  <div class="fade-up delay-3" style="margin-top:24px;font-size:1.2rem;color:#94a3b8">👇 DM me or comment below to get early access 👇</div>
+</div>
+
+<!-- Progress dots -->
+<div class="slide-progress" id="dots"></div>
+
+<script>
+const SLIDES = 7;
+const DURATIONS = [3500, 5000, 6000, 7000, 7000, 6000, 8000]; // ms per slide
+let current = 0;
+let timer = null;
+let timerStart = 0;
+let rafId = null;
+
+// Build dots
+const dotsEl = document.getElementById('dots');
+for(let i=0;i<SLIDES;i++){
+  const d = document.createElement('div');
+  d.className = 'prog-dot' + (i===0?' active':'');
+  d.addEventListener('click', ()=>goTo(i));
+  dotsEl.appendChild(d);
+}
+
+function goTo(n){
+  clearTimeout(timer);
+  cancelAnimationFrame(rafId);
+  document.querySelectorAll('.slide').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.prog-dot').forEach(d=>d.classList.remove('active'));
+  current = n;
+  document.getElementById('s'+current).classList.add('active');
+  dotsEl.children[current].classList.add('active');
+  timerStart = performance.now();
+  updateTimer();
+  if(current < SLIDES-1){
+    timer = setTimeout(()=>goTo(current+1), DURATIONS[current]);
+  }
+}
+
+function updateTimer(){
+  const elapsed = performance.now() - timerStart;
+  const pct = Math.min((elapsed / DURATIONS[current]) * 100, 100);
+  document.getElementById('timerBar').style.width = pct + '%';
+  if(pct < 100) rafId = requestAnimationFrame(updateTimer);
+}
+
+// Keyboard nav
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight'&&current<SLIDES-1) goTo(current+1);
+  if(e.key==='ArrowLeft'&&current>0) goTo(current-1);
+  if(e.key===' '){e.preventDefault();if(current<SLIDES-1)goTo(current+1);}
+});
+
+// Start
+timerStart = performance.now();
+updateTimer();
+timer = setTimeout(()=>goTo(1), DURATIONS[0]);
+</script>
+</body>
+</html>

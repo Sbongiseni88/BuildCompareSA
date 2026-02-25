@@ -25,7 +25,7 @@ export interface AuthActions {
 export type UseAuthReturn = AuthState & AuthActions;
 
 // Maximum time we wait for auth to resolve before showing the app anyway
-const AUTH_TIMEOUT_MS = 8000;
+const AUTH_TIMEOUT_MS = 5000;
 
 /**
  * Custom hook for Supabase Authentication
@@ -40,9 +40,6 @@ export function useAuth(): UseAuthReturn {
     // Use a ref for the supabase client to prevent re-render dependency issues
     const supabaseRef = useRef(createClient());
     const supabase = supabaseRef.current;
-
-    // Track whether initial auth check has completed (prevent double-execution)
-    const initializedRef = useRef(false);
 
     // Fetch user profile from Database
     const fetchUserProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
@@ -79,13 +76,8 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Initial session check - runs only ONCE
+    // Safety timeout — always runs independently to guarantee loading resolves
     useEffect(() => {
-        // Guard against double-execution in StrictMode
-        if (initializedRef.current) return;
-        initializedRef.current = true;
-
-        // Safety timeout - if auth doesn't resolve, stop loading anyway
         const timeoutId = setTimeout(() => {
             setLoading(prevLoading => {
                 if (prevLoading) {
@@ -96,15 +88,23 @@ export function useAuth(): UseAuthReturn {
             });
         }, AUTH_TIMEOUT_MS);
 
+        return () => clearTimeout(timeoutId);
+    }, []);
+
+    // Initial session check + auth state listener
+    useEffect(() => {
+        let cancelled = false;
+
         async function getSession() {
             try {
                 console.log('🔐 Starting auth session check...');
                 const { data: { session }, error } = await supabase.auth.getSession();
 
+                if (cancelled) return;
+
                 if (error) {
                     console.error('Error getting session:', error);
                     setLoading(false);
-                    clearTimeout(timeoutId);
                     return;
                 }
 
@@ -115,7 +115,7 @@ export function useAuth(): UseAuthReturn {
                 if (session?.user) {
                     try {
                         const profile = await fetchUserProfile(session.user.id);
-                        setUserProfile(profile);
+                        if (!cancelled) setUserProfile(profile);
                     } catch (e) {
                         console.warn('Profile fetch failed quietly', e);
                     }
@@ -123,8 +123,7 @@ export function useAuth(): UseAuthReturn {
             } catch (err) {
                 console.error("Auth initialization failed:", err);
             } finally {
-                setLoading(false);
-                clearTimeout(timeoutId);
+                if (!cancelled) setLoading(false);
             }
         }
 
@@ -133,13 +132,14 @@ export function useAuth(): UseAuthReturn {
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
+            if (cancelled) return;
             console.log('🔐 Auth state changed:', _event);
             setSession(session);
             setUser(session?.user ?? null);
 
             if (session?.user) {
                 const profile = await fetchUserProfile(session.user.id);
-                setUserProfile(profile);
+                if (!cancelled) setUserProfile(profile);
             } else {
                 setUserProfile(null);
             }
@@ -147,10 +147,9 @@ export function useAuth(): UseAuthReturn {
         });
 
         return () => {
-            clearTimeout(timeoutId);
+            cancelled = true;
             subscription.unsubscribe();
         };
-        // Empty deps - this runs only once on mount
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
