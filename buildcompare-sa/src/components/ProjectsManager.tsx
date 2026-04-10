@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     FolderOpen,
     Plus,
@@ -142,30 +142,30 @@ export default function ProjectsManager({
         }
     }, [user, authLoading]);
 
-    const filteredProjects = projects.filter(project => {
+    const filteredProjects = useMemo(() => projects.filter(project => {
         const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             project.location.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesFilter = filterStatus === 'all' || project.status === filterStatus;
         return matchesSearch && matchesFilter;
-    });
+    }), [projects, searchQuery, filterStatus]);
 
-    const formatCurrency = (value: number) => {
+    const formatCurrency = useCallback((value: number) => {
         return new Intl.NumberFormat('en-ZA', {
             style: 'currency',
             currency: 'ZAR',
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(value);
-    };
+    }, []);
 
-    const getStatusColor = (status: string) => {
+    const getStatusColor = useCallback((status: string) => {
         switch (status) {
             case 'active': return 'badge-success';
             case 'completed': return 'badge-info';
             case 'on-hold': return 'badge-warning';
             default: return 'badge-info';
         }
-    };
+    }, []);
 
     const handleCreateProject = async () => {
         if (!newProjectName || !newProjectLocation || !newProjectBudget) return;
@@ -311,12 +311,12 @@ export default function ProjectsManager({
         }
     };
 
-    const stats = {
+    const stats = useMemo(() => ({
         total: projects.length,
         active: projects.filter(p => p.status === 'active').length,
         totalBudget: projects.reduce((acc, p) => acc + p.totalBudget, 0),
         totalSpent: projects.reduce((acc, p) => acc + p.spent, 0),
-    };
+    }), [projects]);
 
     return (
         <div className="space-y-6 animate-fade-in">

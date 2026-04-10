@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { groqClient, isGroqConfigured } from "@/lib/groq";
 
 export const runtime = 'nodejs';
 
+const SYSTEM_PROMPT = "You are the BuildCompare SA AI Concierge. You help South African contractors and homeowners with material choices, quantities, and price trends. Use South African terminology (bricks, cement, rebar, 50kg bags, etc.). Be professional, helpful, and concise.";
+
 /**
  * AI Chat endpoint
- * Tries the Python RAG backend first, falls back to direct Groq calls.
+ * Tries the Python RAG backend first, falls back to direct Groq streaming.
  */
 export async function POST(req: Request) {
     try {
@@ -17,11 +19,9 @@ export async function POST(req: Request) {
         }
 
         const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
-        const groqApiKey = process.env.GROQ_API_KEY;
 
         // Try the Python RAG backend first
         try {
-            // Quick timeout so we don't hang forever if the backend is down
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -40,31 +40,48 @@ export async function POST(req: Request) {
             if (response.ok) {
                 const data = await response.json();
                 const aiText = data.llm_response || "I apologize, but I couldn't generate a response.";
-                return createStreamResponse(aiText);
+                return createFakeStreamResponse(aiText);
             }
         } catch (backendError) {
             console.warn("Python backend unreachable, attempting Groq fallback...", backendError);
         }
 
-        // Backend unavailable — go straight to Groq
-        if (groqApiKey) {
+        // Backend unavailable — use REAL Groq streaming
+        if (isGroqConfigured) {
             try {
-                const groq = new Groq({ apiKey: groqApiKey });
-                const completion = await groq.chat.completions.create({
+                const stream = await groqClient.chat.completions.create({
                     messages: [
-                        {
-                            role: "system",
-                            content: "You are the BuildCompare SA AI Concierge. You help South African contractors and homeowners with material choices, quantities, and price trends. Use South African terminology (bricks, cement, rebar, 50kg bags, etc.). Be professional, helpful, and concise."
-                        },
+                        { role: "system", content: SYSTEM_PROMPT },
                         { role: "user", content: userMessage }
                     ],
                     model: "llama-3.3-70b-versatile",
+                    stream: true,
                 });
 
-                const aiText = completion.choices[0]?.message?.content || "I'm having trouble connecting to my brain right now.";
-                return createStreamResponse(aiText);
+                // Forward real LLM token stream directly to the client
+                const encoder = new TextEncoder();
+                const readable = new ReadableStream({
+                    async start(controller) {
+                        try {
+                            for await (const chunk of stream) {
+                                const content = chunk.choices[0]?.delta?.content;
+                                if (content) {
+                                    controller.enqueue(encoder.encode(content));
+                                }
+                            }
+                        } catch (err) {
+                            console.error("Stream error:", err);
+                        } finally {
+                            controller.close();
+                        }
+                    }
+                });
+
+                return new NextResponse(readable, {
+                    headers: { "Content-Type": "text/plain; charset=utf-8" },
+                });
             } catch (groqError) {
-                console.error("Groq fallback failed:", groqError);
+                console.error("Groq streaming fallback failed:", groqError);
             }
         }
 
@@ -79,12 +96,12 @@ export async function POST(req: Request) {
     }
 }
 
-/** Wraps a completed text string in a streaming response for the typing effect */
-function createStreamResponse(text: string) {
+/** Fallback: wraps a completed text string in a simulated stream (used for RAG backend responses) */
+function createFakeStreamResponse(text: string) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
         async start(controller) {
-            const chunkSize = 15; // Faster for production
+            const chunkSize = 15;
             for (let i = 0; i < text.length; i += chunkSize) {
                 const chunk = text.slice(i, i + chunkSize);
                 controller.enqueue(encoder.encode(chunk));
@@ -93,5 +110,7 @@ function createStreamResponse(text: string) {
             controller.close();
         },
     });
-    return new NextResponse(stream);
+    return new NextResponse(stream, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
 }

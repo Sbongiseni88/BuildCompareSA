@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Groq from 'groq-sdk';
 import * as XLSX from 'xlsx';
 import { Material } from '@/types';
 import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
-
-// Groq client — needs GROQ_API_KEY in .env.local
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY || ''
-});
+import { groqClient, isGroqConfigured } from '@/lib/groq';
 
 // Llama 4 multimodal models (used after Llama 3.2 vision got retired)
 const VISION_MODELS = [
@@ -92,7 +87,7 @@ async function runGroqCompletion(
     for (const modelId of models) {
         try {
             console.log(`Attempting Groq model: ${modelId}`);
-            const completion = await groq.chat.completions.create({
+            const completion = await groqClient.chat.completions.create({
                 messages,
                 model: modelId,
                 temperature: 0.1,
@@ -150,7 +145,7 @@ export async function POST(req: NextRequest) {
         const file = formData.get('file') as File;
         const fileName = formData.get('fileName') as string;
 
-        if (!process.env.GROQ_API_KEY) {
+        if (!isGroqConfigured) {
             console.warn('⚠️ No GROQ_API_KEY found, using mock data.');
             await new Promise(resolve => setTimeout(resolve, 2000));
             return NextResponse.json({

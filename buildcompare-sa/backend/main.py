@@ -1,4 +1,5 @@
 import os
+import asyncio
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -29,12 +30,18 @@ app = FastAPI(
 )
 
 # CORS middleware for frontend integration
+# Read allowed origins from env var, with safe defaults for development
+ALLOWED_ORIGINS: list[str] = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,https://buildcompare-sa.vercel.app"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # Include routers
@@ -62,15 +69,17 @@ def health_check():
 
 
 @app.post("/rag/query", response_model=RAGQueryResponse)
-def query_knowledge_base(request: RAGQueryRequest):
+async def query_knowledge_base(request: RAGQueryRequest):
     """
-    RAG Endpoint using Groq Cloud:
+    RAG Endpoint using Groq Cloud (async, non-blocking):
     1. Search ChromaDB for relevant context.
     2. Pass context + query to Groq Llama 3.1.
     3. Return synthesized answer.
     """
     try:
-        result = groq_rag_service.query(
+        # Run sync Groq/ChromaDB call in thread pool to avoid blocking the event loop
+        result = await asyncio.to_thread(
+            groq_rag_service.query,
             user_query=request.query,
             n_context_results=request.n_context_results
         )
@@ -80,7 +89,7 @@ def query_knowledge_base(request: RAGQueryRequest):
 
 
 @app.post("/calc/technical")
-def technical_calculation(request: CalculationRequest):
+async def technical_calculation(request: CalculationRequest):
     """
     Middleware for technical construction calculations.
     Supports: bricks, paint, roof.

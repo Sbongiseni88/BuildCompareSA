@@ -1,15 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import Dashboard from '@/components/Dashboard';
-import PriceSearchHub from '@/components/PriceSearchHub';
 import AIConcierge from '@/components/AIConcierge';
-import ProjectsManager from '@/components/ProjectsManager';
-import SmartEstimator from '@/components/SmartEstimator';
-import CostAnalysis from '@/components/CostAnalysis';
-import AccountProfile from '@/components/AccountProfile';
-import About from '@/components/About';
 import FeedbackModal from '@/components/FeedbackModal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import FloatingActionButton from '@/components/FloatingActionButton';
@@ -19,6 +14,14 @@ import NotificationCenter from '@/components/NotificationCenter';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+
+// Lazy-load heavy tab components — only downloaded when the user navigates to them
+const PriceSearchHub = dynamic(() => import('@/components/PriceSearchHub'), { ssr: false });
+const ProjectsManager = dynamic(() => import('@/components/ProjectsManager'), { ssr: false });
+const SmartEstimator = dynamic(() => import('@/components/SmartEstimator'), { ssr: false });
+const CostAnalysis = dynamic(() => import('@/components/CostAnalysis'), { ssr: false });
+const AccountProfile = dynamic(() => import('@/components/AccountProfile'), { ssr: false });
+const About = dynamic(() => import('@/components/About'), { ssr: false });
 import {
   MessageSquare,
   Menu,

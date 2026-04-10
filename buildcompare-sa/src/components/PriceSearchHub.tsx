@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Search,
     MapPin,
@@ -148,10 +148,8 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         setComparisonResults([]);
 
         try {
-            const results: ComparisonResult[] = [];
-
-            // Hit the API for each material separately
-            for (const material of materials) {
+            // Fetch all materials in PARALLEL using Promise.allSettled
+            const fetchPromises = materials.map(async (material): Promise<ComparisonResult | null> => {
                 try {
                     // Build URL with region/GPS filters
                     let url = `/api/v1/prices?query=${encodeURIComponent(material.name)}`;
@@ -166,7 +164,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
                     if (!response.ok) {
                         console.warn(`Failed to fetch prices for ${material.name}`);
-                        continue;
+                        return null;
                     }
 
                     const priceItems: any[] = await response.json();
@@ -190,26 +188,30 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                     } as PriceQuote));
 
                     if (quotes.length > 0) {
-                        // Cheapest option wins
                         const best = quotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
-
                         const avg = quotes.reduce((acc, curr) => acc + curr.price, 0) / quotes.length;
-
                         const savings = avg - best.price;
 
-                        results.push({
-                            material: material,
-                            quotes: quotes,
+                        return {
+                            material,
+                            quotes,
                             bestPrice: best,
                             averagePrice: avg,
                             potentialSavings: savings > 0 ? savings * material.quantity : 0
-                        });
+                        };
                     }
 
+                    return null;
                 } catch (err) {
                     console.error(`Error searching for ${material.name}:`, err);
+                    return null;
                 }
-            }
+            });
+
+            const settled = await Promise.allSettled(fetchPromises);
+            const results: ComparisonResult[] = settled
+                .filter((r): r is PromiseFulfilledResult<ComparisonResult | null> => r.status === 'fulfilled' && r.value !== null)
+                .map(r => r.value as ComparisonResult);
 
             // If the API returned nothing, use mock data so the demo still works
             if (results.length === 0) {
@@ -300,15 +302,18 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         window.open(url, '_blank');
     };
 
-    const formatCurrency = (value: number) => {
+    const formatCurrency = useCallback((value: number) => {
         return new Intl.NumberFormat('en-ZA', {
             style: 'currency',
             currency: 'ZAR',
             minimumFractionDigits: 2,
         }).format(value);
-    };
+    }, []);
 
-    const totalSavings = comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0);
+    const totalSavings = useMemo(
+        () => comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0),
+        [comparisonResults]
+    );
 
     const handleDownload = () => {
         const headers = "Item,Quantity,Supplier,Price,Total,Distance\n";
