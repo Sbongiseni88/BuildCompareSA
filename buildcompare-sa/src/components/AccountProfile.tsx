@@ -45,13 +45,13 @@ export default function AccountProfile() {
         if (authLoading) return;
 
         // Once we have a user, pull their profile data
-        if (user) {
+        if (user?.id) {
             fetchProfile();
         }
-    }, [user, authLoading]);
+    }, [user?.id, authLoading]);
 
     const fetchProfile = async () => {
-        if (!user) return;
+        if (!user?.id) return;
         setIsLoading(true);
         try {
             const { data, error } = await supabase

@@ -89,7 +89,7 @@ export default function ProjectsManager({
 
     // Fetch Projects from Supabase
     const fetchProjects = async () => {
-        if (!user) return;
+        if (!user?.id) return;
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -133,14 +133,14 @@ export default function ProjectsManager({
     React.useEffect(() => {
         if (authLoading) return;
 
-        if (user) {
+        if (user?.id) {
             fetchProjects();
         } else {
             // If no user (e.g. during auth load), empty list
             setProjects([]);
             setIsLoading(false);
         }
-    }, [user, authLoading]);
+    }, [user?.id, authLoading]);
 
     const filteredProjects = useMemo(() => projects.filter(project => {
         const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

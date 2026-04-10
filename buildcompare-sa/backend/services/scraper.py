@@ -17,9 +17,18 @@ import asyncio
 import hashlib
 import time
 import re
+import os
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple
 import httpx
 from bs4 import BeautifulSoup
+from fastapi.encoders import jsonable_encoder
+
+try:
+    from supabase import create_client, Client
+except ImportError:
+    Client = None
+    create_client = None
 
 from backend.models import PriceItem
 from backend.logging_config import get_logger
@@ -149,6 +158,15 @@ class ScraperService:
         self.cache_ttl: int = 300  # 5 minutes
         self.timeout: float = 8.0
         self.max_retries: int = 2
+        
+        self.supabase: Optional[Client] = None
+        sb_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", os.environ.get("SUPABASE_URL"))
+        sb_key = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", os.environ.get("SUPABASE_ANON_KEY"))
+        if create_client and sb_url and sb_key:
+            try:
+                self.supabase = create_client(sb_url, sb_key)
+            except Exception as e:
+                log.warning("supabase_init_error", error=str(e))
 
     # ------------------------------------------------------------------
     # Public API
@@ -160,16 +178,41 @@ class ScraperService:
         """
         current_time = time.time()
         cache_key = query.lower().strip()
+        query_hash = hashlib.md5(cache_key.encode()).hexdigest()
 
-        # Check cache
+        # Check Supabase Cache first
+        if self.supabase:
+            try:
+                response = self.supabase.table("materials_cache").select("*").eq("query_hash", query_hash).execute()
+                if response.data and len(response.data) > 0:
+                    stored_data = response.data[0]
+                    upd = datetime.fromisoformat(stored_data["updated_at"].replace('Z', '+00:00'))
+                    if (datetime.now(timezone.utc) - upd).total_seconds() < self.cache_ttl:
+                        log.info("cache_hit", query=query, type="supabase")
+                        return [PriceItem(**item) for item in stored_data["results"]]
+            except Exception as e:
+                log.warning("supabase_cache_read_error", error=str(e))
+
+        # Check memory cache
         if cache_key in self.cache:
             stored_time, data = self.cache[cache_key]
             if current_time - stored_time < self.cache_ttl:
-                log.info("cache_hit", query=query, results=len(data))
+                log.info("cache_hit", query=query, type="memory")
                 return data
 
         # Concurrent requests to all retailers
         results = await self._fetch_all_retailers(query)
+
+        # Store in Supabase Cache
+        if self.supabase and results:
+            try:
+                self.supabase.table("materials_cache").upsert({
+                    "query_hash": query_hash,
+                    "query_text": cache_key,
+                    "results": jsonable_encoder(results)
+                }).execute()
+            except Exception as e:
+                log.warning("supabase_cache_write_error", error=str(e))
 
         # Store in cache (even empty results to avoid re-scraping)
         self.cache[cache_key] = (current_time, results)
@@ -209,19 +252,34 @@ class ScraperService:
         """
         Wrap a fetcher with retry logic and fallback.
         Returns (items, is_live) tuple.
+        Fast-fails on 403s or known bot-protections to avoid wasting time.
         """
         for attempt in range(self.max_retries + 1):
             try:
                 items = await fetcher(query)
                 if items:
                     return (items, True)
+                else:
+                    # If fetcher completed but returned 0 items, it likely hit PerimeterX or SPA shell
+                    log.warning("bot_protection_suspected", retailer=retailer_name, reason="0 items returned")
+                    break # Fast fail
+            except httpx.HTTPStatusError as e:
+                # Fast fail on Cloudflare 403/503 blocks
+                if e.response.status_code in (403, 503):
+                    log.warning("bot_protection_blocked", retailer=retailer_name, status=e.response.status_code)
+                    break
+                
+                wait_time = (2 ** attempt) * 0.5
+                log.warning("fetch_retry", retailer=retailer_name, attempt=attempt + 1, error=str(e))
+                if attempt < self.max_retries:
+                    await asyncio.sleep(wait_time)
             except Exception as e:
                 wait_time = (2 ** attempt) * 0.5
                 log.warning("fetch_retry", retailer=retailer_name, attempt=attempt + 1, error=str(e))
                 if attempt < self.max_retries:
                     await asyncio.sleep(wait_time)
 
-        # All retries exhausted — return deterministic fallback for this retailer
+        # All retries exhausted or fast-failed — return deterministic fallback
         fallback = [
             item for item in _get_fallback_items(query)
             if item.supplier == retailer_name

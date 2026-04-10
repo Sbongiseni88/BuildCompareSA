@@ -16,6 +16,8 @@ import {
 import { ChatMessage } from '@/types';
 import { generateAIResponse } from '@/data/mockData';
 import { useToast } from '@/contexts/ToastContext';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface AIConciergeProps {
     isOpen: boolean;
@@ -160,52 +162,62 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
         return (
             <button
                 onClick={onToggle}
-                className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-2xl shadow-lg flex items-center justify-center text-slate-900 hover:scale-110 transition-transform animate-pulse-glow"
+                className="fixed bottom-6 right-6 z-50 w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full shadow-2xl shadow-yellow-500/20 flex items-center justify-center text-slate-900 hover:scale-110 hover:-translate-y-1 transition-all hover:shadow-yellow-500/40 group overflow-hidden animate-pulse-glow"
             >
-                <Bot className="w-7 h-7" />
+                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out rounded-full" />
+                <Bot className="w-8 h-8 relative z-10" />
+                <div className="absolute top-0 right-0 w-4 h-4 bg-red-500 border-2 border-slate-900 rounded-full animate-bounce"></div>
             </button>
         );
     }
 
     return (
         <div
-            className={`fixed right-0 top-0 h-full z-50 flex flex-col bg-slate-900 border-l border-yellow-500/20 shadow-2xl transition-all duration-300 ${isMinimized
-                ? 'w-16'
-                : 'w-full md:w-96'
+            className={`fixed right-0 top-0 h-full z-50 flex flex-col bg-slate-900/85 backdrop-blur-3xl shadow-2xl transition-all duration-500 ease-in-out ${isMinimized
+                ? 'w-20 shadow-none border-l border-transparent bg-transparent backdrop-blur-none pointer-events-none'
+                : 'w-full md:w-[450px] shadow-black/80 border-l border-slate-700/50'
                 }`}
         >
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800/50">
-                {!isMinimized && (
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl flex items-center justify-center">
-                            <Bot className="w-5 h-5 text-slate-900" />
+            {!isMinimized && (
+                <div className="flex items-center justify-between p-5 border-b border-white/5 bg-gradient-to-b from-slate-800/80 to-transparent">
+                    <div className="flex items-center gap-4">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-yellow-400 blur-md opacity-40 rounded-full animate-pulse-glow" />
+                            <div className="relative w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-2xl flex items-center justify-center shadow-lg border border-yellow-300/30">
+                                <Bot className="w-6 h-6 text-slate-900 drop-shadow-sm" />
+                            </div>
                         </div>
                         <div>
-                            <h3 className="font-semibold text-white">AI Concierge</h3>
-                            <div className="flex items-center gap-1">
-                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                <span className="text-xs text-green-400">Online</span>
+                            <h3 className="font-black text-xl text-white tracking-tight">AI Concierge</h3>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
+                                <span className="text-[10px] font-bold tracking-widest uppercase text-green-400">Online & Ready</span>
                             </div>
                         </div>
                     </div>
-                )}
 
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={() => setIsMinimized(!isMinimized)}
-                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-                    >
-                        {isMinimized ? <Maximize2 className="w-5 h-5" /> : <Minimize2 className="w-5 h-5" />}
-                    </button>
-                    <button
-                        onClick={onToggle}
-                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setIsMinimized(true)}
+                            className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all bg-slate-800/50 border border-transparent hover:border-slate-600"
+                            title="Minimize"
+                        >
+                            <Minimize2 className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={onToggle}
+                            className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/20 rounded-xl transition-all bg-slate-800/50 border border-transparent hover:border-red-500/30"
+                            title="Close"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {!isMinimized && (
                 <>
@@ -218,17 +230,37 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                                     }`}
                             >
                                 {message.role === 'assistant' && (
-                                    <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center mr-2 flex-shrink-0">
+                                    <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center mr-3 flex-shrink-0 shadow-md border border-yellow-300/30">
                                         <Bot className="w-4 h-4 text-slate-900" />
                                     </div>
                                 )}
                                 <div
-                                    className={
-                                        message.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'
-                                    }
+                                    className={`relative p-5 rounded-3xl shadow-lg max-w-[85%] transition-all ${
+                                        message.role === 'user' 
+                                            ? 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-slate-900 rounded-tr-sm ml-auto border border-yellow-300/50' 
+                                            : 'bg-slate-800/80 backdrop-blur-md border border-slate-700/80 text-slate-100 rounded-tl-sm shadow-black/40 hover:border-yellow-500/30'
+                                    }`}
                                 >
-                                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                                    <p className={`text-xs mt-2 opacity-60`}>
+                                    <div className={`text-[15px] leading-relaxed ${message.role === 'user' ? 'font-semibold' : 'prose-sm'}`}>
+                                        {message.role === 'user' ? (
+                                            <span className="whitespace-pre-wrap">{message.content}</span>
+                                        ) : (
+                                            <ReactMarkdown 
+                                                remarkPlugins={[remarkGfm]}
+                                                components={{
+                                                    p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
+                                                    ul: ({node, ...props}) => <ul className="list-disc ml-5 mb-3 space-y-1.5" {...props} />,
+                                                    ol: ({node, ...props}) => <ol className="list-decimal ml-5 mb-3 space-y-1.5" {...props} />,
+                                                    li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                                                    strong: ({node, ...props}) => <strong className="font-bold text-yellow-500" {...props} />,
+                                                    h3: ({node, ...props}) => <h3 className="text-[16px] font-black tracking-tight text-white mt-4 mb-2" {...props} />
+                                                }}
+                                            >
+                                                {message.content}
+                                            </ReactMarkdown>
+                                        )}
+                                    </div>
+                                    <p className={`text-[10px] mt-3 font-bold tracking-widest uppercase ${message.role === 'user' ? 'text-slate-800/70 text-right' : 'text-slate-500'}`}>
                                         {message.timestamp.toLocaleTimeString('en-ZA', {
                                             hour: '2-digit',
                                             minute: '2-digit'
@@ -240,15 +272,15 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
 
                         {/* Typing Indicator */}
                         {isTyping && (
-                            <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center">
-                                    <Bot className="w-4 h-4 text-slate-900" />
+                            <div className="flex items-center gap-3 mt-2 animate-fade-in pl-1">
+                                <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center shadow-md border border-yellow-300/30">
+                                    <Bot className="w-4 h-4 text-slate-900 animate-pulse" />
                                 </div>
-                                <div className="chat-bubble-ai">
-                                    <div className="flex items-center gap-1">
-                                        <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                        <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                        <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                <div className="bg-slate-800/80 backdrop-blur-md border border-slate-700/80 p-4 rounded-3xl rounded-tl-sm shadow-lg max-w-[85%]">
+                                    <div className="flex items-center gap-1.5 h-1.5">
+                                        <div className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                        <div className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                        <div className="w-2 h-2 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                     </div>
                                 </div>
                             </div>
@@ -268,14 +300,20 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                                         key={index}
                                         onClick={() => {
                                             setInputValue(prompt.text);
+                                            // Optional: automatically send when quick prompt is clicked
+                                            // setTimeout(handleSendMessage, 100);
                                         }}
-                                        className="w-full flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-yellow-500/30 transition-all group text-left"
+                                        className="w-full flex items-center justify-between p-3.5 bg-slate-800/40 hover:bg-slate-800/80 rounded-xl border border-slate-700/50 hover:border-yellow-500/50 transition-all duration-300 group text-left hover:shadow-lg hover:-translate-y-0.5"
                                     >
                                         <div className="flex items-center gap-3">
-                                            <Icon className={`w-4 h-4 ${prompt.color}`} />
-                                            <span className="text-sm text-slate-300">{prompt.text}</span>
+                                            <div className={`p-2 rounded-lg bg-slate-900/80 group-hover:bg-slate-900 transition-colors ${prompt.color} shadow-inner`}>
+                                                <Icon className="w-4 h-4" />
+                                            </div>
+                                            <span className="text-[14px] font-medium text-slate-300 group-hover:text-white transition-colors">{prompt.text}</span>
                                         </div>
-                                        <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-yellow-400 transition-colors" />
+                                        <div className="w-6 h-6 rounded-full bg-slate-700/50 flex items-center justify-center group-hover:bg-yellow-500/20 transition-colors">
+                                            <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-yellow-400" />
+                                        </div>
                                     </button>
                                 );
                             })}
@@ -283,16 +321,17 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                     )}
 
                     {/* Input */}
-                    <div className="p-4 border-t border-slate-700 bg-slate-800/30">
-                        <div className="flex items-end gap-2">
-                            <div className="flex-1 relative">
+                    <div className="p-5 border-t border-slate-700/50 bg-slate-900/90 backdrop-blur-3xl pb-8 md:pb-6">
+                        <div className="flex items-end gap-2.5">
+                            <div className="flex-1 relative group">
+                                <div className="absolute inset-0 bg-gradient-to-r from-yellow-500/10 to-transparent rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity pointer-events-none" />
                                 <textarea
                                     value={inputValue}
                                     onChange={(e) => setInputValue(e.target.value)}
                                     onKeyPress={handleKeyPress}
-                                    placeholder="Ask about materials, quantities..."
+                                    placeholder="Type your message..."
                                     rows={1}
-                                    className="input-field resize-none pr-4 min-h-[48px] max-h-32"
+                                    className="w-full bg-slate-800/50 hover:bg-slate-800 focus:bg-slate-800 text-white placeholder-slate-500 border border-slate-700 focus:border-yellow-500/50 rounded-2xl px-5 py-3.5 pr-4 min-h-[52px] max-h-32 outline-none resize-none transition-all shadow-inner font-medium text-[15px]"
                                     style={{ height: 'auto' }}
                                 />
                             </div>
@@ -300,10 +339,10 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                             <button
                                 onClick={startVoiceRecognition}
                                 disabled={isListening || isTyping}
-                                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isListening
-                                    ? 'bg-red-500 animate-pulse text-white'
-                                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white'
-                                    } disabled:opacity-50`}
+                                className={`w-14 h-[52px] rounded-2xl flex items-center justify-center transition-all border shadow-lg ${isListening
+                                    ? 'bg-red-500/20 text-red-500 border-red-500/50 animate-pulse-glow hover:bg-red-500 hover:text-white'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-white hover:border-slate-600'
+                                    } disabled:opacity-50 active:scale-95`}
                                 title={isListening ? 'Listening...' : 'Start voice input'}
                             >
                                 {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -312,32 +351,30 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                             <button
                                 onClick={handleSendMessage}
                                 disabled={!inputValue.trim() || isTyping}
-                                className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center text-slate-900 hover:scale-105 transition-transform disabled:opacity-50 disabled:hover:scale-100"
+                                className="w-14 h-[52px] bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-2xl flex items-center justify-center text-slate-900 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-yellow-500/20 disabled:opacity-50 disabled:hover:scale-100"
                             >
-                                <Send className="w-5 h-5" />
+                                <Send className="w-6 h-6 ml-1" />
                             </button>
                         </div>
-                        <p className="text-xs text-slate-500 mt-2 text-center">
-                            AI-powered suggestions • Voice enabled • Not financial advice
-                        </p>
+                        <div className="flex items-center justify-center gap-2 mt-4 text-[11px] font-bold tracking-widest text-slate-600 uppercase">
+                            <Sparkles className="w-3 h-3 text-yellow-500/70" />
+                            <span>AI-powered • Voice enabled</span>
+                            <Sparkles className="w-3 h-3 text-yellow-500/70" />
+                        </div>
                     </div>
                 </>
             )}
 
-            {/* Minimized State */}
+            {/* Minimized State Floating Button */}
             {isMinimized && (
-                <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                <div className="flex-1 flex flex-col items-center justify-end pb-24 pr-4 md:pb-6 pointer-events-auto">
                     <button
                         onClick={() => setIsMinimized(false)}
-                        className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl flex items-center justify-center text-slate-900 hover:scale-110 transition-transform"
+                        className="relative w-[3.5rem] h-[3.5rem] bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/80 hover:border-yellow-500/50 rounded-2xl flex items-center justify-center text-yellow-400 hover:scale-110 transition-all shadow-2xl group animate-bounce"
                     >
-                        <MessageCircle className="w-5 h-5" />
+                        <MessageCircle className="w-7 h-7 group-hover:scale-110 transition-transform" />
+                        <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-green-500 rounded-full border-[3px] border-slate-900 animate-pulse"></div>
                     </button>
-                    {messages.length > 1 && (
-                        <div className="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center text-xs font-bold text-slate-900">
-                            {messages.length - 1}
-                        </div>
-                    )}
                 </div>
             )}
         </div>

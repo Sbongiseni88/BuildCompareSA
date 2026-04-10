@@ -74,13 +74,13 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
         } finally {
             setDataLoading(false);
         }
-    }, [user, supabase]);
+    }, [user?.id, supabase]);
 
     React.useEffect(() => {
         if (authLoading) return;
-        if (!user) return;
+        if (!user?.id) return;
         fetchDashboardData();
-    }, [user, authLoading, fetchDashboardData]);
+    }, [user?.id, authLoading, fetchDashboardData]);
 
     // Pull-to-refresh (mobile)
     const { containerRef, isRefreshing, pullDistance, progress } = usePullToRefresh({
