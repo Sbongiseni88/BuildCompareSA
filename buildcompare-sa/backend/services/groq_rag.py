@@ -5,6 +5,10 @@ from groq import Groq
 import chromadb
 from chromadb.utils import embedding_functions
 
+from backend.logging_config import get_logger
+
+log = get_logger("rag")
+
 # Load environment variables
 load_dotenv()
 
@@ -29,7 +33,7 @@ class GroqRAGService:
         if GROQ_API_KEY:
             self.groq_client = Groq(api_key=GROQ_API_KEY)
         else:
-            print("WARNING: GROQ_API_KEY not found in environment.")
+            log.warning("no_api_key", msg="GROQ_API_KEY not found in environment, RAG will use fallback data")
         
         # Initialize ChromaDB
         try:
@@ -42,7 +46,7 @@ class GroqRAGService:
                 embedding_function=sentence_transformer_ef
             )
         except Exception as e:
-            print(f"WARNING: ChromaDB collection not found. Run seed_chroma.py first. Error: {e}")
+            log.warning("chromadb_missing", error=str(e), msg="ChromaDB collection not found. Run seed_chroma.py first.")
             self.collection = None
     
     def retrieve_context(self, query: str, n_results: int = 3) -> List[str]:
@@ -148,7 +152,7 @@ Provide a comprehensive list of materials needed."""
             return chat_completion.choices[0].message.content
         except Exception as e:
             # Fallback for error handling
-            print(f"BoQ Generation Error: {e}")
+            log.error("boq_generation_failed", error=str(e))
             return '{"materials": []}'
 
 

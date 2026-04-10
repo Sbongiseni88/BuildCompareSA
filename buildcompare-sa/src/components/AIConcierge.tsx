@@ -14,7 +14,7 @@ import {
     MicOff
 } from 'lucide-react';
 import { ChatMessage } from '@/types';
-import { mockChatMessages, generateAIResponse } from '@/data/mockData';
+import { generateAIResponse } from '@/data/mockData';
 import { useToast } from '@/contexts/ToastContext';
 
 interface AIConciergeProps {
@@ -24,7 +24,14 @@ interface AIConciergeProps {
 
 export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
     const { showWarning } = useToast();
-    const [messages, setMessages] = useState<ChatMessage[]>(mockChatMessages);
+    const [messages, setMessages] = useState<ChatMessage[]>([
+        {
+            id: 'welcome',
+            role: 'assistant',
+            content: 'Howzit! 👋 I\'m your BuildCompare AI assistant. Ask me about material prices, quantity estimates, SANS 10400 regulations, or anything construction-related in South Africa.',
+            timestamp: new Date(),
+        }
+    ]);
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
@@ -81,10 +88,18 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
         setIsTyping(true);
 
         try {
+            // Build conversation history for the API (exclude the welcome message)
+            const history = [...messages, userMessage]
+                .filter(m => m.id !== 'welcome')
+                .map(m => ({ role: m.role, content: m.content }));
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: inputValue }),
+                body: JSON.stringify({
+                    message: inputValue,
+                    history: history.slice(0, -1), // Exclude current message (sent separately)
+                }),
             });
 
             if (!response.ok) throw new Error('API request failed');
