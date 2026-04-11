@@ -82,10 +82,19 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
         fetchDashboardData();
     }, [user?.id, authLoading, fetchDashboardData]);
 
-    // Pull-to-refresh (mobile)
     const { containerRef, isRefreshing, pullDistance, progress } = usePullToRefresh({
         onRefresh: fetchDashboardData,
     });
+
+    // Failsafe: Prevent infinite data loading
+    React.useEffect(() => {
+        if (!dataLoading) return;
+        const timer = setTimeout(() => {
+            console.warn("⚠️ Dashboard data fetch timed out. Forcing UI to resolve.");
+            setDataLoading(false);
+        }, 6000);
+        return () => clearTimeout(timer);
+    }, [dataLoading]);
 
     // Derived Stats
     const activeCount = projects.filter(p => p.status === 'active').length;

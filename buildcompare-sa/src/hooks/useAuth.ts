@@ -76,20 +76,15 @@ export function useAuth(): UseAuthReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Hard timeout — if auth hasn't resolved after a few seconds, just continue
+    // Hard timeout — if auth hasn't resolved after a few seconds, force it to false
     useEffect(() => {
+        if (!loading) return;
         const timeoutId = setTimeout(() => {
-            setLoading(prevLoading => {
-                if (prevLoading) {
-                    console.warn(`⚠️ Auth check timed out after ${AUTH_TIMEOUT_MS}ms. Proceeding without auth.`);
-                    return false;
-                }
-                return prevLoading;
-            });
+            setLoading(false);
+            console.warn(`⚠️ Auth loading timed out after ${AUTH_TIMEOUT_MS}ms. Forcing it to resolve.`);
         }, AUTH_TIMEOUT_MS);
-
         return () => clearTimeout(timeoutId);
-    }, []);
+    }, [loading]);
 
     // Get the initial session + subscribe to future auth changes
     useEffect(() => {
@@ -143,7 +138,7 @@ export function useAuth(): UseAuthReturn {
             } else {
                 setUserProfile(null);
             }
-            setLoading(false);
+            if (!cancelled) setLoading(false);
         });
 
         return () => {

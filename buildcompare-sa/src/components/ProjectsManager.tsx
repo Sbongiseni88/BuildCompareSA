@@ -74,6 +74,16 @@ export default function ProjectsManager({
     const [newMaterialCategory, setNewMaterialCategory] = useState('other');
     const [isAddingMaterial, setIsAddingMaterial] = useState(false);
 
+    // Failsafe: Prevent infinite data fetching
+    React.useEffect(() => {
+        if (!isLoading) return;
+        const timer = setTimeout(() => {
+            console.warn("⚠️ Projects fetch timed out. Forcing UI to resolve.");
+            setIsLoading(false);
+        }, 6000);
+        return () => clearTimeout(timer);
+    }, [isLoading]);
+
     // Swipe-to-dismiss state for modals
     const [swipeOffset, setSwipeOffset] = useState(0);
     const swipeStartY = React.useRef(0);
