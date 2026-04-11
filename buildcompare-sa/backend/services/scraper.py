@@ -90,6 +90,11 @@ _FALLBACK_CATALOG: Dict[str, List[Tuple[str, str, float, str]]] = {
         ("Cashbuild", "1.5mm Flat Twin Cable 100m", 999.95, "https://www.cashbuild.co.za/categories/electrical"),
         ("Leroy Merlin", "2.5mm Surfix Cable 10m", 249.00, "https://leroymerlin.co.za/catalogsearch/result/?q=electrical"),
     ],
+    "hardware": [
+        ("Builders Warehouse", "Stanley FatMax Claw Hammer 20oz", 349.00, "https://www.builders.co.za/Hardware/c/hardware"),
+        ("Cashbuild", "Grip Hammer 500g Wood Handle", 129.95, "https://www.cashbuild.co.za/categories/hardware"),
+        ("Leroy Merlin", "Dexter Fiberglass Claw Hammer", 189.00, "https://leroymerlin.co.za/catalogsearch/result/?q=hammer"),
+    ],
 }
 
 # A small price variance based on query hash so the same query always
@@ -107,7 +112,10 @@ def _get_fallback_items(query: str) -> List[PriceItem]:
     # Try to match a known category
     matched_key: Optional[str] = None
     for key in _FALLBACK_CATALOG:
-        if key in q_lower or q_lower in key:
+        # Check for direct inclusion or word-match to avoid "hammer" -> "cement" issues
+        q_words = set(q_lower.split())
+        key_words = set(key.split())
+        if key in q_lower or q_lower in key or q_words.intersection(key_words):
             matched_key = key
             break
 
@@ -133,6 +141,7 @@ def _get_fallback_items(query: str) -> List[PriceItem]:
             in_stock=True,
             stock_quantity=100,
             link=url,
+            is_fallback=True,
         ))
     return items
 

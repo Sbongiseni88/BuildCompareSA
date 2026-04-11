@@ -129,8 +129,79 @@ export const mockSuppliers: Supplier[] = [
         address: '89 Voortrekker Road, Bellville',
         city: 'Cape Town',
         province: 'Western Cape',
-        phone: '021 948 3200',
     },
+    {
+        id: 'contractor-jhb',
+        name: 'Sipho & Sons Construction',
+        logo: '/suppliers/contractor.svg',
+        type: 'contractor',
+        rating: 4.8,
+        deliveryTime: 'Available Next Week',
+        address: '15 M1 Rd, Alexandra',
+        city: 'Johannesburg',
+        province: 'Gauteng',
+        phone: '082 123 4567',
+    },
+    {
+        id: 'contractor-pta',
+        name: 'Gauteng Master Builders',
+        logo: '/suppliers/contractor.svg',
+        type: 'contractor',
+        rating: 4.5,
+        deliveryTime: 'Available in 3 Days',
+        address: '88 Church St, Pretoria',
+        city: 'Pretoria',
+        province: 'Gauteng',
+        phone: '083 987 6543',
+    },
+    {
+        id: 'contractor-cpt',
+        name: 'Cape Trade Pros',
+        logo: '/suppliers/contractor.svg',
+        type: 'contractor',
+        rating: 4.9,
+        deliveryTime: 'Available Tomorrow',
+        address: '12 Main Rd, Bellville',
+        city: 'Cape Town',
+        province: 'Western Cape',
+        phone: '021 555 1234',
+    },
+    {
+        id: 'contractor-wc',
+        name: 'Stellenbosch Build Co.',
+        logo: '/suppliers/contractor.svg',
+        type: 'contractor',
+        rating: 4.6,
+        deliveryTime: 'Available Next Week',
+        address: '4 Dorp St, Stellenbosch',
+        city: 'Stellenbosch',
+        province: 'Western Cape',
+        phone: '021 888 1234',
+    },
+    {
+        id: 'contractor-dbn',
+        name: 'KZN Master Builders',
+        logo: '/suppliers/contractor.svg',
+        type: 'contractor',
+        rating: 4.7,
+        deliveryTime: 'Available in 2 Days',
+        address: '45 Umhlanga Rocks Dr',
+        city: 'Durban',
+        province: 'KwaZulu-Natal',
+        phone: '031 123 4567',
+    },
+    {
+        id: 'contractor-pmb',
+        name: 'Natal Artisan Group',
+        logo: '/suppliers/contractor.svg',
+        type: 'contractor',
+        rating: 4.4,
+        deliveryTime: 'Available Tomorrow',
+        address: '10 Chief Albert Luthuli St',
+        city: 'Pietermaritzburg',
+        province: 'KwaZulu-Natal',
+        phone: '033 987 6543',
+    }
 ];
 
 // Mock Projects
@@ -233,8 +304,14 @@ export const mockMaterials: Material[] = [
     { id: 'plb-3', name: 'Geyserwise 150L Geyser', brand: 'Geyserwise', category: 'plumbing', quantity: 1, unit: 'unit' },
 
     // Hardware
-    { name: 'Hilti Expansion Bolt M10', id: 'hwd-1', brand: 'Eda', category: 'hardware', quantity: 1, unit: 'box' },
+    // Hardware & Tools
+    { id: 'hwd-1', name: 'Hilti Expansion Bolt M10', brand: 'Hilti', category: 'hardware', quantity: 1, unit: 'box' },
     { id: 'hwd-2', name: 'Grip-Rite 75mm Nail Box (5kg)', brand: 'Grip-Rite', category: 'hardware', quantity: 1, unit: 'box' },
+    { id: 'hwd-3', name: 'Stiletto 15oz Ti-Bone Hammer', brand: 'Stiletto', category: 'hardware', quantity: 1, unit: 'unit' },
+    { id: 'hwd-4', name: 'Stanley FatMax Claw Hammer 20oz', brand: 'Stanley', category: 'hardware', quantity: 1, unit: 'unit' },
+    { id: 'hwd-5', name: 'Makita 18V LXT Cordless Drill', brand: 'Makita', category: 'hardware', quantity: 1, unit: 'unit' },
+    { id: 'hwd-6', name: 'Bosch Professional Angle Grinder', brand: 'Bosch', category: 'hardware', quantity: 1, unit: 'unit' },
+    { id: 'hwd-7', name: 'Steel Wheelbarrow (Heavy Duty)', brand: 'Lasher', category: 'other', quantity: 1, unit: 'unit' },
 ];
 
 // ============================================================
@@ -270,7 +347,8 @@ function getBasePriceForCategory(category: string): number {
         paint: 1650,        // 20L bucket average
         roofing: 285,       // per sheet/tile
         tiles: 42,          // per m²
-        hardware: 68,       // per box/unit
+        hardware: 250,       // per box/unit/tool average
+        labor: 300,         // baseline fallback
         other: 95,
     };
     return prices[category] || 95;
@@ -289,12 +367,13 @@ function stableHash(str: string): number {
 
 // Generate mock price quotes with LOCATION DATA — DETERMINISTIC
 export function generateMockQuotes(material: Material, region: string = 'gauteng'): PriceQuote[] {
-    let basePrice = getBasePriceForCategory(material.category);
-
-    // Dynamic Price Overrides based on Name Context (more accurate)
+    let basePrice = material._aiPriceEstimate || getBasePriceForCategory(material.category);
+    
+    // Dynamic Price Overrides based on Name Context (only apply if no AI override)
     const lowerName = material.name.toLowerCase();
-
-    if (lowerName.includes('primer')) {
+    
+    if (!material._aiPriceEstimate) {
+        if (lowerName.includes('primer')) {
         basePrice = lowerName.includes('20l') ? 1150 : 350;
     } else if (lowerName.includes('weatherguard') || lowerName.includes('micatex')) {
         basePrice = 1899;
@@ -337,16 +416,32 @@ export function generateMockQuotes(material: Material, region: string = 'gauteng
     } else if (lowerName.includes('maxitile')) {
         basePrice = 42;
     }
+    }
+    
+    // Dynamic Regional Labor Rates
+    if (material.category === 'labor' && !material._aiPriceEstimate) {
+        const isArtisan = lowerName.includes('artisan') || lowerName.includes('plumber') || lowerName.includes('electrician');
+        if (region === 'gauteng') basePrice = isArtisan ? 750 : 300;
+        else if (region === 'cape-town') basePrice = isArtisan ? 850 : 350;
+        else if (region === 'durban') basePrice = isArtisan ? 600 : 250;
+        else basePrice = isArtisan ? 700 : 300;
+    }
 
-    // Filter suppliers by region
+    // Filter suppliers by region AND type
+    const isLabor = material.category === 'labor';
+    
     const regionSuppliers = mockSuppliers.filter(s => {
+        if (isLabor && s.type !== 'contractor') return false;
+        if (!isLabor && s.type === 'contractor') return false;
+
         if (region === 'gauteng') return s.province === 'Gauteng';
         if (region === 'cape-town') return s.province === 'Western Cape';
         if (region === 'durban') return s.province === 'KwaZulu-Natal';
         return true;
     });
 
-    const suppliersToUse = regionSuppliers.length >= 4 ? regionSuppliers.slice(0, 6) : mockSuppliers.slice(0, 6);
+    // Fallback to cross-region if not enough specific ones
+    const suppliersToUse = regionSuppliers.length >= 1 ? regionSuppliers.slice(0, 6) : mockSuppliers.filter(s => isLabor ? s.type === 'contractor' : s.type !== 'contractor').slice(0, 6);
 
     return suppliersToUse.map((supplier, index) => {
         const profile = SUPPLIER_PRICE_PROFILES[supplier.id] || { multiplier: 1.0, deliveryFee: 250, stockChance: 0.85, distance: {} };
@@ -377,12 +472,13 @@ export function generateMockQuotes(material: Material, region: string = 'gauteng
             supplierCity: supplier.city || '',
             supplierProvince: supplier.province || '',
             supplierPhone: supplier.phone || '',
+            supplierType: supplier.type,
             price: price,
             originalPrice: hasDiscount ? Math.round(price * 1.15 * 100) / 100 : undefined,
-            inStock: inStock,
-            stockQuantity: stockQuantity,
-            deliveryFee: profile.deliveryFee,
-            deliveryDays: index + 1,
+            inStock: isLabor ? true : inStock,
+            stockQuantity: isLabor ? 1 : stockQuantity,
+            deliveryFee: isLabor ? 0 : profile.deliveryFee,
+            deliveryDays: isLabor ? 0 : index + 1,
             distance: distance,
             productUrl: getMockProductUrl(supplier.name, material.name),
             lastUpdated: new Date(),

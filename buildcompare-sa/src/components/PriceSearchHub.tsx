@@ -28,7 +28,14 @@ import {
     MessageCircle,
     Share2,
     ExternalLink,
-    CheckCircle2
+    CheckCircle2,
+    Hammer,
+    Zap,
+    Droplets,
+    BrickWall,
+    PaintBucket,
+    FolderTree,
+    Waves
 } from 'lucide-react';
 import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
 import { mockMaterials, generateComparisonResults } from '@/data/mockData';
@@ -117,11 +124,11 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         if (searchQuery.length > 1) {
             debounceRef.current = setTimeout(() => {
                 const q = searchQuery.toLowerCase();
-                // Match against known materials + category names
-                const materialMatches = mockMaterials.filter(m =>
-                    m.name.toLowerCase().includes(q) ||
-                    (m.brand && m.brand.toLowerCase().includes(q))
-                );
+                const qWords = q.split(/\s+/);
+                const materialMatches = mockMaterials.filter(m => {
+                    const targetStr = m.name.toLowerCase() + " " + (m.brand?.toLowerCase() || "");
+                    return qWords.every(w => targetStr.includes(w));
+                });
                 // Pull in subcategory names too for wider coverage
                 const catMatches: Material[] = [];
                 constructionCategories.forEach(cat => {
@@ -184,6 +191,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                             ? (Math.random() * 5 + 1).toFixed(1)
                             : (Math.random() * 25 + 5).toFixed(1)),
                         productUrl: item.url || undefined,
+                        isFallback: item.is_fallback || false,
                         lastUpdated: new Date()
                     } as PriceQuote));
 
@@ -213,11 +221,35 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                 .filter((r): r is PromiseFulfilledResult<ComparisonResult | null> => r.status === 'fulfilled' && r.value !== null)
                 .map(r => r.value as ComparisonResult);
 
-            // If the API returned nothing, use mock data so the demo still works
+            // If the Live API returned nothing, drop back to Mock Data with AI Estimator
             if (results.length === 0) {
-                console.log("Using fallback mock data for demo...");
-                await new Promise(resolve => setTimeout(resolve, 800)); // Simulate delay
-                const mockResults = generateComparisonResults(materials, region);
+                console.log("Using fallback mock data + AI Estimator...");
+                
+                const enhancedMaterials = await Promise.all(materials.map(async (m) => {
+                    // Check if it's already a perfectly known catalog item
+                    const isKnown = mockMaterials.some(mock => mock.name === m.name);
+                    if (isKnown) return m;
+                    
+                    // Tap into the Groq estimation pipeline for unknown wildcards
+                    try {
+                        const res = await fetch(`/api/estimate?q=${encodeURIComponent(m.name)}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            return { 
+                                ...m, 
+                                name: data.standardizedName, 
+                                category: data.category, 
+                                _aiPriceEstimate: data.basePrice 
+                            };
+                        }
+                    } catch (err) {
+                        console.error("AI Estimation failed", err);
+                    }
+                    return m;
+                }));
+
+                await new Promise(resolve => setTimeout(resolve, 600)); // Simulate delay
+                const mockResults = generateComparisonResults(enhancedMaterials, region);
                 setComparisonResults(mockResults.map(r => ({ ...r, isLive: false })));
             } else {
                 setComparisonResults(results.map(r => ({ ...r, isLive: true })));
@@ -233,8 +265,12 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     const handleSearch = () => {
         // Typed something but didn't pick from dropdown — just search the raw text
         if (searchQuery && selectedMaterials.length === 0) {
-            // Try matching a known mock item first, otherwise treat it as freeform
-            const distinctItem = mockMaterials.find(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
+            // Fuzzy match the distinct item first
+            const qWords = searchQuery.toLowerCase().split(/\s+/);
+            const distinctItem = mockMaterials.find(m => {
+                const targetStr = m.name.toLowerCase() + " " + (m.brand?.toLowerCase() || "");
+                return qWords.every(w => targetStr.includes(w));
+            });
             if (distinctItem) {
                 performSearch([distinctItem]);
             } else {
@@ -300,6 +336,14 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             url = `https://www.google.com/search?q=${encodeURIComponent(productName + ' price at ' + supplierName)}`;
         }
         window.open(url, '_blank');
+    };
+
+    const handleRequestQuote = (supplierName: string, productName: string) => {
+        showSuccess(`Quote request for ${productName} sent to ${supplierName}`);
+        setTimeout(() => {
+             const message = `Hi ${supplierName}, I'd like to request a quote for ${productName}.`;
+             window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+        }, 1500);
     };
 
     const formatCurrency = useCallback((value: number) => {
@@ -429,7 +473,10 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                         type="text"
                                         placeholder="Material (e.g. 50kg Cement)"
                                         value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onChange={(e) => {
+                                            setSearchQuery(e.target.value);
+                                            setSelectedMaterials([]); // CLEAR previously selected object if user starts typing manually
+                                        }}
                                         onKeyDown={(e) => {
                                             if (showSuggestions && searchSuggestions.length > 0) {
                                                 if (e.key === 'ArrowDown') {
@@ -605,7 +652,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                         <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 flex flex-col relative group">
                                             {/* Price Verification Badge */}
                                             <div className="absolute top-2 right-2 z-10">
-                                                {result.isLive ? (
+                                                {result.isLive && !result.bestPrice?.isFallback ? (
                                                     <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 text-green-400 text-[9px] font-bold rounded-full border border-green-500/30 backdrop-blur-sm">
                                                         <CheckCircle2 className="w-2.5 h-2.5" /> LIVE VERIFIED
                                                     </span>
@@ -620,7 +667,17 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                             <div className="p-4 bg-black/20 border-b border-slate-800 flex items-start justify-between gap-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="p-2 bg-slate-800 rounded-lg">
-                                                        <Package className="w-5 h-5 text-yellow-400" />
+                                                        {(() => {
+                                                            const cat = result.material.category.toLowerCase();
+                                                            if (cat.includes('cement')) return <Waves className="w-5 h-5 text-blue-400" />;
+                                                            if (cat.includes('brick')) return <BrickWall className="w-5 h-5 text-orange-400" />;
+                                                            if (cat.includes('plumb')) return <Droplets className="w-5 h-5 text-cyan-400" />;
+                                                            if (cat.includes('elec')) return <Zap className="w-5 h-5 text-yellow-400" />;
+                                                            if (cat.includes('paint')) return <PaintBucket className="w-5 h-5 text-purple-400" />;
+                                                            if (cat.includes('timber') || cat.includes('wood')) return <FolderTree className="w-5 h-5 text-emerald-400" />;
+                                                            if (cat.includes('hard') || cat.includes('tool')) return <Hammer className="w-5 h-5 text-slate-300" />;
+                                                            return <Package className="w-5 h-5 text-yellow-400" />;
+                                                        })()}
                                                     </div>
                                                     <div>
                                                         <h3 className="text-base font-bold text-white line-clamp-1" title={result.material.name}>{result.material.name}</h3>
@@ -655,14 +712,23 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                     <div className="flex items-end justify-between">
                                                         <div>
                                                             <p className="text-2xl font-black text-white">{formatCurrency(result.bestPrice.price)}</p>
-                                                            <p className="text-[10px] text-slate-500">per unit</p>
+                                                            <p className="text-[10px] text-slate-500">per {result.material.unit || 'unit'}</p>
                                                         </div>
-                                                        <button
-                                                            onClick={() => handleOrderNow(result.bestPrice!.supplierName, result.material.name, result.bestPrice!.productUrl)}
-                                                            className="px-3 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-black text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
-                                                        >
-                                                            ORDER <ExternalLink className="w-3 h-3" />
-                                                        </button>
+                                                        {result.bestPrice.supplierType === 'contractor' ? (
+                                                            <button
+                                                                onClick={() => handleRequestQuote(result.bestPrice!.supplierName, result.material.name)}
+                                                                className="px-3 py-1.5 bg-orange-500 hover:bg-orange-400 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shadow-lg shadow-orange-500/20"
+                                                            >
+                                                                REQUEST QUOTE <Hammer className="w-3 h-3" />
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleOrderNow(result.bestPrice!.supplierName, result.material.name, result.bestPrice!.productUrl)}
+                                                                className="px-3 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-black text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                                                            >
+                                                                ORDER <ExternalLink className="w-3 h-3" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -676,34 +742,52 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                         <div key={qIdx} className="p-3 border-b border-slate-800/50 last:border-0 hover:bg-white/5 transition-colors group">
                                                             <div className="flex justify-between items-center">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${quote.supplierName.includes('Builders') ? 'bg-blue-600/20 text-blue-400' :
+                                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${quote.supplierType === 'contractor' ? 'bg-orange-500/20 text-orange-400' :
+                                                                        quote.supplierName.includes('Builders') ? 'bg-blue-600/20 text-blue-400' :
                                                                         quote.supplierName.includes('Leroy') ? 'bg-green-600/20 text-green-400' :
                                                                             quote.supplierName.includes('Cash') ? 'bg-red-600/20 text-red-400' :
                                                                                 'bg-slate-700/50 text-slate-400'
                                                                         }`}>
-                                                                        {quote.supplierName.substring(0, 1)}
+                                                                        {quote.supplierType === 'contractor' ? <Hammer className="w-4 h-4" /> : quote.supplierName.substring(0, 1)}
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{quote.supplierName}</p>
                                                                         <div className="flex items-center gap-2 text-[10px] text-slate-500">
                                                                             <span>{quote.distance}km</span>
                                                                             <span>•</span>
-                                                                            <span className={quote.inStock ? 'text-green-500' : 'text-red-500'}>{quote.inStock ? 'Stock' : 'No Stock'}</span>
+                                                                            {quote.supplierType === 'contractor' ? (
+                                                                                <span className="text-orange-400 font-bold">Avail. {quote.deliveryTime || 'Soon'}</span>
+                                                                            ) : (
+                                                                                <span className={quote.inStock ? 'text-green-500' : 'text-red-500'}>{quote.inStock ? 'Stock' : 'No Stock'}</span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex flex-col items-end gap-1">
                                                                     <p className="text-sm font-bold text-slate-200">{formatCurrency(quote.price)}</p>
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleOrderNow(quote.supplierName, result.material.name, quote.productUrl);
-                                                                        }}
-                                                                        className="px-2 py-1 bg-slate-800 hover:bg-yellow-400 hover:text-slate-900 text-[10px] font-bold rounded-md transition-all flex items-center gap-1 active:scale-95"
-                                                                    >
-                                                                        ORDER
-                                                                        <ExternalLink className="w-2.5 h-2.5" />
-                                                                    </button>
+                                                                    {quote.supplierType === 'contractor' ? (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleRequestQuote(quote.supplierName, result.material.name);
+                                                                            }}
+                                                                            className="px-2 py-1 bg-slate-800 hover:bg-orange-500 hover:text-white text-[10px] font-bold rounded-md transition-all flex items-center gap-1 active:scale-95"
+                                                                        >
+                                                                            REQUEST
+                                                                            <Hammer className="w-2.5 h-2.5" />
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleOrderNow(quote.supplierName, result.material.name, quote.productUrl);
+                                                                            }}
+                                                                            className="px-2 py-1 bg-slate-800 hover:bg-yellow-400 hover:text-slate-900 text-[10px] font-bold rounded-md transition-all flex items-center gap-1 active:scale-95"
+                                                                        >
+                                                                            ORDER
+                                                                            <ExternalLink className="w-2.5 h-2.5" />
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>

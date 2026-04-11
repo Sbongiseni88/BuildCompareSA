@@ -75,5 +75,12 @@ export const constructionCategories: Category[] = [
         icon: PaintBucket,
         description: 'Paint, tiles, and cornices',
         subcategories: ['Interior Paint', 'Exterior Paint', 'Floor Tiles', 'Cornices']
+    },
+    {
+        id: 'hardware',
+        label: 'Tools & Hardware',
+        icon: Hammer,
+        description: 'Hand tools, power tools, and fasteners',
+        subcategories: ['Hammers', 'Drills', 'Screwdrivers', 'Grinders', 'Nails', 'Bolts']
     }
 ];

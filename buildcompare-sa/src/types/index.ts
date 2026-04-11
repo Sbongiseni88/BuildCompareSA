@@ -19,6 +19,7 @@ export interface Material {
     quantity: number;
     unit: string;
     imageUrl?: string;
+    _aiPriceEstimate?: number;
 }
 
 export type MaterialCategory =
@@ -40,7 +41,7 @@ export interface Supplier {
     id: string;
     name: string;
     logo: string;
-    type: 'chain' | 'independent';
+    type: 'chain' | 'independent' | 'contractor';
     rating: number;
     deliveryTime: string;
     address?: string;
@@ -58,6 +59,7 @@ export interface PriceQuote {
     supplierCity?: string;
     supplierProvince?: string;
     supplierPhone?: string;
+    supplierType?: 'chain' | 'independent' | 'contractor';
     price: number;
     originalPrice?: number;
     inStock: boolean;
@@ -66,6 +68,7 @@ export interface PriceQuote {
     deliveryDays: number;
     distance: number;
     productUrl?: string;
+    isFallback?: boolean;
     lastUpdated: Date;
 }
 

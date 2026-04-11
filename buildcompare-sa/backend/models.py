@@ -12,6 +12,7 @@ class PriceItem(BaseModel):
     in_stock: bool = True
     stock_quantity: Optional[int] = None
     link: Optional[str] = None
+    is_fallback: bool = False
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 
