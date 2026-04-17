@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
+import pdfParse from 'pdf-parse';
 import { Material } from '@/types';
 import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
@@ -212,30 +213,65 @@ ${BOQ_JSON_STRUCTURE}`;
                     TEXT_MODELS
                 );
 
-                // ─── PDF PATH: Use vision (may contain scans/handwriting) ───
+                // ─── PDF PATH: Extract text then analyse with text model ───
             } else if (isPdfFile(mimeType, safeName)) {
-                console.log(`📑 PDF detected: sending to vision model...`);
+                console.log(`📑 PDF detected: extracting text with pdf-parse...`);
 
-                const base64Image = Buffer.from(arrayBuffer).toString('base64');
-                const dataUrl = `data:${mimeType};base64,${base64Image}`;
+                let pdfText = '';
+                try {
+                    const pdfData = await pdfParse(Buffer.from(arrayBuffer));
+                    pdfText = pdfData.text?.trim() || '';
+                    console.log(`Extracted ${pdfText.length} chars from PDF.`);
+                } catch (pdfErr) {
+                    console.warn('pdf-parse failed, will try vision fallback:', pdfErr);
+                }
 
-                const visionPrompt = `
+                if (pdfText.length > 50) {
+                    // ✅ Text-based PDF — feed extracted text to the reliable text models
+                    const pdfTextPrompt = `
 You are an expert South African Quantity Surveyor.
-Analyze this PDF document image. It may be a Bill of Quantities (BoQ), material list, or quotation.
-Extract ALL construction materials and items visible.
+The user has uploaded a Bill of Quantities (BoQ) as a PDF. Below is the extracted text.
+
+Analyze this data and extract ALL construction materials, products, and items listed.
+For each item, identify the name, brand (if mentioned), category, quantity, and unit.
+If quantities or units are unclear, use reasonable defaults.
+
+--- PDF CONTENT ---
+${pdfText.substring(0, 12000)}
+--- END PDF CONTENT ---
 
 ${BOQ_JSON_STRUCTURE}`;
 
-                rawContent = await runGroqCompletion(
-                    [{
-                        role: "user",
-                        content: [
-                            { type: "text", text: visionPrompt },
-                            { type: "image_url", image_url: { url: dataUrl } },
-                        ],
-                    }],
-                    VISION_MODELS
-                );
+                    rawContent = await runGroqCompletion(
+                        [{ role: "user", content: pdfTextPrompt }],
+                        TEXT_MODELS
+                    );
+                } else {
+                    // 📸 Scanned/image-based PDF — fall back to vision model
+                    console.log('PDF has little/no text (likely scanned). Falling back to vision model...');
+
+                    const base64Image = Buffer.from(arrayBuffer).toString('base64');
+                    // Send as PNG since Groq doesn't accept application/pdf directly
+                    const dataUrl = `data:image/png;base64,${base64Image}`;
+
+                    const scanPrompt = `
+You are an expert South African Quantity Surveyor.
+This is a scanned image of a Bill of Quantities (BoQ) or material list.
+Extract ALL construction materials and items visible in the document.
+
+${BOQ_JSON_STRUCTURE}`;
+
+                    rawContent = await runGroqCompletion(
+                        [{
+                            role: "user",
+                            content: [
+                                { type: "text", text: scanPrompt },
+                                { type: "image_url", image_url: { url: dataUrl } },
+                            ],
+                        }],
+                        VISION_MODELS
+                    );
+                }
 
                 // ─── IMAGE PATH: Photos of materials ───
             } else {
