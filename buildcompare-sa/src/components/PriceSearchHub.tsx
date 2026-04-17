@@ -756,7 +756,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                                             <span>{quote.distance}km</span>
                                                                             <span>•</span>
                                                                             {quote.supplierType === 'contractor' ? (
-                                                                                <span className="text-orange-400 font-bold">Avail. {quote.deliveryTime || 'Soon'}</span>
+                                                                                <span className="text-orange-400 font-bold">Avail. {quote.deliveryDays ? `${quote.deliveryDays} Days` : 'Soon'}</span>
                                                                             ) : (
                                                                                 <span className={quote.inStock ? 'text-green-500' : 'text-red-500'}>{quote.inStock ? 'Stock' : 'No Stock'}</span>
                                                                             )}
