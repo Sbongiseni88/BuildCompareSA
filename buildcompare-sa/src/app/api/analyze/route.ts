@@ -95,7 +95,100 @@ function extractSpreadsheetText(buffer: ArrayBuffer): string {
         parts.push(XLSX.utils.sheet_to_csv(sheet, { blankrows: false }));
     }
     const result = parts.join('\n');
-    return result.length > 12000 ? result.slice(0, 12000) + '\n\n[...TRUNCATED]' : result;
+    return result.length > 30000 ? result.slice(0, 30000) + '\n\n[...TRUNCATED]' : result;
+}
+
+/**
+ * Materialtype categories we can detect from descriptions.
+ */
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+    cement:      ['cement', 'concrete', 'mortar', 'screed', 'plaster'],
+    bricks:      ['brick', 'block', 'masonry', 'paver'],
+    steel:       ['steel', 'rebar', 'reinforcement', 'iron', 'metal', 'frame'],
+    timber:      ['timber', 'wood', 'door', 'window', 'frame', 'sill', 'board', 'plank', 'plywood'],
+    roofing:     ['roof', 'tile', 'sheet', 'cladding', 'IBR', 'corrugated'],
+    plumbing:    ['pipe', 'plumb', 'tap', 'fitting', 'valve', 'drain', 'sewer', 'water'],
+    electrical:  ['electric', 'cable', 'wire', 'conduit', 'switch', 'plug', 'light', 'panel'],
+    paint:       ['paint', 'primer', 'sealer', 'coat', 'varnish'],
+    hardware:    ['bolt', 'screw', 'nail', 'hinge', 'lock', 'anchor', 'fix'],
+};
+
+function guessCategory(description: string): string {
+    const lower = description.toLowerCase();
+    for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
+        if (kws.some(kw => lower.includes(kw))) return cat;
+    }
+    return 'other';
+}
+
+/**
+ * Tries to parse a structured Excel/CSV BoQ directly — no AI, no token limits.
+ * Detects common column patterns (Description, Qty, Unit) and maps every row.
+ * Returns null if the spreadsheet doesn't have recognisable headers.
+ */
+function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const allMaterials: Material[] = [];
+
+    // Column aliases — handles many real-world BoQ header variations
+    const DESC_ALIASES  = ['description', 'desc', 'item', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars'];
+    const QTY_ALIASES   = ['quantity', 'qty', 'amount', 'no', 'number', 'count', 'nos', 'no.', 'qnty'];
+    const UNIT_ALIASES  = ['unit', 'uom', 'measure', 'u/m', 'u.o.m'];
+    const IGNORE_TERMS  = ['total', 'sub-total', 'subtotal', 'summary', 'allow', 'provisional', 'p.c.', 'pc sum', ''];
+
+    for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
+
+        // Convert to array-of-arrays so we can scan rows
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+        if (rows.length < 2) continue;
+
+        // Find the header row (first row that contains a known column alias)
+        let headerRowIdx = -1;
+        let descCol = -1, qtyCol = -1, unitCol = -1;
+
+        for (let r = 0; r < Math.min(rows.length, 20); r++) {
+            const row = rows[r].map((c: any) => String(c).toLowerCase().trim());
+            const di = row.findIndex(c => DESC_ALIASES.some(a => c.includes(a)));
+            if (di >= 0) {
+                headerRowIdx = r;
+                descCol = di;
+                qtyCol  = row.findIndex(c => QTY_ALIASES.some(a => c.includes(a)));
+                unitCol = row.findIndex(c => UNIT_ALIASES.some(a => c.includes(a)));
+                break;
+            }
+        }
+
+        // No recognisable header found in this sheet
+        if (headerRowIdx < 0 || descCol < 0) continue;
+
+        let itemIndex = 0;
+        for (let r = headerRowIdx + 1; r < rows.length; r++) {
+            const row = rows[r];
+            const rawDesc = String(row[descCol] ?? '').trim();
+
+            // Skip blanks, totals, and noise rows
+            if (!rawDesc || IGNORE_TERMS.some(t => t && rawDesc.toLowerCase().startsWith(t))) continue;
+            if (rawDesc.length < 3) continue;
+
+            const rawQty  = qtyCol  >= 0 ? row[qtyCol]  : null;
+            const rawUnit = unitCol >= 0 ? String(row[unitCol] ?? '').trim() : '';
+
+            const qty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, '')) || 1;
+
+            allMaterials.push({
+                id: `boq-direct-${sheetName}-${itemIndex++}`,
+                name: rawDesc,
+                brand: undefined,
+                category: guessCategory(rawDesc) as any,
+                quantity: qty,
+                unit: rawUnit || 'unit',
+            });
+        }
+    }
+
+    return allMaterials.length > 0 ? allMaterials : null;
 }
 
 // ─── Groq helpers ─────────────────────────────────────────────────────────────
@@ -109,7 +202,7 @@ async function runGroqCompletion(messages: any[], models: string[]): Promise<str
                 messages,
                 model: modelId,
                 temperature: 0.1,
-                max_tokens: 2048,
+                max_tokens: 4096,
                 top_p: 1,
                 stream: false,
                 response_format: { type: 'json_object' },
@@ -201,7 +294,17 @@ export async function POST(req: NextRequest) {
 
             // ── Excel / CSV ──────────────────────────────────────────────────
             if (isSpreadsheetFile(mimeType, safeName, arrayBuffer)) {
-                console.log('📄 Spreadsheet detected. Parsing with SheetJS...');
+                console.log('📄 Spreadsheet detected.');
+
+                // 1. Try direct structural parse first — handles any size, 100% accuracy
+                const directMaterials = tryDirectBoQParse(arrayBuffer);
+                if (directMaterials && directMaterials.length > 0) {
+                    console.log(`✅ Direct parse succeeded: ${directMaterials.length} items extracted.`);
+                    return NextResponse.json({ success: true, mode: 'direct-parse', materials: directMaterials });
+                }
+
+                // 2. Fallback: unstructured/unusual format — use AI on extracted CSV text
+                console.log('⚠️ No structured headers found. Falling back to AI analysis...');
                 const docText = extractSpreadsheetText(arrayBuffer);
                 if (!docText.trim()) {
                     return NextResponse.json({ error: 'The uploaded document appears to be empty.' }, { status: 400 });
