@@ -6,18 +6,18 @@ import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-lim
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 
 // Vision-capable models for image and PDF analysis.
-// Order matters: most reliable first, experimental last.
+// NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
+// llama-4-scout is the only vision-capable model currently available on Groq.
 const VISION_MODELS = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",  // Llama 4 vision (when available)
-    "llama-3.2-90b-vision-preview",                // Stable Llama 3.2 vision
-    "llama-3.2-11b-vision-preview",                // Lighter Llama 3.2 vision fallback
+    "meta-llama/llama-4-scout-17b-16e-instruct",  // Only active vision model on Groq
 ];
 
-// Text-only models for spreadsheet/CSV analysis (more widely available).
+// Text-only models for spreadsheet/CSV/document analysis.
+// These are Groq PRODUCTION models — stable and guaranteed not to be removed without notice.
 const TEXT_MODELS = [
-    "llama-3.3-70b-versatile",             // Primary: most capable stable text model
-    "llama3-70b-8192",                     // Secondary: classic reliable fallback
-    "meta-llama/llama-4-scout-17b-16e-instruct", // Tertiary: try Llama 4 if above fail
+    "llama-3.3-70b-versatile",                    // Primary: production, highly capable
+    "llama-3.1-8b-instant",                       // Fast fallback: production, always available
+    "meta-llama/llama-4-scout-17b-16e-instruct", // Last resort: preview model
 ];
 
 // Is this file a spreadsheet or CSV?
