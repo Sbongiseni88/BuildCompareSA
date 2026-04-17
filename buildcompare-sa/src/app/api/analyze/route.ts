@@ -5,16 +5,19 @@ import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 
-// Llama 4 multimodal models (used after Llama 3.2 vision got retired)
+// Vision-capable models for image and PDF analysis.
+// Order matters: most reliable first, experimental last.
 const VISION_MODELS = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct"
+    "meta-llama/llama-4-scout-17b-16e-instruct",  // Llama 4 vision (when available)
+    "llama-3.2-90b-vision-preview",                // Stable Llama 3.2 vision
+    "llama-3.2-11b-vision-preview",                // Lighter Llama 3.2 vision fallback
 ];
 
-// Text-only models for spreadsheet/CSV analysis
+// Text-only models for spreadsheet/CSV analysis (more widely available).
 const TEXT_MODELS = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct"
+    "llama-3.3-70b-versatile",             // Primary: most capable stable text model
+    "llama3-70b-8192",                     // Secondary: classic reliable fallback
+    "meta-llama/llama-4-scout-17b-16e-instruct", // Tertiary: try Llama 4 if above fail
 ];
 
 // Is this file a spreadsheet or CSV?
@@ -111,19 +114,25 @@ async function runGroqCompletion(
 
 // Expected shape for the JSON the model should return
 const BOQ_JSON_STRUCTURE = `
-Return a VALID JSON array with this structure:
+You MUST return a valid JSON array. Every construction item, material, or product found must appear as a separate object in the array.
+
+Format:
 [
   {
     "id": "item-1",
-    "name": "Detailed Name (e.g. 50kg Cement Bag)",
-    "brand": "Brand Name if visible (e.g. PPC, AfriSam)",
-    "category": "cement" (or bricks, steel, timber, paint, roofing, plumbing, electrical, other),
-    "quantity": 1,
-    "unit": "unit" (or bag, m3, length, kg, each, lot)
-  }
+    "name": "Full descriptive name (e.g. 50kg PPC Cement Bag)",
+    "brand": "Brand name if visible, otherwise null",
+    "category": "One of: cement, bricks, steel, timber, paint, roofing, plumbing, electrical, hardware, other",
+    "quantity": 10,
+    "unit": "One of: bag, m2, m3, kg, length, unit, each, lot, litre, roll, sheet"
+  },
+  { ... next item ... }
 ]
 
-IMPORTANT: Return ONLY the JSON. No Markdown. No text before or after.`;
+CRITICAL RULES:
+- Extract EVERY line item. Do NOT stop after the first item.
+- If a document has 20 items, your array must have 20 objects.
+- Return ONLY the raw JSON array. No markdown code fences. No explanation text.`;
 
 export async function POST(req: NextRequest) {
     // Rate limit check
@@ -257,25 +266,44 @@ ${BOQ_JSON_STRUCTURE}`;
             console.log("Groq Raw Response:", rawContent);
 
             // Strip markdown fences if the model wrapped its output
-            const cleanJson = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
+            const cleanJson = rawContent
+                .replace(/```json/gi, '')
+                .replace(/```/g, '')
+                .trim();
 
             let materials: Material[] = [];
 
-            // Normalize response shape — could be array, {materials:[]}, or {items:[]}
+            // Normalize response shape — models can return many different shapes
             let parsed = JSON.parse(cleanJson);
 
-            // Handle different possible response shapes from the model
-            if (!Array.isArray(parsed) && parsed.materials) {
-                parsed = parsed.materials;
-            } else if (!Array.isArray(parsed) && parsed.items) {
-                parsed = parsed.items;
-            } else if (!Array.isArray(parsed) && typeof parsed === 'object') {
-                // Single item — wrap it
-                parsed = [parsed];
+            if (Array.isArray(parsed)) {
+                // ✅ Ideal case: model returned a direct array
+            } else if (parsed && typeof parsed === 'object') {
+                // Check common wrapper properties first
+                if (Array.isArray(parsed.materials)) {
+                    parsed = parsed.materials;
+                } else if (Array.isArray(parsed.items)) {
+                    parsed = parsed.items;
+                } else if (Array.isArray(parsed.results)) {
+                    parsed = parsed.results;
+                } else if (Array.isArray(parsed.data)) {
+                    parsed = parsed.data;
+                } else {
+                    // Last resort: if the object has numeric keys (e.g. {"0":{...}, "1":{...}})
+                    // this happens when a model returns an object instead of an array
+                    const values = Object.values(parsed);
+                    const allObjects = values.every(v => typeof v === 'object' && v !== null && !Array.isArray(v));
+                    if (allObjects && values.length > 0) {
+                        parsed = values;
+                    } else {
+                        // Single item object — wrap it in an array
+                        parsed = [parsed];
+                    }
+                }
             }
 
             if (!Array.isArray(parsed)) {
-                throw new Error("AI returned invalid JSON structure (not an array)");
+                throw new Error("AI returned an unrecognised JSON structure. Please try again.");
             }
 
             materials = parsed.map((m: any, i: number) => ({
