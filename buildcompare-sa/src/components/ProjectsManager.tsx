@@ -47,6 +47,9 @@ export default function ProjectsManager({
 
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [fetchError, setFetchError] = useState<string | null>(null);
+    const abortControllerRef = React.useRef<AbortController | null>(null);
+
     const [searchQuery, setSearchQuery] = useState(() => {
         try { return sessionStorage.getItem('bc_projects_search') || ''; } catch { return ''; }
     });
@@ -57,8 +60,6 @@ export default function ProjectsManager({
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showMenu, setShowMenu] = useState<string | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
-    // ... (state remains same)
 
     // New project form state
     const [newProjectName, setNewProjectName] = useState('');
@@ -73,16 +74,6 @@ export default function ProjectsManager({
     const [newMaterialUnit, setNewMaterialUnit] = useState('units');
     const [newMaterialCategory, setNewMaterialCategory] = useState('other');
     const [isAddingMaterial, setIsAddingMaterial] = useState(false);
-
-    // Failsafe: Prevent infinite data fetching
-    React.useEffect(() => {
-        if (!isLoading) return;
-        const timer = setTimeout(() => {
-            console.warn("⚠️ Projects fetch timed out. Forcing UI to resolve.");
-            setIsLoading(false);
-        }, 6000);
-        return () => clearTimeout(timer);
-    }, [isLoading]);
 
     // Swipe-to-dismiss state for modals
     const [swipeOffset, setSwipeOffset] = useState(0);
@@ -100,7 +91,20 @@ export default function ProjectsManager({
     // Fetch Projects from Supabase
     const fetchProjects = async () => {
         if (!user?.id) return;
+
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
+
         setIsLoading(true);
+        setFetchError(null);
+
+        const timer = setTimeout(() => {
+            abortController.abort(new Error("Connection timed out. Please check your internet."));
+        }, 6000);
+
         try {
             const { data, error } = await supabase
                 .from('projects')
@@ -108,8 +112,10 @@ export default function ProjectsManager({
                     *,
                     project_materials (*)
                 `)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .abortSignal(abortController.signal);
 
+            clearTimeout(timer);
             if (error) throw error;
 
             // Map DB response to Frontend Types
@@ -132,9 +138,16 @@ export default function ProjectsManager({
             }));
 
             setProjects(mappedProjects);
-        } catch (error) {
-            console.error('Error fetching projects:', error);
+        } catch (error: any) {
+            clearTimeout(timer);
+            if (error.name !== 'AbortError') {
+                console.error('Error fetching projects:', error);
+            }
+            if (projects.length === 0) {
+                setFetchError(error.message || 'Failed to load projects');
+            }
         } finally {
+            clearTimeout(timer);
             setIsLoading(false);
         }
     };
@@ -150,6 +163,10 @@ export default function ProjectsManager({
             setProjects([]);
             setIsLoading(false);
         }
+        
+        return () => {
+            if (abortControllerRef.current) abortControllerRef.current.abort();
+        };
     }, [user?.id, authLoading]);
 
     const filteredProjects = useMemo(() => projects.filter(project => {
@@ -399,13 +416,29 @@ export default function ProjectsManager({
             </div>
 
             {/* Loading State – Skeleton */}
-            {(authLoading || (isLoading && projects.length === 0)) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                        <ProjectCardSkeleton key={i} />
-                    ))}
-                </div>
-            )}
+    {(authLoading || (isLoading && projects.length === 0 && !fetchError)) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+                <ProjectCardSkeleton key={i} />
+            ))}
+        </div>
+    )}
+
+    {/* Error State */}
+    {!isLoading && fetchError && (
+        <div className="p-10 bg-slate-900/50 border border-red-500/30 rounded-2xl text-center">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FolderOpen className="w-8 h-8 text-red-400" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Connection Issue</h3>
+            <p className="text-slate-400 mb-6 text-sm max-w-sm mx-auto">
+                {fetchError}
+            </p>
+            <button onClick={fetchProjects} className="btn-primary">
+                Try Again
+            </button>
+        </div>
+    )}
 
             {/* Projects Grid */}
             {!authLoading && (projects.length > 0 || !isLoading) && (
@@ -556,18 +589,18 @@ export default function ProjectsManager({
             )}
 
             {/* Empty State – Enhanced */}
-            {!isLoading && filteredProjects.length === 0 && (
+            {!isLoading && !fetchError && filteredProjects.length === 0 && (
                 <div className="glass-card p-12 text-center">
                     <div className="w-20 h-20 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float">
                         <FolderOpen className="w-10 h-10 text-yellow-500" />
                     </div>
                     <h3 className="text-xl font-bold text-white mb-2">
-                        {searchQuery ? 'No Matching Projects' : 'No Projects Yet'}
+                        {searchQuery ? 'No Matching Job Folders' : 'No Job Folders Yet'}
                     </h3>
                     <p className="text-slate-400 mb-6 max-w-sm mx-auto leading-relaxed">
                         {searchQuery
                             ? 'Try adjusting your search or filters to find what you\'re looking for.'
-                            : 'Create your first project to start tracking materials, budgets, and savings across all your construction sites.'}
+                            : 'Create your first job folder to start tracking materials, budgets, and savings across all your construction sites.'}
                     </p>
                     {!searchQuery && (
                         <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
@@ -576,7 +609,7 @@ export default function ProjectsManager({
                                 className="btn-primary flex items-center gap-2"
                             >
                                 <Plus className="w-4 h-4" />
-                                Create Your First Project
+                                Create Your First Folder
                             </button>
                             {onNavigateToEstimator && (
                                 <button

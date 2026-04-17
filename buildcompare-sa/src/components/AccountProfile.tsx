@@ -35,44 +35,59 @@ export default function AccountProfile() {
     const [profile, setProfile] = useState<UserProfileData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [fetchError, setFetchError] = useState<string | null>(null);
 
     const [fullName, setFullName] = useState('');
     const [role, setRole] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        // Skip until auth finishes loading
         if (authLoading) return;
-
-        // Once we have a user, pull their profile data
-        if (user?.id) {
-            fetchProfile();
-        }
-    }, [user?.id, authLoading]);
-
-    const fetchProfile = async () => {
         if (!user?.id) return;
-        setIsLoading(true);
-        try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', user.id)
-                .single();
 
-            if (error) throw error;
+        const abortController = new AbortController();
+        
+        const fetchProfileData = async () => {
+            setIsLoading(true);
+            setFetchError(null);
+            
+            const timer = setTimeout(() => {
+                abortController.abort(new Error("Connection timed out"));
+            }, 6000);
 
-            if (data) {
-                setProfile(data);
-                setFullName(data.full_name || '');
-                setRole(data.role || 'contractor');
+            try {
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .abortSignal(abortController.signal)
+                    .single();
+
+                clearTimeout(timer);
+                if (error) throw error;
+
+                if (data) {
+                    setProfile(data);
+                    setFullName(data.full_name || '');
+                    setRole(data.role || 'contractor');
+                }
+            } catch (error: any) {
+                if (error.name !== 'AbortError') {
+                    console.error('Error fetching profile:', error);
+                }
+                setFetchError(error.message || 'Failed to load profile');
+            } finally {
+                clearTimeout(timer);
+                setIsLoading(false);
             }
-        } catch (error) {
-            console.error('Error fetching profile:', error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+        };
+
+        fetchProfileData();
+
+        return () => {
+            abortController.abort();
+        };
+    }, [user?.id, authLoading, supabase]);
 
     const handleUpdateProfile = async () => {
         if (!user) return;
@@ -120,10 +135,22 @@ export default function AccountProfile() {
         );
     }
 
-    if (!profile) {
+    if (fetchError || !profile) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[50vh]">
-                <p className="text-red-400">Failed to load profile. Please refresh.</p>
+            <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-4">
+                    <X className="w-8 h-8 text-red-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">Connection Issue</h3>
+                <p className="text-slate-400 max-w-sm mx-auto mb-6">
+                    {fetchError || "Failed to load profile. This might occur if you've been offline for a while or left the app open."}
+                </p>
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="btn-primary"
+                >
+                    Refresh App
+                </button>
             </div>
         );
     }

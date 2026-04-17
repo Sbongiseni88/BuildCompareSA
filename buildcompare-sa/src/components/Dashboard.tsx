@@ -37,17 +37,34 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     const supabase = supabaseRef.current;
     const [projects, setProjects] = React.useState<Project[]>([]);
     const [dataLoading, setDataLoading] = React.useState(false);
+    const [fetchError, setFetchError] = React.useState<string | null>(null);
+    const abortControllerRef = React.useRef<AbortController | null>(null);
 
     const fetchDashboardData = React.useCallback(async () => {
         if (!user) return;
+        
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
+
         setDataLoading(true);
+        setFetchError(null);
+
+        const timer = setTimeout(() => {
+            abortController.abort(new Error("Connection timed out. Please check your internet."));
+        }, 6000);
+
         try {
             const { data, error } = await supabase
                 .from('projects')
                 .select('*, project_materials(*)')
                 .order('created_at', { ascending: false })
-                .limit(5);
+                .limit(5)
+                .abortSignal(abortController.signal);
 
+            clearTimeout(timer);
             if (error) throw error;
 
             if (data) {
@@ -69,32 +86,31 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                 }));
                 setProjects(mappedProjects);
             }
-        } catch (e) {
-            console.error("Dashboard fetch error:", e);
+        } catch (e: any) {
+            clearTimeout(timer);
+            if (e.name !== 'AbortError') {
+                console.error("Dashboard fetch error:", e);
+            }
+            if (projects.length === 0) {
+                setFetchError(e.message || "Failed to load dashboard data");
+            }
         } finally {
             setDataLoading(false);
         }
-    }, [user?.id, supabase]);
+    }, [user, supabase, projects.length]);
 
     React.useEffect(() => {
         if (authLoading) return;
         if (!user?.id) return;
         fetchDashboardData();
+        return () => {
+            if (abortControllerRef.current) abortControllerRef.current.abort();
+        };
     }, [user?.id, authLoading, fetchDashboardData]);
 
     const { containerRef, isRefreshing, pullDistance, progress } = usePullToRefresh({
         onRefresh: fetchDashboardData,
     });
-
-    // Failsafe: Prevent infinite data loading
-    React.useEffect(() => {
-        if (!dataLoading) return;
-        const timer = setTimeout(() => {
-            console.warn("⚠️ Dashboard data fetch timed out. Forcing UI to resolve.");
-            setDataLoading(false);
-        }, 6000);
-        return () => clearTimeout(timer);
-    }, [dataLoading]);
 
     // Derived Stats
     const activeCount = projects.filter(p => p.status === 'active').length;
@@ -106,7 +122,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     // Stats Array
     const stats = [
         {
-            label: 'Active Projects',
+            label: 'Active Job Folders',
             value: activeCount,
             change: '',
             changeType: 'positive' as const,
@@ -149,7 +165,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     };
 
     // Skeleton loading state
-    const isLoading = authLoading || (dataLoading && projects.length === 0);
+    const isLoading = authLoading || (dataLoading && projects.length === 0 && !fetchError);
 
     if (isLoading) {
         return (
@@ -204,9 +220,9 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                         </h1>
                         <p className="text-slate-400 mt-2 text-lg">
                             {projects.length === 0 ? (
-                                <>Welcome! Get started by comparing prices or creating your first project.</>
+                                <>Welcome! Get started by comparing prices or creating your first job folder.</>
                             ) : (
-                                <>You have <span className="text-white font-bold">{activeCount} active project{activeCount !== 1 ? 's' : ''}</span>. Let&apos;s get to work!</>
+                                <>You have <span className="text-white font-bold">{activeCount} active job folder{activeCount !== 1 ? 's' : ''}</span>. Let&apos;s get to work!</>
                             )}
                         </p>
                     </div>
@@ -216,14 +232,14 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                             className="px-6 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-xl shadow-lg shadow-yellow-400/20 text-sm flex items-center gap-2 hover:scale-105 transition-all"
                         >
                             <Zap className="w-4 h-4" />
-                            Quick Compare
+                            Find Best Prices
                         </button>
                         <button
                             onClick={onNavigateToProjects}
                             className="px-6 py-3 bg-transparent border-2 border-slate-700 hover:border-white text-white font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-white/5 transition-all"
                         >
                             <Plus className="w-4 h-4" />
-                            New Project
+                            Create a New Job
                         </button>
                     </div>
                 </div>
@@ -269,15 +285,28 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <FolderOpen className="w-5 h-5 text-yellow-500" />
-                            Active Projects
+                            My Job Folders
                         </h2>
                         <button onClick={onNavigateToProjects} className="text-sm text-slate-400 hover:text-yellow-400 font-medium transition-colors">
-                            View All Projects →
+                            View All Folders →
                         </button>
                     </div>
 
                     <div className="grid gap-4">
-                        {projects.length > 0 ? (
+                        {fetchError ? (
+                            <div className="p-10 bg-slate-900/50 border border-red-500/30 rounded-2xl text-center">
+                                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <TrendingUp className="w-8 h-8 text-red-400" />
+                                </div>
+                                <h3 className="text-xl font-bold text-white mb-2">Connection Issue</h3>
+                                <p className="text-slate-400 mb-6 text-sm max-w-xs mx-auto">
+                                    {fetchError}
+                                </p>
+                                <button onClick={fetchDashboardData} className="btn-primary">
+                                    Try Again
+                                </button>
+                            </div>
+                        ) : projects.length > 0 ? (
                             projects.slice(0, 3).map((project, index) => {
                                 const progressPercent = project.totalBudget > 0 ? (project.spent / project.totalBudget) * 100 : 0;
                                 const isOverBudget = progressPercent > 100;
@@ -340,13 +369,13 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                                 <div className="w-20 h-20 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float">
                                     <FolderOpen className="w-10 h-10 text-yellow-500" />
                                 </div>
-                                <h3 className="text-xl font-bold text-white mb-2">No Projects Yet</h3>
+                                <h3 className="text-xl font-bold text-white mb-2">No Job Folders Yet</h3>
                                 <p className="text-slate-400 mb-6 text-sm max-w-xs mx-auto leading-relaxed">
-                                    Create your first project to start tracking materials, budgets, and savings across all your sites.
+                                    Create your first job folder to start tracking materials, budgets, and savings across all your sites.
                                 </p>
                                 <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
                                     <button onClick={onNavigateToProjects} className="btn-primary flex items-center gap-2">
-                                        <Plus className="w-4 h-4" /> Create Project
+                                        <Plus className="w-4 h-4" /> Create a Folder
                                     </button>
                                     <button onClick={onNavigateToCompare} className="btn-secondary flex items-center gap-2 text-sm">
                                         <Search className="w-4 h-4" /> Or Compare Prices First
@@ -361,10 +390,10 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                 <div className="space-y-6">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                         <PieChart className="w-5 h-5 text-purple-500" />
-                        Spend Analysis
+                        Your Budget Tracker
                         <span className="tooltip-trigger ml-1">
                             <Info className="w-4 h-4 text-slate-600 cursor-help" />
-                            <span className="tooltip-content">Budget breakdown across your active projects. Percentages update as you add materials.</span>
+                            <span className="tooltip-content">A clear view of where your money is going across your construction jobs.</span>
                         </span>
                     </h2>
 
@@ -374,7 +403,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                         </div>
 
                         <div className="relative z-10">
-                            <h3 className="text-slate-300 font-medium mb-6">Total Spend Distribution</h3>
+                            <h3 className="text-slate-300 font-medium mb-6">Where Your Money Goes</h3>
 
                             {/* Simple CSS Chart */}
                             <div className="space-y-4">
