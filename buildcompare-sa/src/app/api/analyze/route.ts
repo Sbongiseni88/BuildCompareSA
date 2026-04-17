@@ -222,7 +222,7 @@ ${BOQ_PROMPT_SUFFIX}`;
                 console.log(`📑 PDF: extracted ${pdfText.length} chars`);
 
                 if (pdfText.length > 50) {
-                    // Text-based PDF → text models (production, stable)
+                    // Text-based PDF → stable text models
                     const prompt = `You are an expert South African Quantity Surveyor.
 Extract ALL construction materials from this Bill of Quantities PDF.
 
@@ -233,19 +233,19 @@ ${pdfText}
 ${BOQ_PROMPT_SUFFIX}`;
                     rawContent = await runGroqCompletion([{ role: 'user', content: prompt }], TEXT_MODELS);
                 } else {
-                    // Scanned / image-only PDF → vision model fallback
-                    console.log('📷 PDF has no selectable text. Using vision model...');
-                    const base64 = Buffer.from(arrayBuffer).toString('base64');
-                    const dataUrl = `data:image/png;base64,${base64}`;
-                    const prompt = `You are an expert South African Quantity Surveyor.
-This is a scanned BoQ document image. Extract ALL construction materials visible.
-
-${BOQ_PROMPT_SUFFIX}`;
-                    rawContent = await runGroqCompletion(
-                        [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }],
-                        VISION_MODELS
+                    // PDF content streams are compressed — our extractor can't read them.
+                    // Sending a PDF as an image to a vision model is invalid and always fails.
+                    // Ask the user to re-export as Excel instead.
+                    return NextResponse.json(
+                        {
+                            error:
+                                'Could not read text from this PDF (the content may be compressed or image-based). ' +
+                                'Please export your BoQ as an Excel file (.xlsx) and upload that instead — it will work perfectly.',
+                        },
+                        { status: 400 }
                     );
                 }
+
 
             // ── Photo / image ─────────────────────────────────────────────────
             } else {
