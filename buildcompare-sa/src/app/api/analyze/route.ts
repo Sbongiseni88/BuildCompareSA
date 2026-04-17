@@ -4,6 +4,7 @@ import { Material } from '@/types';
 import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
+import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
 
 // Vision-capable models for image analysis.
 // NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
@@ -217,6 +218,33 @@ async function runGroqCompletion(messages: any[], models: string[]): Promise<str
     throw lastError || new Error('All Groq models failed');
 }
 
+/**
+ * Waterfall execution: Tries DeepSeek-V3 first (if text-only), falls back to Groq.
+ */
+async function runHybridCompletion(messages: any[], groqFallbackModels: string[], isVision: boolean = false): Promise<string> {
+    // DeepSeek current API (deepseek-chat) does not support image passing natively in the same way as Groq's llama-4-scout.
+    // So for vision tasks, we go straight to Groq.
+    if (!isVision && isDeepseekConfigured) {
+        try {
+            console.log('Attempting DeepSeek model: deepseek-chat');
+            const completion = await deepseekClient.chat.completions.create({
+                messages: messages as any,
+                model: 'deepseek-chat',
+                temperature: 0.1,
+                // Explicitly enforcing json_object for DeepSeek
+                response_format: { type: 'json_object' },
+            });
+            const content = completion.choices[0]?.message?.content;
+            if (content) return content;
+        } catch (err: any) {
+            console.warn('DeepSeek failed, falling back to Groq:', err.message);
+        }
+    }
+    
+    // Fallback or Vision Path
+    return runGroqCompletion(messages, groqFallbackModels);
+}
+
 const BOQ_PROMPT_SUFFIX = `
 You MUST return a valid JSON array. Every construction item, material, or product found must appear as a separate object.
 
@@ -227,13 +255,15 @@ Format:
     "name": "Full descriptive name (e.g. 50kg PPC Cement Bag)",
     "brand": "Brand name if visible, otherwise null",
     "category": "One of: cement, bricks, steel, timber, paint, roofing, plumbing, electrical, hardware, other",
-    "quantity": 10,
+    "quantity": 10.0,
     "unit": "One of: bag, m2, m3, kg, length, unit, each, lot, litre, roll, sheet"
   },
   { "...next item..." }
 ]
 
 CRITICAL RULES:
+- Format ALL numeric values as standard Floats (e.g., 100.00). Do NOT write "R 100,00" or add currency symbols. Output pure numbers.
+- Your entire response MUST be valid JSON.
 - Extract EVERY line item. Do NOT stop after the first item.
 - If a document has 20 items, your array must have 20 objects.
 - Return ONLY the raw JSON array. No markdown. No extra text.`;
@@ -273,8 +303,8 @@ export async function POST(req: NextRequest) {
         const file = formData.get('file') as File;
         const fileName = formData.get('fileName') as string;
 
-        if (!isGroqConfigured) {
-            console.warn('⚠️ No GROQ_API_KEY. Returning mock data.');
+        if (!isGroqConfigured && !isDeepseekConfigured) {
+            console.warn('⚠️ No AI API keys found. Returning mock data.');
             await new Promise(r => setTimeout(r, 2000));
             return NextResponse.json({ success: true, mode: 'mock', materials: mockAnalyze(fileName || 'image.jpg') });
         }
@@ -317,7 +347,7 @@ ${docText}
 --- END ---
 
 ${BOQ_PROMPT_SUFFIX}`;
-                rawContent = await runGroqCompletion([{ role: 'user', content: prompt }], TEXT_MODELS);
+                rawContent = await runHybridCompletion([{ role: 'user', content: prompt }], TEXT_MODELS, false);
 
             // ── PDF ──────────────────────────────────────────────────────────
             } else if (isPdfFile(mimeType, safeName)) {
@@ -334,7 +364,7 @@ ${pdfText}
 --- END ---
 
 ${BOQ_PROMPT_SUFFIX}`;
-                    rawContent = await runGroqCompletion([{ role: 'user', content: prompt }], TEXT_MODELS);
+                    rawContent = await runHybridCompletion([{ role: 'user', content: prompt }], TEXT_MODELS, false);
                 } else {
                     // PDF content streams are compressed — our extractor can't read them.
                     // Sending a PDF as an image to a vision model is invalid and always fails.
@@ -359,9 +389,10 @@ ${BOQ_PROMPT_SUFFIX}`;
 Identify all visible construction materials in this image.
 
 ${BOQ_PROMPT_SUFFIX}`;
-                rawContent = await runGroqCompletion(
+                rawContent = await runHybridCompletion(
                     [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }],
-                    VISION_MODELS
+                    VISION_MODELS,
+                    true // isVision
                 );
             }
 

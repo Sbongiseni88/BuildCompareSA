@@ -38,7 +38,7 @@ import {
     Waves
 } from 'lucide-react';
 import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
-import { mockMaterials, generateComparisonResults } from '@/data/mockData';
+import { mockMaterials } from '@/data/mockData';
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
 import { useToast } from '@/contexts/ToastContext';
@@ -66,6 +66,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         try { return (sessionStorage.getItem('bc_search_sort') as any) || 'price'; } catch { return 'price'; }
     });
     const [isSearching, setIsSearching] = useState(false);
+    const [searchStep, setSearchStep] = useState(0);
     const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchSuggestions, setSearchSuggestions] = useState<Material[]>([]);
@@ -152,63 +153,48 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
     const performSearch = async (materials: Material[]) => {
         setIsSearching(true);
+        setSearchStep(1); // Stage 1
         setComparisonResults([]);
 
         try {
-            // Fetch all materials in PARALLEL using Promise.allSettled
+            await new Promise(r => setTimeout(r, 600)); // UX delay for Stage 1
+            setSearchStep(2); // Stage 2
+
+            // Fetch all materials in PARALLEL via Live Scraper Service
             const fetchPromises = materials.map(async (material): Promise<ComparisonResult | null> => {
                 try {
-                    // Build URL with region/GPS filters
-                    let url = `/api/v1/prices?query=${encodeURIComponent(material.name)}`;
+                    const safeRegion = region === 'current-location' ? 'gauteng' : region;
+                    
+                    const [buildersRes, cashbuildRes] = await Promise.allSettled([
+                        fetch(`/api/prices/live?store=builders&q=${encodeURIComponent(material.name)}&region=${safeRegion}`),
+                        fetch(`/api/prices/live?store=cashbuild&q=${encodeURIComponent(material.name)}&region=${safeRegion}`)
+                    ]);
 
-                    if (region === 'current-location' && userCoords) {
-                        url += `&lat=${userCoords.lat}&lng=${userCoords.lng}&radius=${radius}`;
-                    } else if (region !== 'all') {
-                        url += `&region=${region}`;
+                    const allQuotes: PriceQuote[] = [];
+
+                    if (buildersRes.status === 'fulfilled' && buildersRes.value.ok) {
+                        const data = await buildersRes.value.json();
+                        if (data.success && data.results) allQuotes.push(...data.results);
+                    }
+                    if (cashbuildRes.status === 'fulfilled' && cashbuildRes.value.ok) {
+                        const data = await cashbuildRes.value.json();
+                        if (data.success && data.results) allQuotes.push(...data.results);
                     }
 
-                    const response = await fetch(url);
-
-                    if (!response.ok) {
-                        console.warn(`Failed to fetch prices for ${material.name}`);
-                        return null;
-                    }
-
-                    const priceItems: any[] = await response.json();
-
-                    // Map the backend response shape into our PriceQuote type
-                    const quotes: PriceQuote[] = priceItems.map((item, index) => ({
-                        supplierId: `sup-${index}`,
-                        supplierName: item.supplier,
-                        supplierLogo: '',
-                        price: item.price,
-                        inStock: item.in_stock,
-                        stockQuantity: item.stock_quantity,
-                        deliveryFee: 150,
-                        deliveryDays: item.in_stock ? 1 : 3,
-                        // GPS users get tighter distance estimates
-                        distance: Number(region === 'current-location'
-                            ? (Math.random() * 5 + 1).toFixed(1)
-                            : (Math.random() * 25 + 5).toFixed(1)),
-                        productUrl: item.url || undefined,
-                        isFallback: item.is_fallback || false,
-                        lastUpdated: new Date()
-                    } as PriceQuote));
-
-                    if (quotes.length > 0) {
-                        const best = quotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
-                        const avg = quotes.reduce((acc, curr) => acc + curr.price, 0) / quotes.length;
+                    if (allQuotes.length > 0) {
+                        const best = allQuotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
+                        const avg = allQuotes.reduce((acc, curr) => acc + curr.price, 0) / allQuotes.length;
                         const savings = avg - best.price;
 
                         return {
                             material,
-                            quotes,
+                            quotes: allQuotes,
                             bestPrice: best,
                             averagePrice: avg,
-                            potentialSavings: savings > 0 ? savings * material.quantity : 0
+                            potentialSavings: savings > 0 ? savings * material.quantity : 0,
+                            isLive: true
                         };
                     }
-
                     return null;
                 } catch (err) {
                     console.error(`Error searching for ${material.name}:`, err);
@@ -217,48 +203,25 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             });
 
             const settled = await Promise.allSettled(fetchPromises);
+            setSearchStep(3); // Stage 3
+            await new Promise(r => setTimeout(r, 800)); // UX delay for Stage 3
+
             const results: ComparisonResult[] = settled
                 .filter((r): r is PromiseFulfilledResult<ComparisonResult | null> => r.status === 'fulfilled' && r.value !== null)
                 .map(r => r.value as ComparisonResult);
 
-            // If the Live API returned nothing, drop back to Mock Data with AI Estimator
-            if (results.length === 0) {
-                console.log("Using fallback mock data + AI Estimator...");
-                
-                const enhancedMaterials = await Promise.all(materials.map(async (m) => {
-                    // Check if it's already a perfectly known catalog item
-                    const isKnown = mockMaterials.some(mock => mock.name === m.name);
-                    if (isKnown) return m;
-                    
-                    // Tap into the Groq estimation pipeline for unknown wildcards
-                    try {
-                        const res = await fetch(`/api/estimate?q=${encodeURIComponent(m.name)}`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            return { 
-                                ...m, 
-                                name: data.standardizedName, 
-                                category: data.category, 
-                                _aiPriceEstimate: data.basePrice 
-                            };
-                        }
-                    } catch (err) {
-                        console.error("AI Estimation failed", err);
-                    }
-                    return m;
-                }));
+            setComparisonResults(results);
 
-                await new Promise(resolve => setTimeout(resolve, 600)); // Simulate delay
-                const mockResults = generateComparisonResults(enhancedMaterials, region);
-                setComparisonResults(mockResults.map(r => ({ ...r, isLive: false })));
-            } else {
-                setComparisonResults(results.map(r => ({ ...r, isLive: true })));
+            if (results.length === 0) {
+                showWarning("No live results found. Try a different search term or store limits might be reached.");
             }
 
         } catch (error) {
             console.error("Search failed:", error);
+            showWarning("Live search encountered a critical error.");
         } finally {
             setIsSearching(false);
+            setSearchStep(0);
         }
     };
 
@@ -597,8 +560,13 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                     <div className="absolute inset-0 rounded-full border-4 border-yellow-400/30 border-t-yellow-400 animate-spin"></div>
                                     <Search className="w-8 h-8 text-yellow-400" />
                                 </div>
-                                <h3 className="text-2xl font-bold text-white mb-2">Scanning Retailers...</h3>
-                                <p className="text-slate-400">Fetching live prices from Builders, Leroy Merlin & Local Yards</p>
+                                <h3 className="text-2xl font-bold text-white mb-2">
+                                    {searchStep === 1 && "Analyzing BoQ with DeepSeek..."}
+                                    {searchStep === 2 && "Launching Live Scraper Service..."}
+                                    {searchStep === 3 && "Comparing prices from Builders & Cashbuild..."}
+                                    {searchStep === 0 && "Scanning Retailers..."}
+                                </h3>
+                                <p className="text-slate-400">Fetching live prices from Builders, Cashbuild & Local Yards</p>
                             </div>
                         )}
 

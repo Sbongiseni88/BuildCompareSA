@@ -1,145 +1,166 @@
 import { NextResponse } from "next/server";
-import { groqClient, isGroqConfigured } from "@/lib/groq";
+import { deepseekClient, isDeepseekConfigured } from "@/lib/deepseek";
 
 export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow time for scraping during chat
 
-/**
- * Enriched system prompt with SA construction domain knowledge.
- * Gives the AI real context to provide high-value replies.
- */
 const SYSTEM_PROMPT = `You are the BuildCompare SA AI Concierge — an expert construction assistant for South African contractors, quantity surveyors, and homeowners.
 
 ## Your expertise:
 - South African building materials (cement, bricks, sand, steel, timber, roofing, plumbing, electrical)
 - SANS 10400 building regulations and NHBRC requirements
-- SA retailer landscape: Builders Warehouse, Cashbuild, Leroy Merlin, Build It, Mica
 - ZAR pricing context: current market ranges for common materials
-- Quantity estimation for residential and commercial projects
-- Load shedding considerations for construction timelines
 
-## Pricing context (approximate 2025-2026 ranges):
-- Cement (50kg bag): R95-R120
-- Clay bricks (per brick): R4-R7
-- Building sand (per m³): R500-R750
-- Y12 Rebar (6m): R130-R190
-- IBR Roof sheeting (0.47mm 3.6m): R250-R350
-- Dulux/Plascon paint (5L): R400-R600
+## Live Pricing Capability
+You have access to a tool called \`search_live_prices\`.
+If the user asks for the price of a specific item, or asks to compare prices, ALWAYS use the \`search_live_prices\` tool.
+You can check stores like "builders", "cashbuild", or "leroy_merlin".
+If you decide to check multiple stores to compare, you must issue multiple tool calls (e.g. one for builders, one for cashbuild).
 
 ## Behavior rules:
-- Always quote prices in ZAR (South African Rand)
-- Use South African terminology (e.g., "bricks" not "blocks", "bakkie load" for delivery)
-- Provide practical, actionable advice
-- When estimating quantities, show your calculations
-- If unsure, say so rather than guessing
-- Keep responses concise but complete`;
+- Always quote prices in ZAR (South African Rand). (e.g. R95.00)
+- Use South African terminology (e.g., "bakkie load").
+- Keep responses concise, friendly, and practical.`;
 
-/** Maximum number of history messages to send to the LLM (to stay within token limits) */
-const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_MESSAGES = 10;
 
-/**
- * AI Chat endpoint
- * Accepts: { message: string, history?: { role: string, content: string }[] }
- * Tries the Python RAG backend first, falls back to direct Groq streaming.
- */
+const chatTools = [
+    {
+        type: "function" as const,
+        function: {
+            name: "search_live_prices",
+            description: "Fetches real-time pricing and stock information for a construction material from South African stores by scraping their live websites.",
+            parameters: {
+                type: "object",
+                properties: {
+                    store: {
+                        type: "string",
+                        enum: ["builders", "cashbuild", "leroy_merlin"],
+                        description: "The hardware store to search."
+                    },
+                    query: {
+                        type: "string",
+                        description: "The specific product to search for, e.g., '50kg ppc cement' or 'timber door'."
+                    },
+                    region: {
+                        type: "string",
+                        description: "The South African region to check stock for (e.g., 'gauteng', 'durban', 'cape-town')."
+                    }
+                },
+                required: ["store", "query", "region"]
+            }
+        }
+    }
+];
+
 export async function POST(req: Request) {
+    if (!isDeepseekConfigured) {
+        return NextResponse.json({ error: "DeepSeek API key missing. Please configure it." }, { status: 500 });
+    }
+
     try {
         const body = await req.json();
         const userMessage: string = body.message;
-        const history: { role: string; content: string }[] = body.history || [];
+        const history: { role: "system" | "user" | "assistant" | "tool"; content: string; name?: string; tool_call_id?: string }[] = body.history || [];
 
         if (!userMessage) {
             return NextResponse.json({ error: "Message is required" }, { status: 400 });
         }
 
-        const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+        // Build messages payload
+        const messages: any[] = [{ role: "system", content: SYSTEM_PROMPT }];
+        
+        // Append history 
+        const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
+        messages.push(...trimmedHistory);
+        messages.push({ role: "user", content: userMessage });
 
-        // Try the Python RAG backend first (for context-enriched answers)
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3000);
+        // First pass: Ask DeepSeek if it wants to use a tool
+        console.log("Chat route: Requesting DeepSeek tool decision...");
+        const response1 = await deepseekClient.chat.completions.create({
+            model: "deepseek-chat",
+            messages: messages,
+            tools: chatTools,
+            temperature: 0.2, // low temp for accurate tool usage
+        });
 
-            const response = await fetch(`${backendUrl}/rag/query`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    query: userMessage,
-                    n_context_results: 3
-                }),
-            });
+        const responseMessage = response1.choices[0]?.message;
 
-            clearTimeout(timeoutId);
-
-            if (response.ok) {
-                const data = await response.json();
-                const aiText = data.llm_response || "I apologize, but I couldn't generate a response.";
-                return createFakeStreamResponse(aiText);
-            }
-        } catch (backendError) {
-            console.warn("Python backend unreachable, attempting Groq fallback...", backendError);
+        if (!responseMessage) {
+            throw new Error("Empty response from DeepSeek");
         }
 
-        // Backend unavailable — use REAL Groq streaming WITH conversation history
-        if (isGroqConfigured) {
-            try {
-                // Build message array: system prompt + trimmed history + current message
-                const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-                    { role: "system", content: SYSTEM_PROMPT },
-                ];
+        // Check if a tool call was requested
+        if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+            console.log(`Chat route: DeepSeek requested ${responseMessage.tool_calls.length} tool calls.`);
+            
+            // Append the assistant's tool call message
+            messages.push(responseMessage);
 
-                // Append recent history (capped to avoid exceeding token limits)
-                const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
-                for (const msg of trimmedHistory) {
-                    if (msg.role === "user" || msg.role === "assistant") {
+            // Execute all requested tool calls in parallel
+            for (const toolCall of responseMessage.tool_calls) {
+                const tc: any = toolCall;
+                if (tc.type === "function" && tc.function.name === "search_live_prices") {
+                    const args = JSON.parse(tc.function.arguments);
+                    console.log(`Chat route: Executing search_live_prices for ${args.store} - ${args.query}`);
+                    
+                    try {
+                        const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
+                        const pyRes = await fetch(
+                            `${scraperUrl}/scrape?store=${encodeURIComponent(args.store)}&query=${encodeURIComponent(args.query)}&region=${encodeURIComponent(args.region || 'gauteng')}`
+                        );
+                        
+                        if (!pyRes.ok) throw new Error("Scraper returned an error");
+                        
+                        const data = await pyRes.json();
+                        const rawText = data.raw_text;
+                        
+                        let toolResponseContent = "";
+                        if (!rawText || rawText.length < 20) {
+                            toolResponseContent = "No results were found for this query on the store's website.";
+                        } else {
+                            // Trim to fit inside context window safely
+                            toolResponseContent = rawText.slice(0, 20000); 
+                        }
+
+                        // Append tool result
                         messages.push({
-                            role: msg.role as "user" | "assistant",
-                            content: msg.content,
+                            role: "tool",
+                            tool_call_id: toolCall.id,
+                            name: tc.function.name,
+                            content: `Raw scraped text from store:\n\n${toolResponseContent}`
+                        });
+                        console.log(`Chat route: Tool ${toolCall.id} completed.`);
+                        
+                    } catch (err: any) {
+                        console.error('Chat route: Tool execution failed', err);
+                        messages.push({
+                            role: "tool",
+                            tool_call_id: toolCall.id,
+                            name: tc.function.name,
+                            content: "Error: The scraping service failed to retrieve results from this store right now."
                         });
                     }
                 }
-
-                // Append the current user message
-                messages.push({ role: "user", content: userMessage });
-
-                const stream = await groqClient.chat.completions.create({
-                    messages,
-                    model: "llama-3.3-70b-versatile",
-                    stream: true,
-                    temperature: 0.7,
-                    max_tokens: 2048,
-                });
-
-                // Forward real LLM token stream directly to the client
-                const encoder = new TextEncoder();
-                const readable = new ReadableStream({
-                    async start(controller) {
-                        try {
-                            for await (const chunk of stream) {
-                                const content = chunk.choices[0]?.delta?.content;
-                                if (content) {
-                                    controller.enqueue(encoder.encode(content));
-                                }
-                            }
-                        } catch (err) {
-                            console.error("Stream error:", err);
-                        } finally {
-                            controller.close();
-                        }
-                    }
-                });
-
-                return new NextResponse(readable, {
-                    headers: { "Content-Type": "text/plain; charset=utf-8" },
-                });
-            } catch (groqError) {
-                console.error("Groq streaming fallback failed:", groqError);
             }
-        }
 
-        // Nothing worked — tell the user
-        return NextResponse.json({
-            error: "AI Services currently unavailable. Please check your connection."
-        }, { status: 503 });
+            // Second pass: Send tool results back to DeepSeek to generate the final streaming response
+            console.log("Chat route: Streaming final DeepSeek response with tool data...");
+            const stream = await deepseekClient.chat.completions.create({
+                model: "deepseek-chat",
+                messages: messages,
+                stream: true,
+                temperature: 0.6,
+            });
+
+            return createStreamResponse(stream);
+
+        } else {
+            // No tool used, just standard response. But we didn't request a stream initially to catch tool calls,
+            // so we stream it manually if we have normal text. Or we can just rebuild the stream.
+            // Since we already have the text response, let's just fake stream it to keep the UI happy.
+            return createFakeStreamResponse(responseMessage.content || "I couldn't generate a response.");
+        }
 
     } catch (error) {
         console.error("API Route Error:", error);
@@ -147,16 +168,39 @@ export async function POST(req: Request) {
     }
 }
 
-/** Fallback: wraps a completed text string in a simulated stream (used for RAG backend responses) */
+function createStreamResponse(stream: AsyncIterable<any>) {
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+        async start(controller) {
+            try {
+                for await (const chunk of stream) {
+                    const content = chunk.choices[0]?.delta?.content;
+                    if (content) {
+                        controller.enqueue(encoder.encode(content));
+                    }
+                }
+            } catch (err) {
+                console.error("Stream error:", err);
+            } finally {
+                controller.close();
+            }
+        }
+    });
+
+    return new NextResponse(readable, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+}
+
 function createFakeStreamResponse(text: string) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
         async start(controller) {
-            const chunkSize = 15;
+            const chunkSize = 20;
             for (let i = 0; i < text.length; i += chunkSize) {
                 const chunk = text.slice(i, i + chunkSize);
                 controller.enqueue(encoder.encode(chunk));
-                await new Promise(resolve => setTimeout(resolve, 10));
+                await new Promise(resolve => setTimeout(resolve, 10)); // tiny delay
             }
             controller.close();
         },

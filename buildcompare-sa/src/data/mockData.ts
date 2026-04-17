@@ -336,22 +336,167 @@ const SUPPLIER_PRICE_PROFILES: Record<string, { multiplier: number; deliveryFee:
 };
 
 // Realistic SA base prices per category (Feb 2026 market rates)
+const CATEGORY_BASE_PRICES: Record<string, number> = {
+    cement: 109,       // 50kg bag average
+    bricks: 3.80,      // per brick
+    steel: 165,         // Y10/Y12 rebar per bar
+    timber: 89,         // per length
+    plumbing: 220,      // average item
+    electrical: 165,    // average item
+    paint: 1650,        // 20L bucket average
+    roofing: 285,       // per sheet/tile
+    tiles: 42,          // per m²
+    hardware: 250,      // per box/unit/tool average
+    labor: 300,         // baseline fallback
+    other: 95,
+};
+
+/**
+ * Intelligent name-based price estimator — analyses the item description
+ * to produce realistic SA construction market prices.
+ * Falls back to category base price only if nothing matches.
+ */
+function estimatePriceFromName(name: string, category: string): number {
+    const n = name.toLowerCase();
+
+    // ── Doors & Frames ─────────────────────────────────────────────
+    if (n.includes('fire door') || n.includes('fire-rated'))         return 8500;
+    if (n.includes('steel door frame'))                              return 1850;
+    if (n.includes('aluminum') && n.includes('door'))                return 4200;
+    if (n.includes('timber door') || n.includes('wooden door'))      return 2500;
+    if (n.includes('door frame'))                                    return 950;
+    if (n.includes('door') && n.includes('handle'))                  return 350;
+    if (n.includes('door') && n.includes('closer'))                  return 680;
+    if (n.includes('door') && n.includes('lock'))                    return 450;
+    if (n.includes('door'))                                          return 2200;
+
+    // ── Windows ────────────────────────────────────────────────────
+    if (n.includes('window sill'))                                   return 185;    // per m
+    if (n.includes('window frame') || n.includes('aluminium window')) return 3200;
+    if (n.includes('window') && n.includes('glass'))                 return 850;
+    if (n.includes('window'))                                        return 2800;
+
+    // ── Cupboards & Joinery ────────────────────────────────────────
+    if (n.includes('kitchen cupboard') || n.includes('kitchen unit')) return 6500;
+    if (n.includes('bedroom cupboard') || n.includes('wardrobe'))    return 4500;
+    if (n.includes('vanity') || n.includes('bathroom cabinet'))      return 3200;
+    if (n.includes('sink cupboard'))                                 return 3800;
+    if (n.includes('cupboard'))                                      return 3500;
+    if (n.includes('countertop') || n.includes('worktop'))           return 2800;
+    if (n.includes('shelf') || n.includes('shelving'))               return 450;
+
+    // ── Ceilings & Partitions ──────────────────────────────────────
+    if (n.includes('ceiling') && (n.includes('board') || n.includes('rhino'))) return 125; // per m²
+    if (n.includes('drywall') || n.includes('partition'))            return 185;    // per m²
+    if (n.includes('ceiling'))                                       return 135;    // per m²
+    if (n.includes('cornice'))                                       return 65;     // per m
+    if (n.includes('skirting'))                                      return 85;     // per m
+
+    // ── Electrical ─────────────────────────────────────────────────
+    if (n.includes('distribution board') || n.includes('db board'))  return 3500;
+    if (n.includes('circuit breaker'))                               return 185;
+    if (n.includes('isolator'))                                      return 220;
+    if (n.includes('light fitting') || n.includes('luminaire'))      return 650;
+    if (n.includes('downlight'))                                     return 185;
+    if (n.includes('conduit'))                                       return 35;     // per m
+    if (n.includes('cable') && n.includes('4mm'))                    return 28;     // per m
+    if (n.includes('cable') && n.includes('2.5mm'))                  return 18;     // per m
+    if (n.includes('cable') && n.includes('1.5mm'))                  return 12;     // per m
+    if (n.includes('cable'))                                         return 22;     // per m
+    if (n.includes('socket') || n.includes('plug point'))            return 85;
+    if (n.includes('switch') && !n.includes('switchgear'))           return 65;
+    if (n.includes('switchgear'))                                    return 2800;
+
+    // ── Plumbing ───────────────────────────────────────────────────
+    if (n.includes('geyser') || n.includes('water heater'))          return 4500;
+    if (n.includes('toilet') || n.includes('wc'))                    return 2200;
+    if (n.includes('basin') && !n.includes('tap'))                   return 1200;
+    if (n.includes('bath') && !n.includes('room'))                   return 2800;
+    if (n.includes('shower') && n.includes('valve'))                 return 1800;
+    if (n.includes('shower') && n.includes('door'))                  return 3500;
+    if (n.includes('shower'))                                        return 2500;
+    if (n.includes('tap') || n.includes('faucet'))                   return 650;
+    if (n.includes('110mm') && n.includes('pipe'))                   return 320;
+    if (n.includes('50mm') && n.includes('pipe'))                    return 180;
+    if (n.includes('40mm') && n.includes('pipe'))                    return 145;
+    if (n.includes('pipe') && n.includes('fitting'))                 return 45;
+    if (n.includes('pipe'))                                          return 220;
+    if (n.includes('valve'))                                         return 350;
+    if (n.includes('drain'))                                         return 280;
+
+    // ── Concrete & Cement ─────────────────────────────────────────
+    if (n.includes('ready-mix') || n.includes('readymix'))           return 1850;   // per m³
+    if (n.includes('cement') && n.includes('white'))                 return 185;
+    if (n.includes('cement') && n.includes('rapid'))                 return 135;
+    if (n.includes('cement'))                                        return 109;
+    if (n.includes('concrete'))                                      return 1650;   // per m³
+
+    // ── Steel & Rebar ──────────────────────────────────────────────
+    if (n.includes('y16') || n.includes('16mm rebar'))               return 210;
+    if (n.includes('y12') || n.includes('12mm rebar'))               return 175;
+    if (n.includes('y10') || n.includes('10mm rebar'))               return 145;
+    if (n.includes('mesh') && n.includes('ref 245'))                 return 1250;
+    if (n.includes('mesh') && n.includes('ref 193'))                 return 980;
+    if (n.includes('mesh'))                                          return 980;
+    if (n.includes('structural steel'))                              return 18500;  // per ton
+    if (n.includes('steel') && n.includes('plate'))                  return 2200;
+    if (n.includes('steel') && n.includes('beam'))                   return 3500;
+
+    // ── Bricks & Blocks ───────────────────────────────────────────
+    if (n.includes('face brick') || n.includes('satin brick'))       return 4.50;
+    if (n.includes('stock brick'))                                   return 3.20;
+    if (n.includes('maxi brick') || n.includes('maxi block'))        return 8.50;
+    if (n.includes('paving') && n.includes('brick'))                 return 5.80;
+    if (n.includes('block') && n.includes('190mm'))                  return 12.50;
+    if (n.includes('block'))                                         return 9.80;
+    if (n.includes('brick'))                                         return 3.80;
+
+    // ── Paint ──────────────────────────────────────────────────────
+    if (n.includes('primer') && n.includes('20l'))                   return 1150;
+    if (n.includes('primer'))                                        return 350;
+    if (n.includes('paint') && n.includes('20l'))                    return 1750;
+    if (n.includes('paint') && n.includes('5l'))                     return 550;
+    if (n.includes('paint'))                                         return 1650;
+    if (n.includes('varnish'))                                       return 450;
+    if (n.includes('sealer'))                                        return 380;
+
+    // ── Roofing ────────────────────────────────────────────────────
+    if (n.includes('ibr') || n.includes('corrugated'))               return 285;
+    if (n.includes('roof tile') || n.includes('maxitile'))           return 42;
+    if (n.includes('roof truss'))                                    return 850;    // per unit
+    if (n.includes('fascia'))                                        return 120;    // per m
+    if (n.includes('gutter'))                                        return 95;     // per m
+    if (n.includes('flashing'))                                      return 180;    // per m
+
+    // ── Flooring & Tiles ───────────────────────────────────────────
+    if (n.includes('vinyl') && n.includes('floor'))                  return 185;    // per m²
+    if (n.includes('laminate') && n.includes('floor'))               return 220;    // per m²
+    if (n.includes('ceramic tile'))                                  return 165;    // per m²
+    if (n.includes('porcelain tile'))                                return 285;    // per m²
+    if (n.includes('tile') && n.includes('adhesive'))                return 180;    // per bag
+    if (n.includes('tile') && n.includes('grout'))                   return 95;     // per bag
+    if (n.includes('tile'))                                          return 185;    // per m²
+
+    // ── Earthworks & Foundations ───────────────────────────────────
+    if (n.includes('excavat'))                                       return 85;     // per m³
+    if (n.includes('fill') && (n.includes('sand') || n.includes('soil'))) return 250;  // per m³
+    if (n.includes('compact'))                                       return 35;     // per m²
+    if (n.includes('dpc') || n.includes('damp proof'))               return 65;     // per m²
+
+    // ── Miscellaneous ─────────────────────────────────────────────
+    if (n.includes('waterproof') || n.includes('membrane'))          return 120;    // per m²
+    if (n.includes('insulation'))                                    return 95;     // per m²
+    if (n.includes('scaffold'))                                      return 45;     // per m² per week
+    if (n.includes('plaster'))                                       return 55;     // per m²
+    if (n.includes('screed'))                                        return 65;     // per m²
+    if (n.includes('render'))                                        return 75;     // per m²
+
+    // Fall back to category base price
+    return CATEGORY_BASE_PRICES[category] || 95;
+}
+
 function getBasePriceForCategory(category: string): number {
-    const prices: Record<string, number> = {
-        cement: 109,       // 50kg bag average
-        bricks: 3.80,      // per brick
-        steel: 165,         // Y10/Y12 rebar per bar
-        timber: 89,         // per length
-        plumbing: 220,      // average item
-        electrical: 165,    // average item
-        paint: 1650,        // 20L bucket average
-        roofing: 285,       // per sheet/tile
-        tiles: 42,          // per m²
-        hardware: 250,       // per box/unit/tool average
-        labor: 300,         // baseline fallback
-        other: 95,
-    };
-    return prices[category] || 95;
+    return CATEGORY_BASE_PRICES[category] || 95;
 }
 
 // Deterministic hash for consistent "variety" without randomness
@@ -367,59 +512,12 @@ function stableHash(str: string): number {
 
 // Generate mock price quotes with LOCATION DATA — DETERMINISTIC
 export function generateMockQuotes(material: Material, region: string = 'gauteng'): PriceQuote[] {
-    let basePrice = material._aiPriceEstimate || getBasePriceForCategory(material.category);
-    
-    // Dynamic Price Overrides based on Name Context (only apply if no AI override)
-    const lowerName = material.name.toLowerCase();
-    
-    if (!material._aiPriceEstimate) {
-        if (lowerName.includes('primer')) {
-        basePrice = lowerName.includes('20l') ? 1150 : 350;
-    } else if (lowerName.includes('weatherguard') || lowerName.includes('micatex')) {
-        basePrice = 1899;
-    } else if (lowerName.includes('supercover') || lowerName.includes('double velvet')) {
-        basePrice = 1549;
-    } else if (lowerName.includes('fired earth')) {
-        basePrice = 689;
-    } else if ((lowerName.includes('paint') || lowerName.includes('dulux') || lowerName.includes('plascon')) && lowerName.includes('20l')) {
-        basePrice = 1750;
-    } else if (lowerName.includes('cement') && lowerName.includes('white')) {
-        basePrice = 185;
-    } else if (lowerName.includes('cement') && lowerName.includes('rapid')) {
-        basePrice = 135;
-    } else if (lowerName.includes('sephaku') && lowerName.includes('42.5')) {
-        basePrice = 114.95;
-    } else if (lowerName.includes('cement') && !lowerName.includes('primer') && !lowerName.includes('brick')) {
-        basePrice = 109;
-    } else if (lowerName.includes('face brick') || lowerName.includes('satin')) {
-        basePrice = 4.50;
-    } else if (lowerName.includes('stock brick') || lowerName.includes('maxi brick')) {
-        basePrice = 3.20;
-    } else if (lowerName.includes('paving')) {
-        basePrice = 5.80;
-    } else if (lowerName.includes('y16')) {
-        basePrice = 210;
-    } else if (lowerName.includes('y12')) {
-        basePrice = 175;
-    } else if (lowerName.includes('y10')) {
-        basePrice = 145;
-    } else if (lowerName.includes('mesh') && lowerName.includes('245')) {
-        basePrice = 1250;
-    } else if (lowerName.includes('mesh') && lowerName.includes('193')) {
-        basePrice = 980;
-    } else if (lowerName.includes('geyser')) {
-        basePrice = 4500;
-    } else if (lowerName.includes('110mm')) {
-        basePrice = 320;
-    } else if (lowerName.includes('ibr') || lowerName.includes('corrugated')) {
-        basePrice = 285;
-    } else if (lowerName.includes('maxitile')) {
-        basePrice = 42;
-    }
-    }
+    // Use AI estimate if available, otherwise try name-based estimate, lastly category base
+    let basePrice = material._aiPriceEstimate || estimatePriceFromName(material.name, material.category);
     
     // Dynamic Regional Labor Rates
     if (material.category === 'labor' && !material._aiPriceEstimate) {
+        const lowerName = material.name.toLowerCase();
         const isArtisan = lowerName.includes('artisan') || lowerName.includes('plumber') || lowerName.includes('electrician');
         if (region === 'gauteng') basePrice = isArtisan ? 750 : 300;
         else if (region === 'cape-town') basePrice = isArtisan ? 850 : 350;
