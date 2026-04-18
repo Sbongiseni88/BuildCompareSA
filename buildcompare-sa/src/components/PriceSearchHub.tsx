@@ -152,6 +152,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     }, [searchQuery]);
 
     const performSearch = async (materials: Material[]) => {
+        if (isSearching) return; // Prevent Double Click loops!
         setIsSearching(true);
         setSearchStep(1); // Stage 1
         setComparisonResults([]);
@@ -181,14 +182,17 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                         if (data.success && data.results) allQuotes.push(...data.results);
                     }
 
-                    if (allQuotes.length > 0) {
-                        const best = allQuotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
-                        const avg = allQuotes.reduce((acc, curr) => acc + curr.price, 0) / allQuotes.length;
+                    // Filter out "Price on Request" (0.00) or null items before calculating savings
+                    const validQuotes = allQuotes.filter(q => typeof q.price === 'number' && q.price > 0);
+
+                    if (validQuotes.length > 0) {
+                        const best = validQuotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
+                        const avg = validQuotes.reduce((acc, curr) => acc + curr.price, 0) / validQuotes.length;
                         const savings = avg - best.price;
 
                         return {
                             material,
-                            quotes: allQuotes,
+                            quotes: validQuotes,
                             bestPrice: best,
                             averagePrice: avg,
                             potentialSavings: savings > 0 ? savings * material.quantity : 0,
