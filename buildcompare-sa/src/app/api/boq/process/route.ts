@@ -175,7 +175,9 @@ export async function POST(req: NextRequest) {
         }
     }
 
-    const scraperUrl = process.env.SCRAPER_URL || 'http://127.0.0.1:8001';
+    // We temporarily bypass SCRAPER_URL because the remote ECS does not have boq_parser.py yet!
+    // It must hit the local uvicorn parser instance running on 8001.
+    const scraperUrl = 'http://127.0.0.1:8001';
     
     try {
         console.log("⚡ Proxying BOQ extraction to high-speed Python scraper pipeline...");

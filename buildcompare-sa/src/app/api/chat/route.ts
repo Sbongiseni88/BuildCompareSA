@@ -101,7 +101,7 @@ export async function POST(req: Request) {
                     console.log(`Chat route: Executing search_live_prices for ${args.store} - ${args.query}`);
                     
                     try {
-                        const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
+                        const scraperUrl = process.env.LOCAL_SCRAPER_URL || 'http://127.0.0.1:8001';
                         const pyRes = await fetch(
                             `${scraperUrl}/scrape?store=${encodeURIComponent(args.store)}&query=${encodeURIComponent(args.query)}`
                         );

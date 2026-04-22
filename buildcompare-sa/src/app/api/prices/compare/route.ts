@@ -171,7 +171,8 @@ async function tryLiveScrape(
     query: ParsedQuery,
     region: string
 ): Promise<StoreQuote[]> {
-    const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8001';
+    // Fully localized architecture, disconnect from AWS ECS remote proxy.
+    const scraperUrl = process.env.LOCAL_SCRAPER_URL || 'http://127.0.0.1:8001';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
 
