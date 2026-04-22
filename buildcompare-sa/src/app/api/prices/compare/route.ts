@@ -79,7 +79,6 @@ interface CompareResponse {
 // ── AI Helper ────────────────────────────────────────────────────────────
 
 async function callAI(systemPrompt: string): Promise<string> {
-    // Try DeepSeek first, then Groq
     if (isDeepseekConfigured) {
         try {
             const res = await deepseekClient.chat.completions.create({
@@ -91,19 +90,11 @@ async function callAI(systemPrompt: string): Promise<string> {
             const content = res.choices[0]?.message?.content;
             if (content) return content;
         } catch (err: any) {
-            console.warn('DeepSeek failed, trying Groq:', err.message);
+            console.error('DeepSeek generation failed:', err.message);
+            throw err;
         }
     }
-    if (isGroqConfigured) {
-        const res = await groqClient.chat.completions.create({
-            messages: [{ role: 'system', content: systemPrompt }],
-            model: 'llama-3.3-70b-versatile',
-            temperature: 0.1,
-            response_format: { type: 'json_object' },
-        });
-        return res.choices[0]?.message?.content || '{}';
-    }
-    throw new Error('No AI API configured');
+    throw new Error('DeepSeek API not configured');
 }
 
 // ── STEP 1: Parse the Query ──────────────────────────────────────────────

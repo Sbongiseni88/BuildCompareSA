@@ -55,7 +55,7 @@ async def process_chunk(client: httpx.AsyncClient, chunk_str: str, location: str
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": "deepseek-chat",
         "messages": [
             {"role": "system", "content": PROMPT.replace("{location}", location)},
             {"role": "user", "content": chunk_str}
@@ -64,7 +64,7 @@ async def process_chunk(client: httpx.AsyncClient, chunk_str: str, location: str
         "response_format": {"type": "json_object"}
     }
     try:
-        resp = await client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=20.0)
+        resp = await client.post("https://api.deepseek.com/chat/completions", headers=headers, json=payload, timeout=20.0)
         if resp.status_code == 200:
             data = resp.json()
             content = data["choices"][0]["message"]["content"]

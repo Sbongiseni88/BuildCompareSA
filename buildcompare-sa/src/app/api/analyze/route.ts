@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { Material } from '@/types';
 
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
-import { groqClient, isGroqConfigured } from '@/lib/groq';
+import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
 import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
 
 // Vision-capable models for image analysis.
@@ -192,57 +192,26 @@ function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
     return allMaterials.length > 0 ? allMaterials : null;
 }
 
-// ─── Groq helpers ─────────────────────────────────────────────────────────────
+// ─── DeepSeek helpers ─────────────────────────────────────────────────────────────
 
-async function runGroqCompletion(messages: any[], models: string[]): Promise<string> {
-    let lastError: any = null;
-    for (const modelId of models) {
-        try {
-            console.log(`Attempting Groq model: ${modelId}`);
-            const completion = await groqClient.chat.completions.create({
-                messages,
-                model: modelId,
-                temperature: 0.1,
-                max_tokens: 4096,
-                top_p: 1,
-                stream: false,
-                response_format: { type: 'json_object' },
-            });
-            const content = completion.choices[0]?.message?.content;
-            if (content) return content;
-        } catch (err: any) {
-            console.warn(`Groq model ${modelId} failed:`, err.message);
-            lastError = err;
-        }
-    }
-    throw lastError || new Error('All Groq models failed');
-}
-
-/**
- * Waterfall execution: Tries DeepSeek-V3 first (if text-only), falls back to Groq.
- */
-async function runHybridCompletion(messages: any[], groqFallbackModels: string[], isVision: boolean = false): Promise<string> {
-    // DeepSeek current API (deepseek-chat) does not support image passing natively in the same way as Groq's llama-4-scout.
-    // So for vision tasks, we go straight to Groq.
-    if (!isVision && isDeepseekConfigured) {
-        try {
-            console.log('Attempting DeepSeek model: deepseek-chat');
-            const completion = await deepseekClient.chat.completions.create({
-                messages: messages as any,
-                model: 'deepseek-chat',
-                temperature: 0.1,
-                // Explicitly enforcing json_object for DeepSeek
-                response_format: { type: 'json_object' },
-            });
-            const content = completion.choices[0]?.message?.content;
-            if (content) return content;
-        } catch (err: any) {
-            console.warn('DeepSeek failed, falling back to Groq:', err.message);
-        }
-    }
+async function runDeepSeekCompletion(messages: any[]): Promise<string> {
+    if (!isDeepseekConfigured) throw new Error('DeepSeek API not configured');
     
-    // Fallback or Vision Path
-    return runGroqCompletion(messages, groqFallbackModels);
+    try {
+        console.log('Attempting DeepSeek model: deepseek-chat');
+        const completion = await deepseekClient.chat.completions.create({
+            messages: messages as any,
+            model: 'deepseek-chat',
+            temperature: 0.1,
+            response_format: { type: 'json_object' },
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (content) return content;
+    } catch (err: any) {
+        console.error('DeepSeek generation failed:', err.message);
+        throw err;
+    }
+    throw new Error('DeepSeek generation returned empty response');
 }
 
 const BOQ_PROMPT_SUFFIX = `
@@ -348,7 +317,7 @@ ${docText}
 --- END ---
 
 ${BOQ_PROMPT_SUFFIX}`;
-                rawContent = await runHybridCompletion([{ role: 'user', content: prompt }], TEXT_MODELS, false);
+                rawContent = await runDeepSeekCompletion([{ role: 'user', content: prompt }]);
 
             // ── PDF ──────────────────────────────────────────────────────────
             } else if (isPdfFile(mimeType, safeName)) {
@@ -365,7 +334,7 @@ ${pdfText}
 --- END ---
 
 ${BOQ_PROMPT_SUFFIX}`;
-                    rawContent = await runHybridCompletion([{ role: 'user', content: prompt }], TEXT_MODELS, false);
+                    rawContent = await runDeepSeekCompletion([{ role: 'user', content: prompt }]);
                 } else {
                     // PDF content streams are compressed — our extractor can't read them.
                     // Sending a PDF as an image to a vision model is invalid and always fails.
@@ -390,14 +359,10 @@ ${BOQ_PROMPT_SUFFIX}`;
 Identify all visible construction materials in this image.
 
 ${BOQ_PROMPT_SUFFIX}`;
-                rawContent = await runHybridCompletion(
-                    [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }],
-                    VISION_MODELS,
-                    true // isVision
-                );
+                throw new Error("DeepSeek does not natively support direct image uploads yet. Please provide a PDF or CSV file.");
             }
 
-            console.log('Groq raw response:', rawContent);
+            console.log('DeepSeek raw response:', rawContent);
 
             // Strip markdown fences if present
             const cleanJson = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -408,7 +373,7 @@ ${BOQ_PROMPT_SUFFIX}`;
             }
 
             const materials: Material[] = parsed.map((m: any, i: number) => ({
-                id: `ai-groq-${Date.now()}-${i}`,
+                id: `ai-deepseek-${Date.now()}-${i}`,
                 name: m.name || 'Unknown Item',
                 brand: m.brand || undefined,
                 category: m.category || 'other',
@@ -417,7 +382,7 @@ ${BOQ_PROMPT_SUFFIX}`;
                 laborCostEstimate: Number(m.laborCostEstimate) || undefined,
             }));
 
-            return NextResponse.json({ success: true, mode: 'live-groq', materials });
+            return NextResponse.json({ success: true, mode: 'live-deepseek', materials });
 
         } catch (aiError: any) {
             console.error('⚠️ AI Error:', aiError);

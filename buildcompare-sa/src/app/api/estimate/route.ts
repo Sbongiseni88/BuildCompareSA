@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { groqClient, isGroqConfigured } from '@/lib/groq';
+
 import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
 
 export async function GET(request: Request) {
@@ -10,8 +10,8 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
     }
 
-    if (!isGroqConfigured && !isDeepseekConfigured) {
-        console.warn('⚠️ No AI API keys found. Falling back to simple heuristic estimation.');
+    if (!isDeepseekConfigured) {
+        console.warn('⚠️ Deepseek API keys not found. Falling back to simple heuristic estimation.');
         return NextResponse.json({
             category: 'other',
             basePrice: 95,
@@ -32,7 +32,6 @@ ONLY RETURN VALID JSON. Nothing else.`;
     let rawResponse = '{}';
     let success = false;
 
-    // Try DeepSeek First
     if (isDeepseekConfigured) {
         try {
             console.log('Attempting DeepSeek model: deepseek-chat for estimate');
@@ -45,23 +44,7 @@ ONLY RETURN VALID JSON. Nothing else.`;
             rawResponse = chatCompletion.choices[0]?.message?.content || '{}';
             success = true;
         } catch (err: any) {
-            console.warn('DeepSeek Estimation Error, falling back to Groq:', err.message);
-        }
-    }
-
-    // Try Groq if DeepSeek failed or wasn't configured
-    if (!success && isGroqConfigured) {
-        try {
-            console.log('Attempting Groq model for estimate fallback');
-            const chatCompletion = await groqClient.chat.completions.create({
-                messages: [{ role: 'system', content: systemPrompt }],
-                model: 'llama-3.3-70b-versatile',
-                temperature: 0.1,
-                response_format: { type: 'json_object' },
-            });
-            rawResponse = chatCompletion.choices[0]?.message?.content || '{}';
-        } catch (err: any) {
-            console.error('Groq Estimation Error:', err.message);
+            console.error('DeepSeek Estimation Error:', err.message);
             return NextResponse.json({
                 category: 'other',
                 basePrice: 95,
