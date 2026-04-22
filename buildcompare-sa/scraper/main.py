@@ -4,8 +4,12 @@ from playwright.async_api import async_playwright
 import uvicorn
 import asyncio
 from bs4 import BeautifulSoup
+import re
+import urllib.parse
+from scraper.boq_parser import router as boq_router
 
 app = FastAPI(title="BuildCompare SA Scraper Engine")
+app.include_router(boq_router)
 
 STORE_URLS = {
     "builders": "https://www.builders.co.za/search/?text={query}",
@@ -88,7 +92,7 @@ async def uptime():
     return {"status": "ok", "service": "scraper-engine"}
 
 @app.get("/scrape")
-async def scrape_store(store: str = Query(...), query: str = Query(...), region: str = Query(default="gauteng")):
+async def scrape_store(store: str = Query(...), query: str = Query(...)):
     """
     Scrapes the visual DOM from the requested store and returns clean text.
     """
@@ -96,8 +100,9 @@ async def scrape_store(store: str = Query(...), query: str = Query(...), region:
         raise HTTPException(status_code=400, detail=f"Store '{store}' is not supported. Use builders, cashbuild, or leroy_merlin.")
     
     # Broaden search: Strip parentheses and special characters that break retailer search engines
-    clean_q = re.sub(r'[()\[\]]', '', query)
-    url = STORE_URLS[store].format(query=clean_q)
+    clean_q = re.sub(r'[()\[\]]', '', query).strip()
+    safe_q = urllib.parse.quote_plus(clean_q)
+    url = STORE_URLS[store].format(query=safe_q)
     
     try:
         # Tier 2 fallback: Heavy headless playwright rendering
@@ -107,7 +112,6 @@ async def scrape_store(store: str = Query(...), query: str = Query(...), region:
         return {
             "success": True,
             "store": store,
-            "region": region,
             "query": query,
             "raw_text": clean_text
         }

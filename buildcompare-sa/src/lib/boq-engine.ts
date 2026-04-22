@@ -249,27 +249,31 @@ export function estimateRemainingTime(
 
 // ─── AI Prompt ────────────────────────────────────────────────────────────────
 
-export const BOQ_EXTRACT_PROMPT = `You MUST return a valid JSON array. Every construction item, material, or product found must appear as a separate object.
+export const BOQ_EXTRACT_PROMPT = `### ROLE: Chunk-Based BoQ Parser
+### CONTEXT: 
+You are receiving a segmented portion (a "chunk") of a large South African Construction Bill of Quantities. Your task is to extract material data from THIS CHUNK ONLY.
 
-Format:
+### INSTRUCTIONS:
+1. **Analyze Data**: Scan the provided CSV text for construction materials, quantities, and units.
+2. **Handle Incomplete Rows**: If a row is cut off at the start or end of the chunk and lacks a description or quantity, IGNORE it (it will be captured in the next chunk).
+3. **Ignore Metadata**: Discard headers, page numbers, and preamble text found within the chunk.
+4. **Localization**: Formulate \`search_query\` values optimized for South African retailers (Builders, Cashbuild, Leroy Merlin) based on the user's {{location}}.
+
+### OUTPUT RULES:
+- Return a raw JSON array of objects. 
+- Do not include any introductory or concluding text.
+- If no materials are found in this specific chunk, return an empty array \`[]\`.
+
+### JSON SCHEMA:
 [
   {
-    "id": "item-1",
-    "name": "Full descriptive name (e.g. 50kg PPC Cement Bag)",
-    "brand": "Brand name if visible, otherwise null",
-    "category": "One of: cement, bricks, steel, timber, paint, roofing, plumbing, electrical, hardware, other",
-    "quantity": 10.0,
-    "unit": "One of: bag, m2, m3, kg, length, unit, each, lot, litre, roll, sheet",
-    "laborCostEstimate": 150.0
+    "material": "Standardized Name",
+    "specs": "Dimensions/Grade",
+    "qty": 0,
+    "unit": "Unit",
+    "search_query": "Optimized Store Query"
   }
-]
-
-CRITICAL RULES:
-- "laborCostEstimate": Estimate the installation/labor cost for ONE unit of this item in ZAR based on 2026 South African market rates.
-- Format ALL numeric values as standard Floats (e.g., 100.00). Do NOT write "R 100,00" or add currency symbols.
-- Your entire response MUST be valid JSON.
-- Extract EVERY line item. Do NOT stop after the first item.
-- Return ONLY the raw JSON array. No markdown. No extra text.`;
+]`;
 
 /** Normalise whatever the LLM returned into a plain array. */
 export function normaliseParsed(parsed: any): any[] {

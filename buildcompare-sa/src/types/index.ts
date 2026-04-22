@@ -20,6 +20,7 @@ export interface Material {
     unit: string;
     imageUrl?: string;
     _aiPriceEstimate?: number;
+    search_string?: string;
     laborCostEstimate?: number;
 }
 

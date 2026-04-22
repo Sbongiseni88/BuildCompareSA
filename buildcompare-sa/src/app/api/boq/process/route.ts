@@ -164,312 +164,48 @@ function lookupPriceFromKnowledge(material: Material): PriceResult {
     return result;
 }
 
-// ── MAIN ROUTE ───────────────────────────────────────────────────────────
-
 export async function POST(req: NextRequest) {
-    const encoder = new TextEncoder();
+    const formData = await req.formData();
+    
+    // Pass API Key natively so Python can handle parallel execution
+    if (!formData.has('deepseek_key')) {
+        const key = process.env.DEEPSEEK_API_KEY || process.env.GROQ_API_KEY || '';
+        if (key) {
+            formData.append('deepseek_key', key);
+        }
+    }
 
-    const stream = new ReadableStream({
-        async start(controller) {
-            const send = (event: ProgressEvent) => {
-                try {
-                    controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
-                } catch { /* stream may be closed */ }
-            };
+    const scraperUrl = process.env.SCRAPER_URL || 'http://127.0.0.1:8001';
+    
+    try {
+        console.log("⚡ Proxying BOQ extraction to high-speed Python scraper pipeline...");
+        const res = await fetch(`${scraperUrl}/boq/extract`, {
+            method: 'POST',
+            body: formData,
+        });
 
-            const startTime = Date.now();
-            let materials: Material[] = [];
+        if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`Scraper Error ${res.status}: ${errBody}`);
+        }
 
-            try {
-                // ─── STAGE 1: Upload ──────────────────────────────────────
-                send({
-                    stage: 'upload',
-                    progress: 5,
-                    message: 'Document received. Starting analysis...',
-                });
-
-                const formData = await req.formData();
-                const file = formData.get('file') as File;
-                const fileName = (formData.get('fileName') as string) || file?.name || 'unknown';
-
-                if (!file) {
-                    send({ stage: 'error', progress: 0, message: 'No file uploaded.', error: 'No file uploaded' });
-                    controller.close();
-                    return;
-                }
-
-                const arrayBuffer = await file.arrayBuffer();
-                const mimeType = file.type || 'application/octet-stream';
-
-                send({
-                    stage: 'upload',
-                    progress: 10,
-                    message: `Uploaded "${fileName}" (${(arrayBuffer.byteLength / 1024).toFixed(0)}KB)`,
-                });
-
-                console.log(`📋 BOQ Process: "${fileName}" | ${mimeType} | ${arrayBuffer.byteLength} bytes`);
-
-                // ─── STAGE 2: Extract data from file ──────────────────────
-                send({
-                    stage: 'extract',
-                    progress: 15,
-                    message: 'Extracting data from document...',
-                });
-
-                let documentText = '';
-                let directParsed: Material[] | null = null;
-
-                if (isSpreadsheetFile(mimeType, fileName, arrayBuffer)) {
-                    // Try direct structured parse first (no AI needed)
-                    directParsed = tryDirectBoQParse(arrayBuffer);
-                    if (directParsed && directParsed.length > 0) {
-                        send({
-                            stage: 'extract',
-                            progress: 30,
-                            message: `Direct parsing found ${directParsed.length} items.`,
-                            totalItems: directParsed.length,
-                        });
-                        materials = directParsed;
-                    } else {
-                        documentText = extractSpreadsheetText(arrayBuffer);
-                    }
-                } else if (isPdfFile(mimeType, fileName)) {
-                    documentText = extractPdfText(arrayBuffer);
-                    if (documentText.length < 50) {
-                        send({
-                            stage: 'error',
-                            progress: 0,
-                            message: 'Could not read text from this PDF (may be image-based). Please export as Excel (.xlsx) and re-upload.',
-                            error: 'PDF_UNREADABLE',
-                        });
-                        controller.close();
-                        return;
-                    }
-                } else {
-                    // Image — not handled in streaming endpoint, fall back to regular analyze
-                    send({
-                        stage: 'error',
-                        progress: 0,
-                        message: 'Image files should be uploaded via the regular upload. This endpoint works best with PDF and Excel.',
-                        error: 'IMAGE_NOT_SUPPORTED',
-                    });
-                    controller.close();
-                    return;
-                }
-
-                send({
-                    stage: 'extract',
-                    progress: 25,
-                    message: documentText
-                        ? `Extracted ${documentText.length} characters of text.`
-                        : `Parsed ${materials.length} items from spreadsheet.`,
-                });
-
-                // ─── STAGE 3: AI Analysis (if no direct parse) ────────────
-                if (materials.length === 0 && documentText) {
-                    send({
-                        stage: 'analyze',
-                        progress: 30,
-                        message: 'AI is analyzing your document...',
-                        estimatedTimeRemaining: Math.round(documentText.length / 500),
-                    });
-
-                    const fileType = isPdfFile(mimeType, fileName) ? 'PDF' : 'spreadsheet';
-                    const prompt = `You are an expert South African Quantity Surveyor.
-Extract ALL construction materials from this ${fileType} document.
-
---- DOCUMENT ---
-${documentText}
---- END ---
-
-${BOQ_EXTRACT_PROMPT}`;
-
-                    try {
-                        const rawResponse = await callAI(prompt);
-                        const cleanJson = rawResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
-                        const parsed = normaliseParsed(JSON.parse(cleanJson));
-
-                        materials = parsed.map((m: any, i: number) => ({
-                            id: `boq-ai-${Date.now()}-${i}`,
-                            name: m.name || 'Unknown Item',
-                            brand: m.brand || undefined,
-                            category: m.category || guessCategory(m.name || ''),
-                            quantity: Number(m.quantity) || 1,
-                            unit: m.unit || 'unit',
-                            laborCostEstimate: Number(m.laborCostEstimate) || undefined,
-                        }));
-
-                        send({
-                            stage: 'analyze',
-                            progress: 45,
-                            message: `AI extracted ${materials.length} items from document.`,
-                            totalItems: materials.length,
-                        });
-                    } catch (aiErr: any) {
-                        send({
-                            stage: 'error',
-                            progress: 0,
-                            message: `AI analysis failed: ${aiErr.message}. Please try again.`,
-                            error: aiErr.message,
-                        });
-                        controller.close();
-                        return;
-                    }
-                }
-
-                if (materials.length === 0) {
-                    send({
-                        stage: 'error',
-                        progress: 0,
-                        message: 'No materials found in the document. Ensure it contains construction items.',
-                        error: 'NO_MATERIALS',
-                    });
-                    controller.close();
-                    return;
-                }
-
-                // ─── STAGE 4: Deduplication ───────────────────────────────
-                send({
-                    stage: 'deduplicate',
-                    progress: 50,
-                    message: `Deduplicating ${materials.length} items...`,
-                    totalItems: materials.length,
-                });
-
-                const dedupResult = deduplicateMaterials(materials);
-                materials = dedupResult.unique;
-
-                send({
-                    stage: 'deduplicate',
-                    progress: 55,
-                    message: dedupResult.duplicatesRemoved > 0
-                        ? `Merged ${dedupResult.duplicatesRemoved} duplicates. ${materials.length} unique items.`
-                        : `${materials.length} unique items found.`,
-                    totalItems: materials.length,
-                });
-
-                // ─── STAGE 5: Pricing (parallel batches) ──────────────────
-                const BATCH_SIZE = 8;
-                const totalBatches = Math.ceil(materials.length / BATCH_SIZE);
-                const pricingStart = Date.now();
-                const priceResults: PriceResult[] = [];
-                let processedCount = 0;
-                let cacheHits = 0;
-
-                send({
-                    stage: 'pricing',
-                    progress: 58,
-                    message: `Searching prices for ${materials.length} items across ${SA_STORES.length} stores...`,
-                    totalItems: materials.length,
-                    processedItems: 0,
-                    estimatedTimeRemaining: Math.ceil(materials.length * 0.1),
-                });
-
-                for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-                    const batchStart = batchIdx * BATCH_SIZE;
-                    const batch = materials.slice(batchStart, batchStart + BATCH_SIZE);
-
-                    // Process entire batch in parallel
-                    const batchResults = await Promise.all(
-                        batch.map(async (material) => {
-                            const cacheKey = normalizeMaterialName(material.name);
-                            const cached = getCachedPrice(cacheKey);
-                            if (cached) {
-                                cacheHits++;
-                                return {
-                                    materialName: material.name,
-                                    cheapestPrice: cached.price,
-                                    cheapestStore: cached.store,
-                                    averagePrice: cached.price * 1.05,
-                                    laborEstimate: cached.laborEstimate,
-                                    confidence: cached.confidence as 'high' | 'medium' | 'low',
-                                    stores: [{ name: cached.store, price: cached.price }],
-                                };
-                            }
-                            return lookupPriceFromKnowledge(material);
-                        })
-                    );
-
-                    priceResults.push(...batchResults);
-                    processedCount += batch.length;
-
-                    const elapsed = Date.now() - pricingStart;
-                    const eta = estimateRemainingTime(processedCount, materials.length, elapsed);
-                    const pct = 58 + Math.round((processedCount / materials.length) * 25);
-
-                    send({
-                        stage: 'pricing',
-                        progress: Math.min(pct, 83),
-                        message: `Processed ${processedCount} of ${materials.length} items${cacheHits > 0 ? ` (${cacheHits} cached)` : ''}...`,
-                        totalItems: materials.length,
-                        processedItems: processedCount,
-                        estimatedTimeRemaining: eta,
-                        partialResults: batchResults.filter(r => r.cheapestPrice > 0).map(r => ({
-                            name: r.materialName,
-                            price: r.cheapestPrice,
-                            store: r.cheapestStore,
-                        })),
-                    });
-                }
-
-                // ─── STAGE 6: Labour costs ────────────────────────────────
-                send({
-                    stage: 'labour',
-                    progress: 85,
-                    message: 'Calculating labour cost estimates...',
-                    totalItems: materials.length,
-                    processedItems: materials.length,
-                });
-
-                // Enrich materials with price + labour data
-                for (let i = 0; i < materials.length; i++) {
-                    const priceResult = priceResults[i];
-                    if (priceResult) {
-                        materials[i].laborCostEstimate =
-                            materials[i].laborCostEstimate || priceResult.laborEstimate;
-                    }
-                }
-
-                send({
-                    stage: 'labour',
-                    progress: 92,
-                    message: `Labour costs estimated for ${materials.length} items.`,
-                    totalItems: materials.length,
-                    processedItems: materials.length,
-                });
-
-                // ─── STAGE 7: Complete ────────────────────────────────────
-                const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-                console.log(`✅ BOQ processed: ${materials.length} items in ${totalTime}s (${cacheHits} cache hits)`);
-
-                send({
-                    stage: 'complete',
-                    progress: 100,
-                    message: `Done! ${materials.length} items processed in ${totalTime}s.`,
-                    totalItems: materials.length,
-                    processedItems: materials.length,
-                    materials,
-                });
-
-            } catch (error: any) {
-                console.error('BOQ Processing error:', error);
-                send({
-                    stage: 'error',
-                    progress: 0,
-                    message: `Processing failed: ${error.message || 'Unknown error'}. Please try again.`,
-                    error: error.message,
-                });
-            } finally {
-                try { controller.close(); } catch { /* already closed */ }
-            }
-        },
-    });
-
-    return new Response(stream, {
-        headers: {
-            'Content-Type': 'application/x-ndjson',
-            'Cache-Control': 'no-cache',
-            'X-Content-Type-Options': 'nosniff',
-        },
-    });
+        return new Response(res.body, {
+            headers: {
+                'Content-Type': 'application/x-ndjson',
+                'Cache-Control': 'no-cache',
+                'X-Content-Type-Options': 'nosniff',
+            },
+        });
+    } catch (error: any) {
+        console.error("BOQ Extraction Proxy Error:", error);
+        return new Response(
+            JSON.stringify({ 
+                stage: "error", 
+                progress: 0, 
+                message: error.message 
+            }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/x-ndjson' }
+        });
+    }
 }
