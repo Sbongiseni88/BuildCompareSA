@@ -33,19 +33,21 @@ You are receiving a segmented portion (a "chunk") of a large South African Const
 4. **Localization**: Formulate `search_query` for South African retailers based on {location}.
 
 ### OUTPUT RULES:
-- Return ONLY a raw JSON array of objects. Do not include markdown brackets (` ```json `).
-- If no materials are found, return `[]`.
+- Return ONLY a raw JSON object string.
+- If no materials are found, return `{"items": []}`.
 
 ### JSON SCHEMA:
-[
-  {
-    "material": "Standardized Name",
-    "specs": "Dimensions/Grade",
-    "qty": 0,
-    "unit": "Unit",
-    "search_query": "Optimized Store Query"
-  }
-]"""
+{
+  "items": [
+    {
+      "material": "Standardized Name",
+      "specs": "Dimensions/Grade",
+      "qty": 0,
+      "unit": "Unit",
+      "search_query": "Optimized Store Query"
+    }
+  ]
+}"""
 
 async def process_chunk(client: httpx.AsyncClient, chunk_str: str, location: str, api_key: str):
     headers = {
@@ -136,12 +138,14 @@ async def extract_boq(file: UploadFile = File(...), location: str = Form(""), de
                 result_str = await f
                 if result_str and result_str != "[]":
                     try:
-                        arr = json.loads(result_str)
+                        obj = json.loads(result_str)
+                        arr = obj.get("items", []) if isinstance(obj, dict) else obj
                         if isinstance(arr, dict):
                             arr = [arr] # Handle single object responses
-                        all_materials.extend(arr)
-                    except:
-                        pass
+                        if isinstance(arr, list):
+                            all_materials.extend(arr)
+                    except Exception as e:
+                        print("JSON parsing error:", e)
                 
                 completed += 1
                 progress = 30 + int((completed / max(1, len(tasks))) * 60)
