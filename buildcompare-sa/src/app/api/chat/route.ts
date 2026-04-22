@@ -41,13 +41,9 @@ const chatTools = [
                     query: {
                         type: "string",
                         description: "The specific product to search for, e.g., '50kg ppc cement' or 'timber door'."
-                    },
-                    region: {
-                        type: "string",
-                        description: "The South African region to check stock for (e.g., 'gauteng', 'durban', 'cape-town')."
                     }
                 },
-                required: ["store", "query", "region"]
+                required: ["store", "query"]
             }
         }
     }
@@ -107,7 +103,7 @@ export async function POST(req: Request) {
                     try {
                         const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
                         const pyRes = await fetch(
-                            `${scraperUrl}/scrape?store=${encodeURIComponent(args.store)}&query=${encodeURIComponent(args.query)}&region=${encodeURIComponent(args.region || 'gauteng')}`
+                            `${scraperUrl}/scrape?store=${encodeURIComponent(args.store)}&query=${encodeURIComponent(args.query)}`
                         );
                         
                         if (!pyRes.ok) throw new Error("Scraper returned an error");

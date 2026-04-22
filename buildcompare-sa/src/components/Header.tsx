@@ -15,7 +15,24 @@ import {
     Zap,
     Calculator
 } from 'lucide-react';
-import { mockNotifications } from '@/data/mockData';
+const DEMO_NOTIFICATIONS = [
+    {
+        id: 'n1',
+        title: 'Price Drop Alert',
+        message: 'AfriSam 50kg dropped by 5% at Cashbuild',
+        time: '2 hours ago',
+        type: 'price-drop',
+        read: false
+    },
+    {
+        id: 'n2',
+        title: 'Stock Alert',
+        message: 'Y12 Rebar is running low at Builders Fourways',
+        time: '5 hours ago',
+        type: 'stock-alert',
+        read: true
+    }
+];
 
 interface HeaderProps {
     activeTab: string;
@@ -27,7 +44,7 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
 
-    const unreadCount = mockNotifications.filter(n => !n.read).length;
+    const unreadCount = DEMO_NOTIFICATIONS.filter(n => !n.read).length;
 
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -109,7 +126,7 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
                                         <h3 className="font-semibold text-slate-200">Notifications</h3>
                                     </div>
                                     <div className="max-h-80 overflow-y-auto">
-                                        {mockNotifications.map((notif) => (
+                                        {DEMO_NOTIFICATIONS.map((notif) => (
                                             <div
                                                 key={notif.id}
                                                 className={`p-4 border-b border-slate-700/50 hover:bg-slate-800/50 transition-colors cursor-pointer ${!notif.read ? 'bg-yellow-500/5' : ''

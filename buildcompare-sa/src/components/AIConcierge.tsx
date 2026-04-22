@@ -14,7 +14,7 @@ import {
     MicOff
 } from 'lucide-react';
 import { ChatMessage } from '@/types';
-import { generateAIResponse } from '@/data/mockData';
+
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -138,8 +138,13 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
             console.log("Using Offline AI Mode (Fallback)");
             // Fallback to robust mock data (Offline Mode)
             await new Promise(resolve => setTimeout(resolve, 1000)); // Extra thinking time for mock
-            const aiResponse = generateAIResponse(inputValue);
-            setMessages(prev => [...prev, aiResponse]);
+            const errorFallback: ChatMessage = {
+                id: `ai-${Date.now()}`,
+                role: 'assistant',
+                content: 'Sorry, the AI service is currently unavailable. Please check your internet connection or API keys.',
+                timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorFallback]);
         } finally {
             setIsTyping(false);
         }

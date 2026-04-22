@@ -19,7 +19,7 @@ import {
     Navigation,
     TrendingDown,
     Filter,
-    ChevronDown,
+
     Map as MapIcon,
     Check,
     Download,
@@ -37,8 +37,8 @@ import {
     FolderTree,
     Waves
 } from 'lucide-react';
-import { Material, ComparisonResult, Region, PriceQuote } from '@/types';
-import { mockMaterials } from '@/data/mockData';
+import { Material, ComparisonResult, PriceQuote } from '@/types';
+
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
 import { useToast } from '@/contexts/ToastContext';
@@ -46,6 +46,17 @@ import { useToast } from '@/contexts/ToastContext';
 interface PriceSearchHubProps {
     initialMaterials?: Material[];
 }
+
+const popularSearchItems: Material[] = [
+    { id: 'mat-1', name: 'PPC Surebuild Cement 42.5N', category: 'cement', quantity: 1, unit: 'bag' },
+    { id: 'mat-2', name: 'AfriSam All Purpose Cement 50kg', category: 'cement', quantity: 1, unit: 'bag' },
+    { id: 'mat-3', name: 'Corobrik Clay Face Brick', category: 'bricks', quantity: 1000, unit: 'each' },
+    { id: 'mat-4', name: 'Cement Stock Brick', category: 'bricks', quantity: 1000, unit: 'each' },
+    { id: 'mat-5', name: 'Y12 Rebar 6m', category: 'steel', quantity: 1, unit: 'length' },
+    { id: 'mat-6', name: 'SA Pine Structural Timber 38x114mm x 6m', category: 'timber', quantity: 1, unit: 'length' },
+    { id: 'mat-7', name: 'Dulux Weatherguard Exterior Paint 20L', category: 'paint', quantity: 1, unit: 'bucket' },
+    { id: 'mat-8', name: 'IBR Roof Sheeting 0.47mm x 6m', category: 'roofing', quantity: 1, unit: 'sheet' },
+];
 
 export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
     const { showWarning, showSuccess, showInfo } = useToast();
@@ -56,11 +67,11 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedMaterials, setSelectedMaterials] = useState<Material[]>(initialMaterials);
-    const [region, setRegion] = useState<Region | 'current-location'>(() => {
-        try { return (sessionStorage.getItem('bc_search_region') as any) || 'gauteng'; } catch { return 'gauteng'; }
-    });
-    const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
+    const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [locationLabel, setLocationLabel] = useState('');
+    const [manualLocation, setManualLocation] = useState('');
     const [isLocating, setIsLocating] = useState(false);
+    const [locationError, setLocationError] = useState<string | null>(null);
     const [radius, setRadius] = useState(20);
     const [sortBy, setSortBy] = useState<'price' | 'distance' | 'rating'>(() => {
         try { return (sessionStorage.getItem('bc_search_sort') as any) || 'price'; } catch { return 'price'; }
@@ -71,44 +82,84 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchSuggestions, setSearchSuggestions] = useState<Material[]>([]);
 
-    // Save region and sort prefs so they survive tab switches
-    React.useEffect(() => {
-        try { sessionStorage.setItem('bc_search_region', region); } catch { }
-    }, [region]);
+    // Save sort pref
     React.useEffect(() => {
         try { sessionStorage.setItem('bc_search_sort', sortBy); } catch { }
     }, [sortBy]);
 
-    const regions = [
-        { id: 'gauteng', label: 'Johannesburg', fullLabel: 'Gauteng, JHB' },
-        { id: 'cape-town', label: 'Cape Town', fullLabel: 'Western Cape, CPT' },
-        { id: 'durban', label: 'Durban', fullLabel: 'KZN, Durban' },
-        ...(userCoords ? [{ id: 'current-location', label: 'Near Me (GPS)', fullLabel: 'Live My Location' }] : [])
-    ];
+    // Auto-request location on mount
+    React.useEffect(() => {
+        requestLocation();
+    }, []);
 
     const requestLocation = () => {
         if (!navigator.geolocation) {
-            showWarning('Geolocation is not supported by your browser');
+            setLocationError('Geolocation is not supported by your browser.');
             return;
         }
 
         setIsLocating(true);
+        setLocationError(null);
         navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setUserCoords({
+            async (position) => {
+                const coords = {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude
-                });
-                setRegion('current-location');
+                };
+                setUserCoords(coords);
                 setIsLocating(false);
+
+                // Reverse geocode to show a friendly label
+                try {
+                    const res = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&zoom=14&addressdetails=1`,
+                        { headers: { 'User-Agent': 'BuildCompareSA/1.0' } }
+                    );
+                    if (res.ok) {
+                        const data = await res.json();
+                        const addr = data.address || {};
+                        const label = [addr.suburb, addr.city || addr.town || addr.village, addr.state].filter(Boolean).join(', ');
+                        setLocationLabel(label || `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
+                    }
+                } catch {
+                    setLocationLabel(`${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
+                }
             },
             (error) => {
-                console.error('Error getting location:', error);
-                showWarning('Could not get your location. Please select a city manually.');
+                console.error('Geolocation error:', error);
                 setIsLocating(false);
+                setLocationError('Location access denied. Enter your suburb below.');
             },
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
         );
+    };
+
+    /** Geocode a manual suburb/address entry into lat/lng */
+    const geocodeManualLocation = async () => {
+        if (!manualLocation.trim()) return;
+        setIsLocating(true);
+        setLocationError(null);
+        try {
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(manualLocation + ', South Africa')}&limit=1`,
+                { headers: { 'User-Agent': 'BuildCompareSA/1.0' } }
+            );
+            if (res.ok) {
+                const results = await res.json();
+                if (results.length > 0) {
+                    const coords = { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+                    setUserCoords(coords);
+                    setLocationLabel(results[0].display_name?.split(',').slice(0, 3).join(',') || manualLocation);
+                    showSuccess(`Location set to ${manualLocation}`);
+                } else {
+                    setLocationError(`Could not find "${manualLocation}". Try a more specific suburb.`);
+                }
+            }
+        } catch {
+            setLocationError('Geocoding failed. Check your internet connection.');
+        } finally {
+            setIsLocating(false);
+        }
     };
 
     // Kick off search immediately when materials are passed in from another tab
@@ -126,7 +177,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             debounceRef.current = setTimeout(() => {
                 const q = searchQuery.toLowerCase();
                 const qWords = q.split(/\s+/);
-                const materialMatches = mockMaterials.filter(m => {
+                const materialMatches = popularSearchItems.filter(m => {
                     const targetStr = m.name.toLowerCase() + " " + (m.brand?.toLowerCase() || "");
                     return qWords.every(w => targetStr.includes(w));
                 });
@@ -154,52 +205,73 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     const performSearch = async (materials: Material[]) => {
         if (isSearching) return; // Prevent Double Click loops!
         setIsSearching(true);
-        setSearchStep(1); // Stage 1
+        setSearchStep(1); // Stage 1: Parsing query
         setComparisonResults([]);
 
         try {
-            await new Promise(r => setTimeout(r, 600)); // UX delay for Stage 1
-            setSearchStep(2); // Stage 2
+            await new Promise(r => setTimeout(r, 500)); // UX delay for Stage 1
+            setSearchStep(2); // Stage 2: AI agent searching
 
-            // Fetch all materials in PARALLEL via Live Scraper Service
+            // Call the Price Intelligence Agent for each material in PARALLEL
             const fetchPromises = materials.map(async (material): Promise<ComparisonResult | null> => {
                 try {
-                    const safeRegion = region === 'current-location' ? 'gauteng' : region;
-                    
-                    const [buildersRes, cashbuildRes] = await Promise.allSettled([
-                        fetch(`/api/prices/live?store=builders&q=${encodeURIComponent(material.name)}&region=${safeRegion}`),
-                        fetch(`/api/prices/live?store=cashbuild&q=${encodeURIComponent(material.name)}&region=${safeRegion}`)
-                    ]);
-
-                    const allQuotes: PriceQuote[] = [];
-
-                    if (buildersRes.status === 'fulfilled' && buildersRes.value.ok) {
-                        const data = await buildersRes.value.json();
-                        if (data.success && data.results) allQuotes.push(...data.results);
+                    const params = new URLSearchParams({ q: material.name });
+                    if (userCoords) {
+                        params.set('lat', userCoords.lat.toString());
+                        params.set('lng', userCoords.lng.toString());
                     }
-                    if (cashbuildRes.status === 'fulfilled' && cashbuildRes.value.ok) {
-                        const data = await cashbuildRes.value.json();
-                        if (data.success && data.results) allQuotes.push(...data.results);
-                    }
+                    params.set('radius', radius.toString());
+                    const res = await fetch(`/api/prices/compare?${params.toString()}`);
 
-                    // Filter out "Price on Request" (0.00) or null items before calculating savings
-                    const validQuotes = allQuotes.filter(q => typeof q.price === 'number' && q.price > 0);
+                    if (!res.ok) return null;
+                    const data = await res.json();
 
-                    if (validQuotes.length > 0) {
-                        const best = validQuotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
-                        const avg = validQuotes.reduce((acc, curr) => acc + curr.price, 0) / validQuotes.length;
-                        const savings = avg - best.price;
+                    if (!data.success || !data.results || data.results.length === 0) return null;
 
-                        return {
-                            material,
-                            quotes: validQuotes,
-                            bestPrice: best,
-                            averagePrice: avg,
-                            potentialSavings: savings > 0 ? savings * material.quantity : 0,
-                            isLive: true
-                        };
-                    }
-                    return null;
+                    // Map the compare agent results into our PriceQuote format
+                    const quotes: PriceQuote[] = data.results.map((r: any) => ({
+                        supplierId: r.store,
+                        supplierName: r.storeName,
+                        supplierLogo: '',
+                        supplierType: r.storeType || 'chain',
+                        price: r.price,
+                        originalPrice: undefined,
+                        inStock: r.inStock,
+                        stockQuantity: undefined,
+                        deliveryFee: r.deliveryCost || 0,
+                        deliveryDays: 2,
+                        distance: r.distance || 5,
+                        productUrl: r.url,
+                        isFallback: r.source !== 'live-scrape',
+                        laborCostEstimate: r.laborEstimate || undefined,
+                        priceConfidence: r.priceConfidence || 'medium',
+                        lastUpdated: new Date(),
+                    } as PriceQuote));
+
+                    const validQuotes = quotes.filter(q => typeof q.price === 'number' && q.price > 0);
+                    if (validQuotes.length === 0) return null;
+
+                    const best = validQuotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
+                    const avg = validQuotes.reduce((acc, curr) => acc + curr.price, 0) / validQuotes.length;
+                    const savings = avg - best.price;
+
+                    // Update material name if the agent normalized it
+                    const updatedMaterial = {
+                        ...material,
+                        name: data.query?.product ? `${data.query.brand || ''} ${data.query.product} ${data.query.size || ''} ${data.query.grade || ''}`.trim() : material.name,
+                        category: data.query?.category || material.category,
+                    };
+
+                    return {
+                        material: updatedMaterial,
+                        quotes: validQuotes,
+                        bestPrice: best,
+                        averagePrice: avg,
+                        potentialSavings: savings > 0 ? savings * material.quantity : 0,
+                        isLive: validQuotes.some(q => !q.isFallback),
+                        marketInsight: data.marketInsight,
+                        comparisonNote: data.comparisonNote,
+                    } as ComparisonResult;
                 } catch (err) {
                     console.error(`Error searching for ${material.name}:`, err);
                     return null;
@@ -207,22 +279,22 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
             });
 
             const settled = await Promise.allSettled(fetchPromises);
-            setSearchStep(3); // Stage 3
-            await new Promise(r => setTimeout(r, 800)); // UX delay for Stage 3
+            setSearchStep(3); // Stage 3: Verifying accuracy
+            await new Promise(r => setTimeout(r, 600)); // UX delay for Stage 3
 
             const results: ComparisonResult[] = settled
                 .filter((r): r is PromiseFulfilledResult<ComparisonResult | null> => r.status === 'fulfilled' && r.value !== null)
                 .map(r => r.value as ComparisonResult);
 
-            setComparisonResults(results);
-
-            if (results.length === 0) {
-                showWarning("No live results found. Try a different search term or store limits might be reached.");
+            if (results.length > 0) {
+                setComparisonResults(results);
+            } else {
+                showWarning("No results found. Try simplifying your search (e.g. 'cement 50kg' instead of a full product name).");
             }
 
         } catch (error) {
             console.error("Search failed:", error);
-            showWarning("Live search encountered a critical error.");
+            showWarning("Search encountered a critical error. Please try again.");
         } finally {
             setIsSearching(false);
             setSearchStep(0);
@@ -234,7 +306,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         if (searchQuery && selectedMaterials.length === 0) {
             // Fuzzy match the distinct item first
             const qWords = searchQuery.toLowerCase().split(/\s+/);
-            const distinctItem = mockMaterials.find(m => {
+            const distinctItem = popularSearchItems.find(m => {
                 const targetStr = m.name.toLowerCase() + " " + (m.brand?.toLowerCase() || "");
                 return qWords.every(w => targetStr.includes(w));
             });
@@ -271,7 +343,7 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         setSearchMode('manual');
         setSearchQuery(term);
         // Try to find a matching material, otherwise search the raw term
-        const match = mockMaterials.find(m => m.name.toLowerCase().includes(term.toLowerCase()));
+        const match = popularSearchItems.find(m => m.name.toLowerCase().includes(term.toLowerCase()));
         if (match) {
             performSearch([match]);
         } else {
@@ -506,30 +578,46 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                 </div>
 
                                 {/* Location Input */}
-                                <div className="w-full md:w-80 flex items-center px-4 py-2 relative border-b md:border-b-0 md:border-r border-slate-800">
-                                    <div className="flex flex-col w-full">
+                                <div className="w-full md:w-96 flex items-center px-4 py-2 relative border-b md:border-b-0 md:border-r border-slate-800">
+                                    <div className="flex flex-col w-full gap-1.5">
                                         <div className="flex items-center gap-2">
                                             <button
                                                 onClick={requestLocation}
                                                 disabled={isLocating}
-                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all text-[10px] font-black uppercase tracking-tighter ${region === 'current-location' ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'}`}
+                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-all text-[10px] font-black uppercase tracking-tighter ${userCoords ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'}`}
                                             >
-                                                {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className={`w-3 h-3 ${region === 'current-location' ? 'animate-pulse' : ''}`} />}
-                                                {region === 'current-location' ? 'GPS ACTIVE' : 'NEAR ME'}
+                                                {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className={`w-3 h-3 ${userCoords ? 'animate-pulse' : ''}`} />}
+                                                {userCoords ? 'GPS ACTIVE' : 'USE GPS'}
                                             </button>
-                                            <select
-                                                value={region}
-                                                onChange={(e) => setRegion(e.target.value as any)}
-                                                className="flex-1 bg-transparent border-none outline-none text-white h-10 px-1 text-base font-bold appearance-none cursor-pointer"
-                                            >
-                                                {regions.map(r => (
-                                                    <option key={r.id} value={r.id} className="bg-slate-900 text-white font-sans">
-                                                        {r.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <ChevronDown className="w-4 h-4 text-slate-600 pointer-events-none" />
+                                            {userCoords && locationLabel && (
+                                                <span className="text-xs text-slate-300 font-medium truncate max-w-[180px]" title={locationLabel}>
+                                                    📍 {locationLabel}
+                                                </span>
+                                            )}
                                         </div>
+                                        {!userCoords && (
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="text"
+                                                    value={manualLocation}
+                                                    onChange={(e) => setManualLocation(e.target.value)}
+                                                    onKeyDown={(e) => e.key === 'Enter' && geocodeManualLocation()}
+                                                    placeholder="Or type suburb (e.g. Sandton)"
+                                                    className="flex-1 bg-transparent border-none outline-none text-white placeholder-slate-600 h-8 text-sm"
+                                                />
+                                                {manualLocation && (
+                                                    <button
+                                                        onClick={geocodeManualLocation}
+                                                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold rounded transition-colors"
+                                                    >
+                                                        SET
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                        {locationError && (
+                                            <p className="text-[10px] text-orange-400 font-medium">{locationError}</p>
+                                        )}
                                     </div>
                                 </div>
 
@@ -545,15 +633,20 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
 
                             {/* Prominent Helper for Location */}
                             <div className="mt-4 flex flex-wrap items-center justify-center gap-4 animate-fade-in">
-                                <button
-                                    onClick={requestLocation}
-                                    className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-yellow-400 transition-colors bg-slate-800/40 px-3 py-1.5 rounded-full border border-slate-700/50 hover:border-yellow-400/30"
-                                >
-                                    <MapPin className="w-3 h-3 text-yellow-500" />
-                                    <span>USE MY CURRENT LOCATION</span>
-                                </button>
-                                <div className="h-4 w-px bg-slate-800 hidden sm:block"></div>
-                                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest hidden sm:inline">OR SELECT A CITY MANUALLY</span>
+                                {!userCoords && (
+                                    <button
+                                        onClick={requestLocation}
+                                        className="flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-yellow-400 transition-colors bg-slate-800/40 px-3 py-1.5 rounded-full border border-slate-700/50 hover:border-yellow-400/30"
+                                    >
+                                        <MapPin className="w-3 h-3 text-yellow-500" />
+                                        <span>ALLOW LOCATION FOR NEARBY STORE RESULTS</span>
+                                    </button>
+                                )}
+                                {userCoords && (
+                                    <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">
+                                        📍 Searching stores within {radius}km of your location
+                                    </span>
+                                )}
                             </div>
                         </div>
 
@@ -565,12 +658,12 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                     <Search className="w-8 h-8 text-yellow-400" />
                                 </div>
                                 <h3 className="text-2xl font-bold text-white mb-2">
-                                    {searchStep === 1 && "Analyzing BoQ with DeepSeek..."}
-                                    {searchStep === 2 && "Launching Live Scraper Service..."}
-                                    {searchStep === 3 && "Comparing prices from Builders & Cashbuild..."}
-                                    {searchStep === 0 && "Scanning Retailers..."}
+                                    {searchStep === 1 && "Parsing your query..."}
+                                    {searchStep === 2 && "AI agent searching for prices..."}
+                                    {searchStep === 3 && "Comparing like-for-like across stores..."}
+                                    {searchStep === 0 && "Initializing..."}
                                 </h3>
-                                <p className="text-slate-400">Fetching live prices from Builders, Cashbuild & Local Yards</p>
+                                <p className="text-slate-400">Checking Builders, Cashbuild, Build it, Leroy Merlin & BUCO</p>
                             </div>
                         )}
 
@@ -618,21 +711,47 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                     </div>
                                 </div>
 
+                                {/* Market Intelligence Banner */}
+                                {comparisonResults.some(r => r.marketInsight || r.comparisonNote) && (
+                                    <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl flex gap-3">
+                                        <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <AlertCircle className="w-4 h-4 text-blue-400" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            {comparisonResults[0]?.marketInsight && (
+                                                <p className="text-sm text-blue-300 font-medium">{comparisonResults[0].marketInsight}</p>
+                                            )}
+                                            {comparisonResults[0]?.comparisonNote && (
+                                                <p className="text-xs text-slate-400 italic">{comparisonResults[0].comparisonNote}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Results List */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {comparisonResults.map((result, idx) => (
                                         <div key={idx} className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/30 transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50 flex flex-col relative group">
-                                            {/* Price Verification Badge */}
+                                            {/* Price Confidence Badge */}
                                             <div className="absolute top-2 right-2 z-10">
-                                                {result.isLive && !result.bestPrice?.isFallback ? (
-                                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 text-green-400 text-[9px] font-bold rounded-full border border-green-500/30 backdrop-blur-sm">
-                                                        <CheckCircle2 className="w-2.5 h-2.5" /> LIVE VERIFIED
-                                                    </span>
-                                                ) : (
-                                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 text-yellow-500/70 text-[9px] font-bold rounded-full border border-yellow-500/20 backdrop-blur-sm">
-                                                        <AlertCircle className="w-2.5 h-2.5" /> MARKET ESTIMATE
-                                                    </span>
-                                                )}
+                                                {(() => {
+                                                    const confidence = result.bestPrice?.priceConfidence || (result.isLive ? 'high' : 'medium');
+                                                    if (confidence === 'high') return (
+                                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 text-green-400 text-[9px] font-bold rounded-full border border-green-500/30 backdrop-blur-sm">
+                                                            <CheckCircle2 className="w-2.5 h-2.5" /> LIVE PRICE
+                                                        </span>
+                                                    );
+                                                    if (confidence === 'medium') return (
+                                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 text-blue-400/70 text-[9px] font-bold rounded-full border border-blue-500/20 backdrop-blur-sm">
+                                                            <CheckCircle2 className="w-2.5 h-2.5" /> MARKET RATE
+                                                        </span>
+                                                    );
+                                                    return (
+                                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 text-yellow-500/70 text-[9px] font-bold rounded-full border border-yellow-500/20 backdrop-blur-sm">
+                                                            <AlertCircle className="w-2.5 h-2.5" /> ESTIMATE
+                                                        </span>
+                                                    );
+                                                })()}
                                             </div>
 
                                             {/* Material Header */}
@@ -684,7 +803,14 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                     <div className="flex items-end justify-between">
                                                         <div>
                                                             <p className="text-2xl font-black text-white">{formatCurrency(result.bestPrice.price)}</p>
-                                                            <p className="text-[10px] text-slate-500">per {result.material.unit || 'unit'}</p>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Material Only</p>
+                                                                {result.bestPrice.laborCostEstimate && (
+                                                                    <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[9px] text-orange-400 font-bold">
+                                                                        + {formatCurrency(result.bestPrice.laborCostEstimate)} Labor
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                         {result.bestPrice.supplierType === 'contractor' ? (
                                                             <button
@@ -726,6 +852,10 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                                                                         <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{quote.supplierName}</p>
                                                                         <div className="flex items-center gap-2 text-[10px] text-slate-500">
                                                                             <span>{quote.distance}km</span>
+                                                                            <span>•</span>
+                                                                            {quote.laborCostEstimate && (
+                                                                                <span className="text-orange-500/70 font-semibold italic text-[9px]">L: {formatCurrency(quote.laborCostEstimate)}</span>
+                                                                            )}
                                                                             <span>•</span>
                                                                             {quote.supplierType === 'contractor' ? (
                                                                                 <span className="text-orange-400 font-bold">Avail. {quote.deliveryDays ? `${quote.deliveryDays} Days` : 'Soon'}</span>

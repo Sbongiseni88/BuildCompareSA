@@ -51,7 +51,9 @@ async def fetch_html_playwright(url: str) -> str:
                         if(node.tagName !== 'HEADER' && node.tagName !== 'NAV') node.remove();
                     }
                 });
-                document.body.style.overflow = 'auto'; // Re-enable scrolling if modal disabled it
+                if (document.body) {
+                    document.body.style.overflow = 'auto'; // Re-enable scrolling if modal disabled it
+                }
             }''')
 
             # Fetch the fully rendered HTML
@@ -93,7 +95,9 @@ async def scrape_store(store: str = Query(...), query: str = Query(...), region:
     if store not in STORE_URLS:
         raise HTTPException(status_code=400, detail=f"Store '{store}' is not supported. Use builders, cashbuild, or leroy_merlin.")
     
-    url = STORE_URLS[store].format(query=query)
+    # Broaden search: Strip parentheses and special characters that break retailer search engines
+    clean_q = re.sub(r'[()\[\]]', '', query)
+    url = STORE_URLS[store].format(query=clean_q)
     
     try:
         # Tier 2 fallback: Heavy headless playwright rendering
@@ -113,4 +117,4 @@ async def scrape_store(store: str = Query(...), query: str = Query(...), region:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001)

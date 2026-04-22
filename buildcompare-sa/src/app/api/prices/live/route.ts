@@ -14,7 +14,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const store = searchParams.get('store');
     const query = searchParams.get('q');
-    const region = searchParams.get('region') || 'gauteng';
 
     if (!store || !query) {
         return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
@@ -27,7 +26,7 @@ export async function GET(request: Request) {
     // ── CACHE LAYER ──
     // Normalize string: cement-50kg -> cement50kg
     const cleanQuery = query.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cacheKey = `${store}_${cleanQuery}_${region}`;
+    const cacheKey = `${store}_${cleanQuery}`;
     
     // Check Cache
     const cachedEntry = PRICE_CACHE[cacheKey];
@@ -44,9 +43,9 @@ export async function GET(request: Request) {
         const timeoutId = setTimeout(() => controller.abort(), 45000); 
 
         // ── SCRAPE LAYER ──
-        const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8000';
+        const scraperUrl = process.env.SCRAPER_URL || 'http://localhost:8001';
         const pyRes = await fetch(
-            `${scraperUrl}/scrape?store=${encodeURIComponent(store)}&query=${encodeURIComponent(query)}&region=${encodeURIComponent(region)}`,
+            `${scraperUrl}/scrape?store=${encodeURIComponent(store)}&query=${encodeURIComponent(query)}`,
             { signal: controller.signal }
         );
         clearTimeout(timeoutId);
@@ -81,14 +80,16 @@ Return ONLY a valid JSON array of objects structured exactly like this:
     "url": "#",              // Put "#" since we just have text
     "inStock": true,
     "deliveryDays": 2,
-    "nameDetails": "Actual Product Name from Text"
+    "nameDetails": "Actual Product Name from Text",
+    "laborCostEstimate": 150.0 // Estimate the installation labor cost for this item in ZAR based on SA rates
   }
 ]
 
 CRITICAL RULES:
-1. Do NOT hallucinate products. If the raw text does not contain any matching products and prices, return an EMPTY ARRAY: [].
-2. Prices must be floats (123.45). Never strings ("R123,45" is WRONG).
-3. Ignore header noise like "My Cart", "Sign in", "Terms".
+1. "laborCostEstimate": Provide a realistic labor cost for installing this specific material.
+2. Prices and labor must be floats (123.45). Never strings.
+3. Do NOT hallucinate products. If the raw text does not contain any matching products and prices, return an EMPTY ARRAY: [].
+4. Ignore header noise like "My Cart", "Sign in", "Terms".
 
 --- RAW WEB TEXT ---
 ${rawText}

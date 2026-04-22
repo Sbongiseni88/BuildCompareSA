@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { Material } from '@/types';
-import { analyzeUploadedImage as mockAnalyze } from '@/data/mockData';
+
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
@@ -256,12 +256,14 @@ Format:
     "brand": "Brand name if visible, otherwise null",
     "category": "One of: cement, bricks, steel, timber, paint, roofing, plumbing, electrical, hardware, other",
     "quantity": 10.0,
-    "unit": "One of: bag, m2, m3, kg, length, unit, each, lot, litre, roll, sheet"
+    "unit": "One of: bag, m2, m3, kg, length, unit, each, lot, litre, roll, sheet",
+    "laborCostEstimate": 150.0
   },
   { "...next item..." }
 ]
 
 CRITICAL RULES:
+- "laborCostEstimate": Estimate the installation/labor cost for ONE unit of this item in ZAR based on 2026 South African market rates. If it's a bulk material (like sand/bricks), ignore transport and focus on the labor to install it.
 - Format ALL numeric values as standard Floats (e.g., 100.00). Do NOT write "R 100,00" or add currency symbols. Output pure numbers.
 - Your entire response MUST be valid JSON.
 - Extract EVERY line item. Do NOT stop after the first item.
@@ -305,8 +307,7 @@ export async function POST(req: NextRequest) {
 
         if (!isGroqConfigured && !isDeepseekConfigured) {
             console.warn('⚠️ No AI API keys found. Returning mock data.');
-            await new Promise(r => setTimeout(r, 2000));
-            return NextResponse.json({ success: true, mode: 'mock', materials: mockAnalyze(fileName || 'image.jpg') });
+            return NextResponse.json({ error: 'AI API keys are not configured. Cannot process image.' }, { status: 500 });
         }
 
         if (!file) {
@@ -413,6 +414,7 @@ ${BOQ_PROMPT_SUFFIX}`;
                 category: m.category || 'other',
                 quantity: Number(m.quantity) || 1,
                 unit: m.unit || 'unit',
+                laborCostEstimate: Number(m.laborCostEstimate) || undefined,
             }));
 
             return NextResponse.json({ success: true, mode: 'live-groq', materials });

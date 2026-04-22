@@ -20,6 +20,7 @@ export interface Material {
     unit: string;
     imageUrl?: string;
     _aiPriceEstimate?: number;
+    laborCostEstimate?: number;
 }
 
 export type MaterialCategory =
@@ -69,6 +70,8 @@ export interface PriceQuote {
     distance: number;
     productUrl?: string;
     isFallback?: boolean;
+    laborCostEstimate?: number;
+    priceConfidence?: 'high' | 'medium' | 'low';
     lastUpdated: Date;
 }
 
@@ -79,18 +82,22 @@ export interface ComparisonResult {
     averagePrice: number;
     potentialSavings: number;
     isLive?: boolean;
+    marketInsight?: string;
+    comparisonNote?: string;
 }
 
 // Search Types
 export interface SearchParams {
     query?: string;
     category?: MaterialCategory;
-    region: Region;
+    lat?: number;
+    lng?: number;
     radius: number;
     sortBy: 'price' | 'distance' | 'rating' | 'delivery';
 }
 
-export type Region = 'gauteng' | 'cape-town' | 'durban' | 'all';
+/** @deprecated kept for backward compat — new code should use lat/lng */
+export type Region = string;
 
 // Upload Types
 export interface UploadedFile {
