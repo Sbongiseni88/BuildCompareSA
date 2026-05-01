@@ -3,17 +3,13 @@
 import React from 'react';
 import {
     Building2,
-    Award,
     FileText,
-    Shield,
     Users,
     Target,
     Sparkles,
-    Download,
     MapPin,
     Calendar,
-    BadgeCheck,
-    ExternalLink
+    BadgeCheck
 } from 'lucide-react';
 
 export default function About() {
@@ -28,25 +24,25 @@ export default function About() {
     };
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-16 animate-fade-in pb-12">
             {/* Hero Section */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 p-8 md:p-12">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-2 border-slate-600 p-8 md:p-16 shadow-xl">
                 <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMyI+PHBhdGggZD0iTTM2IDM0djZoNnYtNmgtNnptMC0xMHY2aDZ2LTZoLTZ6bTEwIDEwdjZoNnYtNmgtNnptMC0xMHY2aDZ2LTZoLTZ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-50"></div>
                 <div className="absolute top-0 right-0 w-96 h-96 bg-yellow-400/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
 
                 <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-12 h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-400/20">
-                            <Building2 className="w-6 h-6 text-black" />
+                    <div className="flex items-center gap-4 mb-8">
+                        <div className="w-16 h-16 bg-yellow-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/30">
+                            <Building2 className="w-8 h-8 text-black" />
                         </div>
                         <div>
-                            <h1 className="text-3xl md:text-4xl font-bold text-white">About Us</h1>
-                            <p className="text-slate-400 text-sm">Learn more about BuildCompare</p>
+                            <h1 className="text-4xl md:text-5xl font-extrabold text-white">About Us</h1>
+                            <p className="text-slate-300 text-lg mt-1">Learn more about BuildCompare</p>
                         </div>
                     </div>
 
-                    <p className="text-slate-300 text-lg max-w-3xl leading-relaxed">
-                        <span className="text-yellow-400 font-semibold">BuildCompare</span> is South Africa's premier construction material comparison platform,
+                    <p className="text-slate-200 text-xl max-w-4xl leading-relaxed">
+                        <span className="text-yellow-400 font-bold">BuildCompare</span> is South Africa's premier construction material comparison platform,
                         empowering builders, contractors, and homeowners to make informed purchasing decisions.
                         We leverage cutting-edge technology to bring transparency and efficiency to the construction industry.
                     </p>
@@ -54,171 +50,148 @@ export default function About() {
             </div>
 
             {/* Mission & Vision */}
-            <div className="grid md:grid-cols-2 gap-6">
-                <div className="bg-gradient-to-br from-yellow-400/10 to-transparent border border-yellow-400/20 rounded-2xl p-6 hover:border-yellow-400/40 transition-all duration-300 group">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-yellow-400/20 rounded-lg flex items-center justify-center group-hover:bg-yellow-400/30 transition-colors">
-                            <Target className="w-5 h-5 text-yellow-400" />
+            <div className="grid md:grid-cols-2 gap-8">
+                <div className="bg-slate-800 border-2 border-slate-600 rounded-2xl p-8 shadow-lg hover:border-yellow-400 transition-all duration-300 group">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-14 h-14 bg-slate-700 rounded-xl flex items-center justify-center group-hover:bg-yellow-500/20 transition-colors">
+                            <Target className="w-8 h-8 text-yellow-400" />
                         </div>
-                        <h2 className="text-xl font-bold text-white">Our Mission</h2>
+                        <h2 className="text-2xl font-bold text-white">Our Mission</h2>
                     </div>
-                    <p className="text-slate-400 leading-relaxed">
+                    <p className="text-slate-300 text-lg leading-relaxed">
                         To revolutionize the construction supply chain in South Africa by providing real-time
                         price comparisons, empowering our users to save time and money on every project.
                     </p>
                 </div>
 
-                <div className="bg-gradient-to-br from-blue-400/10 to-transparent border border-blue-400/20 rounded-2xl p-6 hover:border-blue-400/40 transition-all duration-300 group">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-blue-400/20 rounded-lg flex items-center justify-center group-hover:bg-blue-400/30 transition-colors">
-                            <Sparkles className="w-5 h-5 text-blue-400" />
+                <div className="bg-slate-800 border-2 border-slate-600 rounded-2xl p-8 shadow-lg hover:border-blue-400 transition-all duration-300 group">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-14 h-14 bg-slate-700 rounded-xl flex items-center justify-center group-hover:bg-blue-500/20 transition-colors">
+                            <Sparkles className="w-8 h-8 text-blue-400" />
                         </div>
-                        <h2 className="text-xl font-bold text-white">Our Vision</h2>
+                        <h2 className="text-2xl font-bold text-white">Our Vision</h2>
                     </div>
-                    <p className="text-slate-400 leading-relaxed">
+                    <p className="text-slate-300 text-lg leading-relaxed">
                         To become the go-to digital marketplace for construction materials, connecting
                         suppliers and buyers across South Africa with innovative AI-powered solutions.
                     </p>
                 </div>
             </div>
 
-            {/* Company Registration Details */}
-            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 md:p-8">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center">
-                        <FileText className="w-5 h-5 text-yellow-400" />
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-bold text-white">Company Registration</h2>
-                        <p className="text-slate-500 text-sm">Official registration details</p>
-                    </div>
+            {/* Certificate of Incorporation Style Box */}
+            <div className="bg-slate-900 border-2 border-slate-600 rounded-2xl p-8 md:p-12 relative overflow-hidden shadow-2xl">
+                {/* Decorative inner border */}
+                <div className="absolute inset-2 border border-slate-700/50 rounded-xl pointer-events-none"></div>
+                
+                <div className="text-center mb-12">
+                    <FileText className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+                    <h2 className="text-3xl md:text-4xl font-bold text-white uppercase tracking-widest">Company Registration</h2>
+                    <p className="text-slate-400 mt-2 text-lg">Official Certificate of Incorporation Details</p>
                 </div>
 
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div className="space-y-1">
-                        <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Company Name</span>
-                        <p className="text-white font-semibold">{companyDetails.name}</p>
+                <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8 md:gap-12 relative z-10">
+                    <div className="bg-slate-800 p-8 rounded-xl border-2 border-slate-600 shadow-inner">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Trading Name</h3>
+                        <p className="text-3xl font-extrabold text-yellow-400 mb-8">{companyDetails.tradingAs}</p>
+                        
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Registered Entity</h3>
+                        <p className="text-xl font-bold text-white">{companyDetails.name}</p>
                     </div>
-                    <div className="space-y-1">
-                        <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Trading As</span>
-                        <p className="text-yellow-400 font-bold">{companyDetails.tradingAs}</p>
-                    </div>
-                    <div className="space-y-1">
-                        <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Registration No.</span>
-                        <p className="text-white font-semibold font-mono">{companyDetails.registrationNumber}</p>
-                    </div>
-                    <div className="space-y-1 flex items-start gap-2">
-                        <Calendar className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider block">Incorporated</span>
-                            <p className="text-white">{companyDetails.incorporationDate}</p>
+                    
+                    <div className="space-y-8 flex flex-col justify-center">
+                        <div className="flex items-center gap-5">
+                            <BadgeCheck className="w-10 h-10 text-yellow-500 flex-shrink-0" />
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Registration Number</h3>
+                                <p className="text-2xl font-mono font-bold text-white tracking-wider">{companyDetails.registrationNumber}</p>
+                            </div>
                         </div>
-                    </div>
-                    <div className="space-y-1 flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider block">Location</span>
-                            <p className="text-white">{companyDetails.location}</p>
+                        
+                        <div className="flex items-center gap-5">
+                            <Calendar className="w-10 h-10 text-slate-400 flex-shrink-0" />
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Date of Incorporation</h3>
+                                <p className="text-xl font-semibold text-white">{companyDetails.incorporationDate}</p>
+                            </div>
                         </div>
-                    </div>
-                    <div className="space-y-1 flex items-start gap-2">
-                        <Users className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider block">Director</span>
-                            <p className="text-white">{companyDetails.director}</p>
-                            <p className="text-slate-400 text-sm">{companyDetails.directorTitle}</p>
+                        
+                        <div className="flex items-center gap-5">
+                            <MapPin className="w-10 h-10 text-slate-400 flex-shrink-0" />
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Registered Location</h3>
+                                <p className="text-xl font-semibold text-white">{companyDetails.location}</p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* BEE Certificate */}
-            <div className="bg-gradient-to-br from-purple-500/10 via-slate-900 to-slate-900 border border-purple-500/20 rounded-2xl p-6 md:p-8">
-                <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                            <Award className="w-5 h-5 text-purple-400" />
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-white">B-BBEE Certificate</h2>
-                            <p className="text-slate-500 text-sm">Broad-Based Black Economic Empowerment</p>
-                        </div>
+            {/* Meet the Director */}
+            <div className="bg-slate-800 border-2 border-slate-600 rounded-2xl p-8 md:p-12 shadow-xl">
+                <div className="flex flex-col md:flex-row gap-10 items-center md:items-start">
+                    <div className="w-40 h-40 md:w-48 md:h-48 bg-slate-900 rounded-full flex-shrink-0 border-4 border-yellow-500 flex items-center justify-center shadow-2xl overflow-hidden">
+                        <Users className="w-20 h-20 md:w-24 md:h-24 text-slate-600" />
                     </div>
-                    <div className="px-3 py-1 bg-purple-500/20 rounded-full border border-purple-500/30">
-                        <span className="text-purple-400 text-sm font-medium flex items-center gap-1">
-                            <Shield className="w-3 h-3" />
-                            Certified
-                        </span>
+                    <div>
+                        <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">Meet the Director</h2>
+                        <h3 className="text-2xl text-yellow-400 font-bold mb-6">{companyDetails.director}</h3>
+                        <p className="text-lg text-slate-300 leading-relaxed mb-6">
+                            As the sole director of BuildCompare, Sibongiseni Dubazane is deeply committed to revolutionizing the South African construction sector. With strong roots in Springs, Gauteng, Sibongiseni understands the local market dynamics and the unique challenges faced by contractors and builders in the region.
+                        </p>
+                        <p className="text-lg text-slate-300 leading-relaxed">
+                            Under Sibongiseni's leadership, BuildCompare strives to bring transparency, efficiency, and cutting-edge technology to everyday construction procurement, ensuring that local businesses can thrive in a competitive landscape.
+                        </p>
                     </div>
-                </div>
-
-                <div className="bg-slate-950/50 rounded-xl p-6 border border-slate-800">
-                    <p className="text-slate-300 mb-6 leading-relaxed">
-                        BuildCompare is committed to transformation and economic empowerment in South Africa.
-                        Our B-BBEE certificate demonstrates our dedication to contributing to the country's
-                        economic transformation objectives and supporting broad-based economic participation.
-                    </p>
-
-                    <a
-                        href="/documents/BEE.pdf"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 hover:border-purple-500/50 text-purple-300 hover:text-purple-200 rounded-xl transition-all duration-300 font-medium group"
-                    >
-                        <Download className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                        View B-BBEE Certificate
-                        <ExternalLink className="w-3 h-3 opacity-50" />
-                    </a>
                 </div>
             </div>
 
             {/* Why Choose Us */}
-            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 md:p-8">
-                <div className="flex items-center gap-3 mb-8">
-                    <div className="w-10 h-10 bg-yellow-400/20 rounded-lg flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-yellow-400" />
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-8 md:p-12">
+                <div className="flex items-center gap-4 mb-10">
+                    <div className="w-14 h-14 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-600">
+                        <Sparkles className="w-8 h-8 text-yellow-400" />
                     </div>
-                    <h2 className="text-xl font-bold text-white">Why Choose BuildCompare?</h2>
+                    <h2 className="text-3xl font-bold text-white">Why Choose BuildCompare?</h2>
                 </div>
 
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {[
-                        { icon: "🔍", title: "Real-time Prices", desc: "Compare prices from multiple suppliers instantly" },
-                        { icon: "🤖", title: "AI-Powered", desc: "Smart recommendations and cost estimations" },
-                        { icon: "📊", title: "Cost Analysis", desc: "Detailed breakdowns and project budgeting" },
-                        { icon: "🇿🇦", title: "SA Focused", desc: "Built for the South African construction industry" }
+                        { icon: "🔍", title: "Real-time Prices", desc: "Compare prices from multiple suppliers instantly without the hassle." },
+                        { icon: "🤖", title: "AI-Powered", desc: "Smart recommendations and highly accurate cost estimations." },
+                        { icon: "📊", title: "Cost Analysis", desc: "Detailed breakdowns and robust project budgeting tools." },
+                        { icon: "🇿🇦", title: "SA Focused", desc: "Built locally for the unique South African construction industry." }
                     ].map((item, index) => (
                         <div
                             key={index}
-                            className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 hover:border-yellow-400/30 transition-all duration-300 group"
+                            className="bg-slate-800 rounded-xl p-6 border-2 border-slate-600 hover:border-yellow-400 hover:bg-slate-800/80 transition-all duration-300 shadow-lg group"
                         >
-                            <div className="text-3xl mb-3">{item.icon}</div>
-                            <h3 className="text-white font-semibold mb-1 group-hover:text-yellow-400 transition-colors">
+                            <div className="text-4xl mb-4">{item.icon}</div>
+                            <h3 className="text-xl text-white font-bold mb-3 group-hover:text-yellow-400 transition-colors">
                                 {item.title}
                             </h3>
-                            <p className="text-slate-400 text-sm">{item.desc}</p>
+                            <p className="text-slate-300 text-lg">{item.desc}</p>
                         </div>
                     ))}
                 </div>
             </div>
 
             {/* Contact Info */}
-            <div className="bg-gradient-to-r from-yellow-400/10 via-yellow-400/5 to-transparent border border-yellow-400/20 rounded-2xl p-6 md:p-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="bg-slate-800 border-2 border-slate-600 rounded-2xl p-8 md:p-12 shadow-xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
                     <div>
-                        <h2 className="text-xl font-bold text-white mb-2">Get in Touch</h2>
-                        <p className="text-slate-400">
+                        <h2 className="text-2xl font-bold text-white mb-3">Get in Touch</h2>
+                        <p className="text-slate-300 text-lg">
                             Have questions or need assistance? Our team is here to help.
                         </p>
-                        <p className="text-yellow-400 font-medium mt-2">
+                        <p className="text-yellow-400 font-bold text-xl mt-4 tracking-wide">
                             📧 info@buildcompare.co.za
                         </p>
                     </div>
                     <div className="flex-shrink-0">
-                        <div className="px-6 py-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                            <p className="text-slate-500 text-xs uppercase tracking-wider mb-1">Location</p>
-                            <p className="text-white font-medium">Springs, Gauteng</p>
-                            <p className="text-slate-400 text-sm">South Africa</p>
+                        <div className="px-8 py-5 bg-slate-900 rounded-xl border-2 border-slate-700 shadow-inner">
+                            <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mb-2">Location</p>
+                            <p className="text-white font-bold text-xl">{companyDetails.location}</p>
+                            <p className="text-slate-400 text-lg">South Africa</p>
                         </div>
                     </div>
                 </div>
