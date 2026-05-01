@@ -1,6 +1,14 @@
 import { jsPDF } from 'jspdf';
 import { Project } from '@/types';
 
+/** Title Case helper — preserves uppercase abbreviations like IBR, PVC, PPC */
+function toTitleCase(s: string): string {
+    return s.replace(/\b\w+/g, (word) => {
+        if (word.length <= 3 && word === word.toUpperCase()) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    });
+}
+
 export function exportProjectToPDF(project: Project) {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -69,7 +77,7 @@ export function exportProjectToPDF(project: Project) {
     doc.text('Unit', 170, yPos + 7);
     yPos += 15;
 
-    // Materials Rows
+    // Materials Rows — apply Title Case
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(0, 0, 0);
 
@@ -85,8 +93,8 @@ export function exportProjectToPDF(project: Project) {
             doc.rect(14, yPos - 5, pageWidth - 28, 10, 'F');
         }
 
-        doc.text(material.name, 20, yPos);
-        doc.text(material.category, 80, yPos);
+        doc.text(toTitleCase(material.name), 20, yPos);
+        doc.text(toTitleCase(material.category), 80, yPos);
         doc.text(material.quantity.toString(), 130, yPos);
         doc.text(material.unit, 170, yPos);
         yPos += 10;

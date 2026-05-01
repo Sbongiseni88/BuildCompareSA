@@ -38,8 +38,18 @@ ${specSummary}
 
 Based on these specifications and SANS 10400 building standards, generate a comprehensive Bill of Quantities (BoQ).
 
+CRITICAL RULES:
+1. **Qualitative Filters vs Quantitative Multipliers**:
+   - Specs like "30MPa", "42.5N", "CEM II", "IBR 0.47mm" are GRADES/TYPES — include them in the "name" field as classification.
+   - NEVER multiply grade numbers by quantities (e.g., "30MPa concrete" with 5m³ = 5m³, NOT 150).
+   - Quantities must be realistic physical measurements (bags, m², m³, lengths).
+
+2. **Unit of Measure (UOM)**:
+   - Always use correct SA construction units: bags (50kg cement), each (bricks), m² (tiles, roofing), m³ (sand, concrete), lengths (steel, timber), sheets (roofing).
+   - Never report bulk prices as per-unit or vice versa.
+
 Return a JSON object with a single key "materials" containing an array. Each item MUST have:
-- "name": Descriptive material name (e.g. "OPC 42.5N Cement 50kg bag")
+- "name": Descriptive material name in Title Case (e.g. "OPC 42.5N Cement 50Kg Bag")
 - "category": One of: cement, bricks, steel, timber, plumbing, electrical, paint, roofing, tiles, hardware, other
 - "quantity": A realistic numeric quantity (integer or float)
 - "unit": The unit of measure (e.g. "bags", "m²", "m³", "lengths", "kg", "each", "sheets")

@@ -30,6 +30,20 @@ const STORE_COORDS: Record<string, { lat: number; lng: number }> = {
     buco:          { lat: -26.1445, lng: 27.8554 },  // BUCO Roodepoort
 };
 
+// ── Location Presets (Gauteng) ───────────────────────────────────────
+const LOCATION_PRESETS: Record<string, { lat: number; lng: number }> = {
+    springs:       { lat: -26.2485, lng: 28.4399 },
+    pretoria:      { lat: -25.7461, lng: 28.1881 },
+    johannesburg:  { lat: -26.2041, lng: 28.0473 },
+    sandton:       { lat: -26.1076, lng: 28.0567 },
+    soweto:        { lat: -26.2485, lng: 27.8546 },
+    midrand:       { lat: -25.9881, lng: 28.1247 },
+    centurion:     { lat: -25.8603, lng: 28.1894 },
+    boksburg:      { lat: -26.2120, lng: 28.2575 },
+    benoni:        { lat: -26.1893, lng: 28.3207 },
+    kempton_park:  { lat: -26.1000, lng: 28.2333 },
+};
+
 // ── Cache ────────────────────────────────────────────────────────────────
 const COMPARE_CACHE: Record<string, { timestamp: number; data: any }> = {};
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -62,6 +76,9 @@ interface StoreQuote {
     totalCost: number;
     laborEstimate: number;
     source: 'live-scrape' | 'ai-market-knowledge' | 'ai-estimate';
+    sanityFlag: 'ok' | 'low' | 'high';
+    sanityNote: string;
+    bestValue: boolean;
 }
 
 interface CompareResponse {
@@ -74,6 +91,15 @@ interface CompareResponse {
     priceRange: { min: number; max: number };
     region: string;
     timestamp: string;
+}
+
+// ── Title Case Helper ──────────────────────────────────────────────
+function toTitleCase(s: string): string {
+    return s.replace(/\b\w+/g, (word) => {
+        // Preserve uppercase abbreviations like IBR, PVC, PPC, CEM
+        if (word.length <= 3 && word === word.toUpperCase()) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    });
 }
 
 // ── AI Helper ────────────────────────────────────────────────────────────
@@ -240,6 +266,9 @@ ${data.raw_text.slice(0, 15000)}
                 totalCost: item.price + store.deliveryCostRange[0],
                 laborEstimate: 0, // Calculated separately
                 source: 'live-scrape',
+                sanityFlag: 'ok',
+                sanityNote: '',
+                bestValue: false,
             }));
     } catch (err) {
         clearTimeout(timeout);
@@ -310,6 +339,9 @@ function generateMarketEstimates(
             totalCost: clampedPrice + store.deliveryCostRange[0],
             laborEstimate: Math.round(laborEstimate),
             source: 'ai-market-knowledge',
+            sanityFlag: 'ok',
+            sanityNote: '',
+            bestValue: false,
         });
     }
 
@@ -386,6 +418,9 @@ CRITICAL:
                 totalCost: (typeof item.price === 'number' ? item.price : 95) + storeProfile.deliveryCostRange[0],
                 laborEstimate: typeof item.laborEstimate === 'number' ? item.laborEstimate : 0,
                 source: 'ai-estimate',
+                sanityFlag: 'ok',
+                sanityNote: '',
+                bestValue: false,
             };
         }).sort((a: StoreQuote, b: StoreQuote) => a.price - b.price);
     } catch (err) {
@@ -401,6 +436,15 @@ export async function GET(request: Request) {
     const rawQuery = searchParams.get('q');
     const lat = searchParams.get('lat') ? parseFloat(searchParams.get('lat')!) : undefined;
     const lng = searchParams.get('lng') ? parseFloat(searchParams.get('lng')!) : undefined;
+    const locationName = searchParams.get('location')?.toLowerCase().replace(/\s+/g, '_');
+
+    // Resolve named locations to coordinates
+    let resolvedLat = lat;
+    let resolvedLng = lng;
+    if (!resolvedLat && !resolvedLng && locationName && LOCATION_PRESETS[locationName]) {
+        resolvedLat = LOCATION_PRESETS[locationName].lat;
+        resolvedLng = LOCATION_PRESETS[locationName].lng;
+    }
 
     if (!rawQuery) {
         return NextResponse.json({ error: 'Missing query parameter "q"' }, { status: 400 });
@@ -461,6 +505,31 @@ export async function GET(request: Request) {
         seen.add(q.store);
         return true;
     });
+
+    // Apply Title Case and Sanity Checks
+    for (const q of deduped) {
+        q.product = toTitleCase(q.product);
+        q.brand = toTitleCase(q.brand);
+        const pk = findProductKnowledge(query.product) || findProductKnowledge(query.originalQuery);
+        if (pk?.sanityBounds) {
+            if (q.price < pk.sanityBounds.min) {
+                q.sanityFlag = 'low';
+                q.sanityNote = `Price looks low\u2014verify if per unit or per pack (expected ${pk.sanityBounds.label}: R${pk.sanityBounds.min}\u2013R${pk.sanityBounds.max})`;
+            } else if (q.price > pk.sanityBounds.max) {
+                q.sanityFlag = 'high';
+                q.sanityNote = `Above typical 2026 Gauteng range for ${pk.sanityBounds.label}`;
+            } else {
+                q.sanityFlag = 'ok';
+                q.sanityNote = '';
+            }
+        }
+    }
+
+    // Mark best value (cheapest totalCost)
+    if (deduped.length > 0) {
+        const bestIdx = deduped.reduce((best, q, i) => q.totalCost < deduped[best].totalCost ? i : best, 0);
+        deduped.forEach((q, i) => { q.bestValue = i === bestIdx; });
+    }
 
     const cheapest = deduped[0] || null;
     const prices = deduped.map(q => q.price);

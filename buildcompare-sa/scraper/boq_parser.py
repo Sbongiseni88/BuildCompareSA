@@ -26,11 +26,24 @@ PROMPT = """### ROLE: Chunk-Based BoQ Parser
 ### CONTEXT: 
 You are receiving a segmented portion (a "chunk") of a large South African Construction Bill of Quantities. Your task is to extract material data from THIS CHUNK ONLY.
 
-### INSTRUCTIONS:
-1. **Analyze Data**: Scan the CSV text for materials, quantities, and units.
-2. **Handle Incomplete Rows**: IGNORE rows cut off without descriptions.
-3. **Ignore Metadata**: Discard headers, page numbers, and preamble.
-4. **Localization**: Formulate `search_query` for South African retailers based on {location}.
+### CRITICAL PARSING RULES:
+1. **Qualitative Filters** (CLASSIFICATION ONLY — never arithmetic):
+   - Specs like "30MPa", "42.5N", "CEM II", "IBR 0.47mm", "Y12", "Ref 193"
+   - These identify the GRADE/TYPE of material. Place them in the `specs` field.
+   - NEVER multiply grade numbers by quantities (e.g., "30MPa × 5m³" = 5m³ of 30MPa concrete, NOT 150).
+
+2. **Quantitative Multipliers** (ARITHMETIC VALUES):
+   - Numeric columns labeled Quantity, Length, Area, Volume, Count, No.
+   - Extract these as the `qty` field. These are physical measurements.
+
+3. **Unit of Measure (UOM) Integrity**:
+   - Always pair qty with the correct unit: bags, m², m³, lengths, each, sheets, kg.
+   - If a price seems per-unit but qty suggests bulk, flag by appending "(verify UOM)" to search_query.
+
+### GENERAL INSTRUCTIONS:
+4. **Handle Incomplete Rows**: IGNORE rows cut off without descriptions.
+5. **Ignore Metadata**: Discard headers, page numbers, and preamble.
+6. **Localization**: Formulate `search_query` for South African retailers based on {location}.
 
 ### OUTPUT RULES:
 - Return ONLY a raw JSON object string.
@@ -40,8 +53,8 @@ You are receiving a segmented portion (a "chunk") of a large South African Const
 {
   "items": [
     {
-      "material": "Standardized Name",
-      "specs": "Dimensions/Grade",
+      "material": "Standardized Name (Title Case)",
+      "specs": "Grade/Dimensions (e.g. 42.5N, 0.47mm)",
       "qty": 0,
       "unit": "Unit",
       "search_query": "Optimized Store Query"

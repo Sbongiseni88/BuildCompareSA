@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Material } from '@/types';
 import { useToast } from '@/contexts/ToastContext';
+import { findProductKnowledge } from '@/data/sa-market-knowledge';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -79,6 +80,22 @@ const FIELD_META: Record<keyof SpecForm, { label: string; placeholder: string; i
         icon: <Zap className="w-5 h-5 text-emerald-400" />,
     },
 };
+
+/** Title Case helper — preserves uppercase abbreviations like IBR, PVC, PPC */
+function toTitleCase(s: string): string {
+    return s.replace(/\b\w+/g, (word) => {
+        if (word.length <= 3 && word === word.toUpperCase()) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    });
+}
+
+/** Returns a sanity flag for a material item based on market knowledge */
+function getSanityFlag(name: string): { flag: 'ok' | 'low' | 'warn'; note: string } {
+    const pk = findProductKnowledge(name);
+    if (!pk) return { flag: 'ok', note: '' };
+    // No price to check at BoQ generation stage — we just annotate known categories
+    return { flag: 'ok', note: `Market range: R${pk.sanityBounds.min}–R${pk.sanityBounds.max} ${pk.sanityBounds.label}` };
+}
 
 export default function SmartEstimator() {
     const { showError } = useToast();
@@ -145,11 +162,11 @@ export default function SmartEstimator() {
             if (data.materials && Array.isArray(data.materials)) {
                 const materials: Material[] = data.materials.map((m: any, index: number) => ({
                     id: `est-${Date.now()}-${index}`,
-                    name: m.name,
+                    name: toTitleCase(m.name || ''),
                     category: (m.category || 'other').toLowerCase(),
                     quantity: m.quantity,
                     unit: m.unit,
-                    brand: m.brand
+                    brand: m.brand ? toTitleCase(m.brand) : undefined
                 }));
 
                 // Tack on labor line items if the checkbox was ticked
@@ -206,19 +223,27 @@ export default function SmartEstimator() {
         if (specs.roofing) { doc.text(`Roofing: ${specs.roofing}`, 14, yPos); yPos += 7; }
         if (specs.finishing) { doc.text(`Finishing: ${specs.finishing}`, 14, yPos); yPos += 7; }
 
-        // Table
+        // Table with Status column
         autoTable(doc, {
             startY: yPos + 10,
-            head: [['Material Item', 'Category', 'Quantity', 'Unit', 'Suggested Brand']],
-            body: generatedBoQ.map(item => [
-                item.name,
-                item.category?.toUpperCase() || 'GENERAL',
-                item.quantity,
-                item.unit,
-                item.brand || '-'
-            ]),
+            head: [['Material Item', 'Category', 'Qty', 'Unit', 'Brand', 'Status']],
+            body: generatedBoQ.map(item => {
+                const pk = findProductKnowledge(item.name);
+                const status = pk ? `✓ R${pk.sanityBounds.min}–R${pk.sanityBounds.max}` : '—';
+                return [
+                    item.name,
+                    item.category?.toUpperCase() || 'GENERAL',
+                    item.quantity,
+                    item.unit,
+                    item.brand || '-',
+                    status
+                ];
+            }),
             headStyles: { fillColor: [234, 179, 8], textColor: 20 }, // Yellow header
             theme: 'grid',
+            columnStyles: {
+                5: { cellWidth: 35, fontSize: 8, textColor: [34, 139, 34] },
+            },
         });
 
         // Footer
@@ -398,11 +423,14 @@ export default function SmartEstimator() {
                                                     <th>Material Item</th>
                                                     <th>Category</th>
                                                     <th>Est. Quantity</th>
+                                                    <th>Market Check</th>
                                                     <th>Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {generatedBoQ.map((item) => (
+                                                {generatedBoQ.map((item) => {
+                                                    const pk = findProductKnowledge(item.name);
+                                                    return (
                                                     <tr key={item.id}>
                                                         <td className="font-semibold text-white text-lg">{item.name}</td>
                                                         <td className="text-slate-400">
@@ -417,12 +445,26 @@ export default function SmartEstimator() {
                                                         </td>
                                                         <td className="font-mono text-yellow-400 text-lg font-bold">{item.quantity} {item.unit}</td>
                                                         <td>
+                                                            {pk ? (
+                                                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-green-500/15 text-green-400 border border-green-500/20" title={`Expected: R${pk.sanityBounds.min}–R${pk.sanityBounds.max} ${pk.sanityBounds.label}`}>
+                                                                    <CheckCircle className="w-3.5 h-3.5" />
+                                                                    R{pk.sanityBounds.min}–R{pk.sanityBounds.max}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-orange-500/15 text-orange-400 border border-orange-500/20" title="Price range not tracked — verify manually">
+                                                                    <AlertCircle className="w-3.5 h-3.5" />
+                                                                    Verify UOM
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td>
                                                             <button className="flex items-center gap-2 text-sm px-4 py-2.5 bg-slate-700 hover:bg-yellow-500 hover:text-slate-900 rounded-lg transition-colors text-slate-300 font-bold min-h-[48px]">
                                                                 <Plus className="w-4 h-4" /> Add
                                                             </button>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>

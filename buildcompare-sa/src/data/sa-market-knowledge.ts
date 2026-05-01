@@ -139,6 +139,8 @@ export interface ProductKnowledge {
     standardSizes: string[];
     /** Price range per standard unit [min, max] ZAR */
     priceRange: [number, number];
+    /** Hard sanity bounds — prices outside these are flagged for manual review (±15% of priceRange) */
+    sanityBounds: { min: number; max: number; label: string };
     /** The most commonly sold size/unit */
     defaultUnit: string;
     /** Typical labour cost per unit for installation */
@@ -165,6 +167,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['50kg'],
         priceRange: [85, 120],
+        sanityBounds: { min: 72, max: 138, label: 'per 50kg bag' },
         defaultUnit: '50kg bag',
         laborPerUnit: [25, 45],   // Labour to mix and apply per bag
         comparisonNote: 'Always compare same grade (32.5N vs 32.5N). Price difference between grades is typically R5–R10.',
@@ -185,6 +188,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['222x106x73mm', '290x140x90mm (Maxi)'],
         priceRange: [2.50, 12.00],
+        sanityBounds: { min: 2.10, max: 13.80, label: 'per brick' },
         defaultUnit: 'each',
         laborPerUnit: [1.50, 3.50],  // Per brick laid
         comparisonNote: 'Never compare face bricks to stock bricks. Per-thousand pricing: multiply by 1000 for bulk.',
@@ -202,6 +206,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['per m³', '30kg bag'],
         priceRange: [40, 750],
+        sanityBounds: { min: 34, max: 863, label: 'per m³ or bag' },
         defaultUnit: 'per m³',
         laborPerUnit: [0, 0],
         comparisonNote: 'Bulk (m³) is always cheaper per unit than bagged sand. Transport cost is a major factor.',
@@ -221,6 +226,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['6m length', '2.4m x 5.4m sheet (mesh)'],
         priceRange: [100, 650],
+        sanityBounds: { min: 85, max: 750, label: 'per 6m length' },
         defaultUnit: '6m length',
         laborPerUnit: [30, 80],
         comparisonNote: 'Y-bar size (Y10/Y12/Y16) dramatically affects price. Always compare same diameter.',
@@ -241,6 +247,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['3m', '3.6m', '4.8m', '6m'],
         priceRange: [45, 350],
+        sanityBounds: { min: 38, max: 403, label: 'per length' },
         defaultUnit: '3m length',
         laborPerUnit: [20, 60],
         comparisonNote: 'Cross-section AND length both affect price. CCA treated costs more than untreated.',
@@ -264,6 +271,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['1L', '5L', '20L'],
         priceRange: [60, 2500],
+        sanityBounds: { min: 51, max: 2875, label: 'per unit' },
         defaultUnit: '5L',
         laborPerUnit: [35, 80],
         comparisonNote: 'Paint quality varies enormously. Premium brands last 2-3x longer, so price per year matters more.',
@@ -284,6 +292,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['1.8m', '2.4m', '3m', '3.6m', '4.8m', '6m'],
         priceRange: [120, 650],
+        sanityBounds: { min: 102, max: 750, label: 'per sheet' },
         defaultUnit: '3.6m sheet',
         laborPerUnit: [40, 90],
         comparisonNote: 'Sheet thickness (0.47 vs 0.53mm) affects durability and price. Length matters enormously.',
@@ -305,6 +314,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['1m', '3m', '6m'],
         priceRange: [15, 1500],
+        sanityBounds: { min: 13, max: 1725, label: 'per length' },
         defaultUnit: 'per length',
         laborPerUnit: [50, 250],
         comparisonNote: 'Copper pipe is 3-4x the price of PVC. Labour on plumbing is high — certified plumber rates apply.',
@@ -324,6 +334,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['10m', '50m', '100m'],
         priceRange: [150, 3500],
+        sanityBounds: { min: 128, max: 4025, label: 'per roll' },
         defaultUnit: '100m roll',
         laborPerUnit: [300, 800],
         comparisonNote: 'Cable size (1.5mm vs 2.5mm vs 4mm) has HUGE impact on price. Must match circuit requirements.',
@@ -344,6 +355,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['per m²', 'per box (1.44m²)'],
         priceRange: [80, 650],
+        sanityBounds: { min: 68, max: 750, label: 'per m²' },
         defaultUnit: 'per m²',
         laborPerUnit: [120, 280],
         comparisonNote: 'Ceramic vs Porcelain is the biggest price differentiator. Always compare same material type.',
@@ -367,6 +379,7 @@ export const SA_PRODUCT_KNOWLEDGE: ProductKnowledge[] = [
         ],
         standardSizes: ['each', 'per box', 'per set'],
         priceRange: [15, 8000],
+        sanityBounds: { min: 13, max: 9200, label: 'each' },
         defaultUnit: 'each',
         laborPerUnit: [0, 0],   // Tools don't have installation labour
         comparisonNote: 'Cordless tools are 2-3x the price of corded equivalents. Brand matters heavily for warranty.',
