@@ -60,7 +60,7 @@ export function exportProjectToPDF(project: Project) {
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const budgetText = `Total Budget: R${project.totalBudget.toLocaleString('en-ZA')} | Spent: R${project.spent.toLocaleString('en-ZA')} | Remaining: R${(project.totalBudget - project.spent).toLocaleString('en-ZA')}`;
+    const budgetText = `Allocated Budget: R${project.totalBudget.toLocaleString('en-ZA')} | Spent: R${project.spent.toLocaleString('en-ZA')} | Remaining: R${(project.totalBudget - project.spent).toLocaleString('en-ZA')}`;
     doc.text(budgetText, 20, yPos + 18);
     yPos += 35;
 
@@ -69,20 +69,25 @@ export function exportProjectToPDF(project: Project) {
     doc.rect(14, yPos, pageWidth - 28, 10, 'F');
 
     doc.setTextColor(...darkColor);
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.text('Material', 20, yPos + 7);
-    doc.text('Category', 80, yPos + 7);
-    doc.text('Quantity', 130, yPos + 7);
-    doc.text('Unit', 170, yPos + 7);
+    doc.text('Material', 16, yPos + 7);
+    doc.text('Category', 70, yPos + 7);
+    doc.text('Qty', 110, yPos + 7);
+    doc.text('Mat. Cost', 130, yPos + 7);
+    doc.text('Labour', 160, yPos + 7);
+    doc.text('Total', 185, yPos + 7);
     yPos += 15;
 
     // Materials Rows — apply Title Case
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(0, 0, 0);
 
+    let projectTotalMaterial = 0;
+    let projectTotalLabor = 0;
+
     project.materials.forEach((material, index) => {
-        if (yPos > 270) {
+        if (yPos > 260) {
             doc.addPage();
             yPos = 20;
         }
@@ -93,12 +98,36 @@ export function exportProjectToPDF(project: Project) {
             doc.rect(14, yPos - 5, pageWidth - 28, 10, 'F');
         }
 
-        doc.text(toTitleCase(material.name), 20, yPos);
-        doc.text(toTitleCase(material.category), 80, yPos);
-        doc.text(material.quantity.toString(), 130, yPos);
-        doc.text(material.unit, 170, yPos);
+        const materialCost = (material._aiPriceEstimate || 0) * material.quantity;
+        const laborCost = (material.laborCostEstimate || 0) * material.quantity;
+        const totalCost = materialCost + laborCost;
+
+        projectTotalMaterial += materialCost;
+        projectTotalLabor += laborCost;
+
+        doc.setFontSize(9);
+        doc.text(toTitleCase(material.name).substring(0, 30), 16, yPos);
+        doc.text(toTitleCase(material.category), 70, yPos);
+        doc.text(`${material.quantity} ${material.unit}`, 110, yPos);
+        doc.text(materialCost > 0 ? `R${materialCost.toLocaleString('en-ZA')}` : '-', 130, yPos);
+        doc.text(laborCost > 0 ? `R${laborCost.toLocaleString('en-ZA')}` : '-', 160, yPos);
+        doc.text(totalCost > 0 ? `R${totalCost.toLocaleString('en-ZA')}` : '-', 185, yPos);
         yPos += 10;
     });
+
+    // Project Total Summary
+    yPos += 5;
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, yPos, pageWidth - 28, 20, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`Total Material Value: R${projectTotalMaterial.toLocaleString('en-ZA')}`, 20, yPos + 8);
+    doc.text(`Total Labour Value: R${projectTotalLabor.toLocaleString('en-ZA')}`, 20, yPos + 14);
+    
+    const finalTotal = projectTotalMaterial + projectTotalLabor;
+    doc.setFontSize(12);
+    doc.setTextColor(...primaryColor); // Yellow-500
+    doc.text(`Total Site-Ready Estimate: R${finalTotal.toLocaleString('en-ZA')}`, 110, yPos + 12);
 
     // Footer
     yPos = doc.internal.pageSize.getHeight() - 20;

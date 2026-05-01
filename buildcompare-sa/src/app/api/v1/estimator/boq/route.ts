@@ -6,6 +6,7 @@ interface SpecsPayload {
     structure: string;
     roofing: string;
     finishing: string;
+    includeLabor?: boolean;
 }
 
 export async function POST(request: Request) {
@@ -48,12 +49,20 @@ CRITICAL RULES:
    - Always use correct SA construction units: bags (50kg cement), each (bricks), m² (tiles, roofing), m³ (sand, concrete), lengths (steel, timber), sheets (roofing).
    - Never report bulk prices as per-unit or vice versa.
 
+3. **Labour Engine & Logic**:
+   - ${specs.includeLabor ? 'The user requested a Labour Estimate. Calculate realistic "laborCostEstimate" in ZAR for each item based on Gauteng benchmarks (e.g., Bricklaying: ~R120/m², Concrete: ~R350/m³, Painting: ~R40/m²). Do NOT output separate "General Labor" line items; attach the labor cost directly to the relevant material.' : 'Do NOT include labor estimates. Set "laborCostEstimate" to 0.'}
+
+4. **Smart Conversion (52x Multiplier)**:
+   - If the material is "Brickwork" or "Masonry" and the calculated Unit is "m²", you MUST multiply the Quantity by 52 to get the actual Brick Count in "each" (e.g., 200m² = 10,400 bricks).
+   - However, if calculating labor for that brickwork, base the \`laborCostEstimate\` on the original m² figure (e.g., 200m² * R120/m²), NOT the multiplied brick count.
+
 Return a JSON object with a single key "materials" containing an array. Each item MUST have:
 - "name": Descriptive material name in Title Case (e.g. "OPC 42.5N Cement 50Kg Bag")
 - "category": One of: cement, bricks, steel, timber, plumbing, electrical, paint, roofing, tiles, hardware, other
 - "quantity": A realistic numeric quantity (integer or float)
 - "unit": The unit of measure (e.g. "bags", "m²", "m³", "lengths", "kg", "each", "sheets")
 - "brand": A suggested South African brand if applicable (e.g. "PPC", "Corobrik", "Safal"), or null
+- "laborCostEstimate": A numeric estimate for installation labor in ZAR (or 0 if not applicable).
 
 Generate between 8 and 20 line items covering all specified construction phases.
 Be realistic with South African material names, quantities, and brands.
@@ -149,8 +158,8 @@ function generateFallbackBoQ(specs: SpecsPayload) {
 
     if (materials.length === 0) {
         materials.push(
-            { name: 'OPC 42.5N Cement 50kg', category: 'cement', quantity: 20, unit: 'bags', brand: 'PPC' },
-            { name: 'Building Sand', category: 'cement', quantity: 3, unit: 'm³', brand: null }
+            { name: 'OPC 42.5N Cement 50kg', category: 'cement', quantity: 20, unit: 'bags', brand: 'PPC', laborCostEstimate: specs.includeLabor ? 500 : 0 },
+            { name: 'Building Sand', category: 'cement', quantity: 3, unit: 'm³', brand: null, laborCostEstimate: specs.includeLabor ? 150 : 0 }
         );
     }
 

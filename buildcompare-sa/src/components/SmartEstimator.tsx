@@ -149,7 +149,7 @@ export default function SmartEstimator() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(specs),
+                body: JSON.stringify({ ...specs, includeLabor }),
             });
 
             if (!response.ok) {
@@ -166,14 +166,9 @@ export default function SmartEstimator() {
                     category: (m.category || 'other').toLowerCase(),
                     quantity: m.quantity,
                     unit: m.unit,
-                    brand: m.brand ? toTitleCase(m.brand) : undefined
+                    brand: m.brand ? toTitleCase(m.brand) : undefined,
+                    laborCostEstimate: m.laborCostEstimate
                 }));
-
-                // Tack on labor line items if the checkbox was ticked
-                if (includeLabor && materials.length > 0) {
-                    materials.push({ id: `lab-${Date.now()}-1`, name: 'General Labor', category: 'labor', quantity: Math.ceil(materials.length / 5) * 2, unit: 'days' });
-                    materials.push({ id: `lab-${Date.now()}-2`, name: 'Artisan (Bricklayer/Plasterer)', category: 'labor', quantity: Math.ceil(materials.length / 5) * 3, unit: 'days' });
-                }
 
                 setGeneratedBoQ(materials);
                 setStep(2);
@@ -223,10 +218,10 @@ export default function SmartEstimator() {
         if (specs.roofing) { doc.text(`Roofing: ${specs.roofing}`, 14, yPos); yPos += 7; }
         if (specs.finishing) { doc.text(`Finishing: ${specs.finishing}`, 14, yPos); yPos += 7; }
 
-        // Table with Status column
+        // Table with Status and Labour column
         autoTable(doc, {
             startY: yPos + 10,
-            head: [['Material Item', 'Category', 'Qty', 'Unit', 'Brand', 'Status']],
+            head: [['Material Item', 'Category', 'Qty', 'Unit', 'Brand', 'Status', 'Labour Est.']],
             body: generatedBoQ.map(item => {
                 const pk = findProductKnowledge(item.name);
                 const status = pk ? `✓ R${pk.sanityBounds.min}–R${pk.sanityBounds.max}` : '—';
@@ -236,7 +231,8 @@ export default function SmartEstimator() {
                     item.quantity,
                     item.unit,
                     item.brand || '-',
-                    status
+                    status,
+                    item.laborCostEstimate ? `R${item.laborCostEstimate.toLocaleString('en-ZA')}` : '-'
                 ];
             }),
             headStyles: { fillColor: [234, 179, 8], textColor: 20 }, // Yellow header
@@ -309,21 +305,28 @@ export default function SmartEstimator() {
                             ))}
 
                             {/* Labor Toggle */}
-                            <label
-                                htmlFor="labor"
-                                className="flex items-center gap-3 p-4 bg-slate-800/50 rounded-xl border-2 border-slate-700 cursor-pointer hover:border-slate-600 transition-colors min-h-[48px]"
-                            >
-                                <input
-                                    type="checkbox"
-                                    id="labor"
-                                    checked={includeLabor}
-                                    onChange={(e) => setIncludeLabor(e.target.checked)}
-                                    className="w-6 h-6 rounded border-slate-600 text-yellow-500 focus:ring-yellow-500 bg-slate-900 flex-shrink-0"
-                                />
-                                <span className="text-lg text-slate-200 font-medium">
-                                    Include Labor Estimate
-                                </span>
-                            </label>
+                            <div className="flex flex-col gap-2">
+                                <label
+                                    htmlFor="labor"
+                                    className="flex items-center gap-3 p-4 bg-slate-800/50 rounded-xl border-2 border-slate-700 cursor-pointer hover:border-slate-600 transition-colors min-h-[48px]"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        id="labor"
+                                        checked={includeLabor}
+                                        onChange={(e) => setIncludeLabor(e.target.checked)}
+                                        className="w-6 h-6 rounded border-slate-600 text-yellow-500 focus:ring-yellow-500 bg-slate-900 flex-shrink-0"
+                                    />
+                                    <span className="text-lg text-slate-200 font-medium">
+                                        Include Labor Estimate
+                                    </span>
+                                </label>
+                                {includeLabor && (
+                                    <p className="text-sm text-slate-400 pl-4 border-l-2 border-yellow-500/50 italic">
+                                        Disclaimer: Labour rates are based on standard Gauteng productivity benchmarks. Adjust as per your specific site conditions.
+                                    </p>
+                                )}
+                            </div>
 
                             {/* Calculation Summary Preview */}
                             {hasAnySpec && (
@@ -424,6 +427,7 @@ export default function SmartEstimator() {
                                                     <th>Category</th>
                                                     <th>Est. Quantity</th>
                                                     <th>Market Check</th>
+                                                    {includeLabor && <th>Labour Est.</th>}
                                                     <th>Action</th>
                                                 </tr>
                                             </thead>
@@ -457,6 +461,11 @@ export default function SmartEstimator() {
                                                                 </span>
                                                             )}
                                                         </td>
+                                                        {includeLabor && (
+                                                            <td className="text-blue-400 font-bold">
+                                                                {item.laborCostEstimate ? `R ${item.laborCostEstimate.toLocaleString('en-ZA')}` : '—'}
+                                                            </td>
+                                                        )}
                                                         <td>
                                                             <button className="flex items-center gap-2 text-sm px-4 py-2.5 bg-slate-700 hover:bg-yellow-500 hover:text-slate-900 rounded-lg transition-colors text-slate-300 font-bold min-h-[48px]">
                                                                 <Plus className="w-4 h-4" /> Add

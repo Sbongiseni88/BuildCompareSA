@@ -17,6 +17,9 @@ import {
     Search,
     Calculator,
     Info,
+    PlayCircle,
+    BookOpen,
+    MessageCircle,
 } from 'lucide-react';
 import MarketTicker from './MarketTicker';
 import { StatsSkeleton, ProjectCardSkeleton, SpendAnalysisSkeleton } from './SkeletonLoader';
@@ -82,7 +85,9 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                         name: m.name,
                         quantity: Number(m.quantity),
                         unit: m.unit,
-                        category: m.category
+                        category: m.category,
+                        laborCostEstimate: Number(m.laborCostEstimate || 0),
+                        _aiPriceEstimate: Number(m.price || 0) // or whatever field tracks price
                     }))
                 }));
                 setProjects(mappedProjects);
@@ -135,6 +140,10 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
 
     // Derived Stats
     const activeCount = projects.filter(p => p.status === 'active').length;
+    const totalSavingsValue = projects.reduce((acc, p) => {
+        const savings = p.totalBudget - p.spent;
+        return savings > 0 ? acc + savings : acc;
+    }, 0);
 
     // Display name
     const displayName = userProfile?.displayName || 'Builder';
@@ -152,7 +161,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
         },
         {
             label: 'Total Savings',
-            value: `R0`,
+            value: `R${totalSavingsValue.toLocaleString('en-ZA')}`,
             change: '',
             changeType: 'positive' as const,
             icon: PiggyBank,
@@ -253,19 +262,19 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                             )}
                         </p>
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3 mt-4 md:mt-0">
                         <button
                             onClick={onNavigateToCompare}
-                            className="px-6 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-xl shadow-lg shadow-yellow-400/20 text-sm flex items-center gap-2 hover:scale-105 transition-all"
+                            className="px-6 py-3 min-h-[56px] bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-xl shadow-lg shadow-yellow-400/20 text-sm flex items-center justify-center gap-2 hover:scale-105 transition-all w-full md:w-auto"
                         >
-                            <Zap className="w-4 h-4" />
+                            <Zap className="w-5 h-5" />
                             Find Best Prices
                         </button>
                         <button
                             onClick={onNavigateToProjects}
-                            className="px-6 py-3 bg-transparent border-2 border-slate-700 hover:border-white text-white font-bold rounded-xl text-sm flex items-center gap-2 hover:bg-white/5 transition-all"
+                            className="px-6 py-3 min-h-[56px] bg-transparent border-2 border-slate-700 hover:border-white text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-white/5 transition-all w-full md:w-auto"
                         >
-                            <Plus className="w-4 h-4" />
+                            <Plus className="w-5 h-5" />
                             Create a New Job
                         </button>
                     </div>
@@ -298,8 +307,8 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                                 )}
                             </div>
                             <div className="mt-4">
-                                <p className="text-3xl font-black text-white tracking-tight">{stat.value}</p>
-                                <p className="text-sm text-slate-400 font-medium mt-1">{stat.label}</p>
+                                <p className="text-[2.25rem] leading-none font-black text-white tracking-tight">{stat.value}</p>
+                                <p className="text-sm text-slate-400 font-medium mt-2">{stat.label}</p>
                             </div>
                         </div>
                     );
@@ -314,7 +323,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                             <FolderOpen className="w-5 h-5 text-yellow-500" />
                             My Job Folders
                         </h2>
-                        <button onClick={onNavigateToProjects} className="text-sm text-slate-400 hover:text-yellow-400 font-medium transition-colors">
+                        <button onClick={onNavigateToProjects} className="text-sm min-h-[56px] flex items-center px-4 -mr-4 text-slate-400 hover:text-yellow-400 font-medium transition-colors">
                             View All Folders →
                         </button>
                     </div>
@@ -391,21 +400,18 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                                 );
                             })
                         ) : (
-                            /* Empty State - Enhanced */
+                            /* Empty State - Refactored for 40+ */
                             <div className="p-10 bg-slate-900/50 border border-dashed border-slate-700 rounded-2xl text-center transition-all hover:border-yellow-500/30">
                                 <div className="w-20 h-20 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float">
                                     <FolderOpen className="w-10 h-10 text-yellow-500" />
                                 </div>
-                                <h3 className="text-xl font-bold text-white mb-2">No Job Folders Yet</h3>
-                                <p className="text-slate-400 mb-6 text-sm max-w-xs mx-auto leading-relaxed">
-                                    Create your first job folder to start tracking materials, budgets, and savings across all your sites.
+                                <h3 className="text-2xl font-black text-white mb-2">Step 1: Create Your First Job</h3>
+                                <p className="text-slate-400 mb-8 text-lg max-w-sm mx-auto leading-relaxed">
+                                    Track materials, budgets, and savings across all your sites. Get started by setting up a job folder.
                                 </p>
                                 <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
-                                    <button onClick={onNavigateToProjects} className="btn-primary flex items-center gap-2">
-                                        <Plus className="w-4 h-4" /> Create a Folder
-                                    </button>
-                                    <button onClick={onNavigateToCompare} className="btn-secondary flex items-center gap-2 text-sm">
-                                        <Search className="w-4 h-4" /> Or Compare Prices First
+                                    <button onClick={onNavigateToProjects} className="btn-primary flex items-center justify-center gap-2 min-h-[56px] w-full sm:w-auto px-8 text-lg font-bold">
+                                        <Plus className="w-5 h-5" /> Create a Folder
                                     </button>
                                 </div>
                             </div>
@@ -432,45 +438,40 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                         <div className="relative z-10">
                             <h3 className="text-slate-300 font-medium mb-6">Where Your Money Goes</h3>
 
-                            {/* Simple CSS Chart */}
-                            <div className="space-y-4">
+                            {/* Dynamically Styled CSS Chart for Material vs Labour */}
+                            <div className="space-y-6">
                                 <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-white">Materials</span>
-                                        <span className="text-blue-400">65%</span>
+                                    <div className="flex justify-between text-base mb-2">
+                                        <span className="text-white font-bold flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-blue-500"></div> Material Costs
+                                        </span>
+                                        <span className="text-blue-400 font-bold">65%</span>
                                     </div>
-                                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-blue-500 w-[65%] rounded-full"></div>
+                                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500 w-[65%] rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
                                     </div>
                                 </div>
                                 <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-white">Labor</span>
-                                        <span className="text-green-400">25%</span>
+                                    <div className="flex justify-between text-base mb-2">
+                                        <span className="text-white font-bold flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-green-500"></div> Labour Estimates
+                                        </span>
+                                        <span className="text-green-400 font-bold">35%</span>
                                     </div>
-                                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 w-[25%] rounded-full"></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-white">Logistics</span>
-                                        <span className="text-purple-400">10%</span>
-                                    </div>
-                                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-purple-500 w-[10%] rounded-full"></div>
+                                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                                        <div className="h-full bg-green-500 w-[35%] rounded-full shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="mt-8 pt-6 border-t border-slate-800">
                                 <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-slate-800 rounded-lg">
-                                        <Clock className="w-4 h-4 text-slate-400" />
+                                    <div className="p-3 bg-slate-800 rounded-xl">
+                                        <TrendingUp className="w-5 h-5 text-yellow-400" />
                                     </div>
                                     <div>
-                                        <p className="text-xs text-slate-400">Next Scheduled Delivery</p>
-                                        <p className="text-sm font-bold text-white">Tomorrow, 9:00 AM</p>
+                                        <p className="text-sm text-slate-400">Budget Health</p>
+                                        <p className="text-base font-bold text-white">On Track</p>
                                     </div>
                                 </div>
                             </div>
@@ -483,12 +484,84 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                         <p className="text-sm font-medium opacity-80 mb-4">Prices dropped at Builders Warehouse today.</p>
                         <button
                             onClick={onNavigateToCompare}
-                            className="w-full py-2 bg-white text-black font-bold rounded-lg shadow-lg hover:bg-slate-100 transition-colors text-sm"
+                            className="w-full py-3 min-h-[56px] bg-white text-black font-bold rounded-lg shadow-lg hover:bg-slate-100 transition-colors text-base flex items-center justify-center"
                         >
                             Check Prices
                         </button>
                     </div>
                 </div>
+            </div>
+
+            {/* 6. Builder's Toolkit & Tutorials */}
+            <div className="mt-12 border-t border-slate-800 pt-8">
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-black text-white flex items-center gap-2">
+                        <BookOpen className="w-6 h-6 text-blue-400" />
+                        Builder's Toolkit & Tutorials
+                    </h2>
+                    
+                    <a 
+                        href="https://wa.me/27820000000" 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="hidden md:flex items-center gap-2 min-h-[56px] px-6 bg-green-500 hover:bg-green-400 text-white font-bold rounded-xl shadow-lg shadow-green-500/20 transition-all hover:scale-105"
+                    >
+                        <MessageCircle className="w-5 h-5" />
+                        Gauteng WhatsApp Support
+                    </a>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Card 1 */}
+                    <div className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all">
+                        <div className="h-40 bg-gradient-to-br from-blue-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
+                            <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
+                            <PlayCircle className="w-16 h-16 text-blue-400 group-hover:scale-110 transition-transform drop-shadow-lg" />
+                        </div>
+                        <div className="p-5">
+                            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2 block">Quick Video</span>
+                            <h3 className="text-lg font-bold text-white mb-2">How to Upload a BoQ</h3>
+                            <p className="text-slate-400 text-sm">Learn how to instantly extract materials from any Excel or PDF document.</p>
+                        </div>
+                    </div>
+
+                    {/* Card 2 */}
+                    <div className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all">
+                        <div className="h-40 bg-gradient-to-br from-yellow-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
+                            <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
+                            <BookOpen className="w-16 h-16 text-yellow-500 group-hover:scale-110 transition-transform drop-shadow-lg" />
+                        </div>
+                        <div className="p-5">
+                            <span className="text-xs font-bold text-yellow-500 uppercase tracking-wider mb-2 block">Simple Guide</span>
+                            <h3 className="text-lg font-bold text-white mb-2">Understanding SANS 10400</h3>
+                            <p className="text-slate-400 text-sm">A practical breakdown of standard South African building regulations for your site.</p>
+                        </div>
+                    </div>
+
+                    {/* Card 3 */}
+                    <div className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all">
+                        <div className="h-40 bg-gradient-to-br from-green-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
+                            <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
+                            <TrendingUp className="w-16 h-16 text-green-400 group-hover:scale-110 transition-transform drop-shadow-lg" />
+                        </div>
+                        <div className="p-5">
+                            <span className="text-xs font-bold text-green-400 uppercase tracking-wider mb-2 block">Pro Tip</span>
+                            <h3 className="text-lg font-bold text-white mb-2">Managing Your Labour Budget</h3>
+                            <p className="text-slate-400 text-sm">How to use the new SANS-aligned labour engine to keep your quotes realistic.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Mobile WhatsApp Button */}
+                <a 
+                    href="https://wa.me/27820000000" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="md:hidden mt-6 flex w-full items-center justify-center gap-2 min-h-[56px] px-6 bg-green-500 hover:bg-green-400 text-white font-bold rounded-xl shadow-lg transition-all"
+                >
+                    <MessageCircle className="w-5 h-5" />
+                    Gauteng WhatsApp Support
+                </a>
             </div>
         </div>
     );

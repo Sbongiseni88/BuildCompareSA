@@ -399,11 +399,13 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
     );
 
     const handleDownload = () => {
-        const headers = "Item,Quantity,Supplier,Price,Total,Distance\n";
+        const headers = "Item,Quantity,Supplier,Material Price,Labour Estimate,Total Value,Distance\n";
         const rows = comparisonResults.flatMap(res =>
             res.quotes.map(q => {
-                const total = q.price * res.material.quantity;
-                return `"${res.material.name}",${res.material.quantity},"${q.supplierName}",${q.price},${total},${q.distance}`;
+                const materialTotal = q.price * res.material.quantity;
+                const laborTotal = (q.laborCostEstimate || 0) * res.material.quantity; // labor per original unit
+                const total = materialTotal + laborTotal;
+                return `"${res.material.name}",${res.material.quantity},"${q.supplierName}",${q.price},${laborTotal},${total},${q.distance}`;
             })
         ).join('\n');
 
