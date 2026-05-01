@@ -4,7 +4,6 @@ import { Material } from '@/types';
 
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
-import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
 
 // Vision-capable models for image analysis.
 // NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
@@ -274,7 +273,7 @@ export async function POST(req: NextRequest) {
         const file = formData.get('file') as File;
         const fileName = formData.get('fileName') as string;
 
-        if (!isGroqConfigured && !isDeepseekConfigured) {
+        if (!isDeepseekConfigured) {
             console.warn('⚠️ No AI API keys found. Returning mock data.');
             return NextResponse.json({ error: 'AI API keys are not configured. Cannot process image.' }, { status: 500 });
         }
