@@ -3,80 +3,61 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, TrendingDown, AlertTriangle, Package, Settings, Check, X, Trash2 } from 'lucide-react';
 
+import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
+
 interface NotificationItem {
     id: string;
-    type: 'price_alert' | 'budget_warning' | 'system' | 'stock_alert';
+    type: 'price-drop' | 'stock-alert' | 'delivery' | 'system';
     title: string;
     message: string;
     read: boolean;
-    createdAt: Date;
+    created_at: string;
 }
 
-const STORAGE_KEY = 'buildcompare_notifications';
-
-// Seeded notifications so new users see something on first load
-const seedNotifications: NotificationItem[] = [
-    {
-        id: 'n1',
-        type: 'price_alert',
-        title: 'Cement Price Drop!',
-        message: 'PPC Cement 42.5N has dropped 8% at Builders Warehouse this week.',
-        read: false,
-        createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 min ago
-    },
-    {
-        id: 'n2',
-        type: 'budget_warning',
-        title: 'Budget Alert',
-        message: 'Your "Midrand Extension" project has reached 85% of its budget.',
-        read: false,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hrs ago
-    },
-    {
-        id: 'n3',
-        type: 'system',
-        title: 'Welcome to BuildCompare SA!',
-        message: 'Compare building material prices across SA retailers and save up to 30%.',
-        read: false,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-    },
-    {
-        id: 'n4',
-        type: 'stock_alert',
-        title: 'Low Stock Warning',
-        message: 'IBR Sheeting at Cashbuild Centurion is running low — only 12 sheets left.',
-        read: true,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
-    },
-];
-
 export default function NotificationCenter() {
+    const { user } = useAuthContext();
+    const supabase = createClient();
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState<NotificationItem[]>([]);
     const panelRef = useRef<HTMLDivElement>(null);
 
-    // Hydrate from localStorage on mount
+    // Fetch from Supabase
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                setNotifications(parsed.map((n: any) => ({ ...n, createdAt: new Date(n.createdAt) })));
-            } else {
-                setNotifications(seedNotifications);
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(seedNotifications));
-            }
-        } catch {
-            setNotifications(seedNotifications);
-        }
-    }, []);
+        if (!user) return;
 
-    // Sync to localStorage whenever notifications change
-    useEffect(() => {
-        if (notifications.length > 0) {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications)); } catch { }
-        }
-    }, [notifications]);
+        const fetchNotifications = async () => {
+            const { data, error } = await supabase
+                .from('notifications')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            if (!error && data) {
+                setNotifications(data);
+            }
+        };
+
+        fetchNotifications();
+
+        // Optional: subscribe to new notifications
+        const channel = supabase
+            .channel('realtime_notifications')
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'notifications',
+                filter: `user_id=eq.${user.id}`
+            }, (payload: any) => {
+                setNotifications(prev => [payload.new as NotificationItem, ...prev].slice(0, 5));
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user, supabase]);
 
     // Dismiss panel when clicking outside
     useEffect(() => {
@@ -91,29 +72,51 @@ export default function NotificationCenter() {
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
-    const markAllRead = () => {
+    const markAllRead = async () => {
+        if (!user) return;
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        await supabase
+            .from('notifications')
+            .update({ read: true })
+            .eq('user_id', user.id)
+            .eq('read', false);
     };
 
-    const markAsRead = (id: string) => {
+    const markAsRead = async (id: string) => {
+        const notif = notifications.find(n => n.id === id);
+        if (notif?.read) return;
+
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+        await supabase
+            .from('notifications')
+            .update({ read: true })
+            .eq('id', id);
     };
 
-    const clearAll = () => {
+    const clearAll = async () => {
+        if (!user) return;
         setNotifications([]);
-        try { localStorage.removeItem(STORAGE_KEY); } catch { }
+        await supabase
+            .from('notifications')
+            .delete()
+            .eq('user_id', user.id);
     };
 
-    const getIcon = (type: NotificationItem['type']) => {
+    const getIcon = (type: NotificationItem['type'], title: string) => {
+        if (title.toLowerCase().includes('budget')) {
+            return <AlertTriangle className="w-5 h-5 text-red-500" />;
+        }
         switch (type) {
-            case 'price_alert': return <TrendingDown className="w-4 h-4 text-green-400" />;
-            case 'budget_warning': return <AlertTriangle className="w-4 h-4 text-orange-400" />;
-            case 'stock_alert': return <Package className="w-4 h-4 text-red-400" />;
-            case 'system': return <Settings className="w-4 h-4 text-blue-400" />;
+            case 'price-drop': return <TrendingDown className="w-5 h-5 text-green-500" />;
+            case 'stock-alert': return <Package className="w-5 h-5 text-orange-500" />;
+            case 'delivery': return <Check className="w-5 h-5 text-blue-500" />;
+            case 'system': return <Settings className="w-5 h-5 text-slate-400" />;
+            default: return <Bell className="w-5 h-5 text-slate-400" />;
         }
     };
 
-    const formatTime = (date: Date) => {
+    const formatTime = (dateStr: string) => {
+        const date = new Date(dateStr);
         const diff = Date.now() - date.getTime();
         const mins = Math.floor(diff / 60000);
         if (mins < 1) return 'Just now';
@@ -182,17 +185,17 @@ export default function NotificationCenter() {
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="mt-0.5 flex-shrink-0">
-                                            {getIcon(n.type)}
+                                            {getIcon(n.type, n.title)}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between gap-2">
-                                                <p className={`text-sm font-semibold truncate ${!n.read ? 'text-white' : 'text-slate-400'}`}>
+                                                <p className={`text-base font-bold truncate ${!n.read ? 'text-white' : 'text-slate-400'}`}>
                                                     {n.title}
                                                 </p>
-                                                {!n.read && <div className="w-2 h-2 bg-yellow-400 rounded-full flex-shrink-0" />}
+                                                {!n.read && <div className="w-2.5 h-2.5 bg-red-500 rounded-full flex-shrink-0 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />}
                                             </div>
-                                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                                            <p className="text-[10px] text-slate-600 mt-1">{formatTime(n.createdAt)}</p>
+                                            <p className={`text-sm mt-0.5 ${!n.read ? 'text-slate-300' : 'text-slate-500'}`}>{n.message}</p>
+                                            <p className="text-[11px] font-medium text-slate-500 mt-2 uppercase tracking-wider">{formatTime(n.created_at)}</p>
                                         </div>
                                     </div>
                                 </div>

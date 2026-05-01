@@ -15,24 +15,8 @@ import {
     Zap,
     Calculator
 } from 'lucide-react';
-const DEMO_NOTIFICATIONS = [
-    {
-        id: 'n1',
-        title: 'Price Drop Alert',
-        message: 'AfriSam 50kg dropped by 5% at Cashbuild',
-        time: '2 hours ago',
-        type: 'price-drop',
-        read: false
-    },
-    {
-        id: 'n2',
-        title: 'Stock Alert',
-        message: 'Y12 Rebar is running low at Builders Fourways',
-        time: '5 hours ago',
-        type: 'stock-alert',
-        read: true
-    }
-];
+import { createClient } from '@/utils/supabase/client';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 interface HeaderProps {
     activeTab: string;
@@ -43,8 +27,44 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [profileOpen, setProfileOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
 
-    const unreadCount = DEMO_NOTIFICATIONS.filter(n => !n.read).length;
+    const { user, userProfile } = useAuthContext();
+    const supabase = createClient();
+
+    React.useEffect(() => {
+        if (!user) return;
+
+        const fetchUnreadCount = async () => {
+            const { count, error } = await supabase
+                .from('notifications')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', user.id)
+                .eq('read', false);
+            
+            if (!error && count !== null) {
+                setUnreadCount(count);
+            }
+        };
+
+        fetchUnreadCount();
+
+        const channel = supabase
+            .channel('header_notifications')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'notifications',
+                filter: `user_id=eq.${user.id}`
+            }, () => {
+                fetchUnreadCount();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user, supabase]);
 
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -119,37 +139,10 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
                                 )}
                             </button>
 
-                            {/* Notifications Dropdown */}
+                            {/* Notifications Dropdown (Delegated to global NotificationCenter instead of showing it here if it's rendered by page.tsx, but we'll leave the trigger button logic as is. Since NotificationCenter handles it now, let's just make the bell trigger onTabChange or not render the demo here.) */}
                             {notificationsOpen && (
-                                <div className="absolute right-0 mt-2 w-80 glass-card rounded-xl shadow-2xl overflow-hidden animate-slide-up">
-                                    <div className="p-4 border-b border-slate-700">
-                                        <h3 className="font-semibold text-slate-200">Notifications</h3>
-                                    </div>
-                                    <div className="max-h-80 overflow-y-auto">
-                                        {DEMO_NOTIFICATIONS.map((notif) => (
-                                            <div
-                                                key={notif.id}
-                                                className={`p-4 border-b border-slate-700/50 hover:bg-slate-800/50 transition-colors cursor-pointer ${!notif.read ? 'bg-yellow-500/5' : ''
-                                                    }`}
-                                            >
-                                                <div className="flex items-start gap-3">
-                                                    <div className={`w-2 h-2 mt-2 rounded-full ${notif.type === 'price-drop' ? 'bg-green-500' :
-                                                        notif.type === 'stock-alert' ? 'bg-orange-500' :
-                                                            notif.type === 'delivery' ? 'bg-blue-500' : 'bg-slate-500'
-                                                        }`} />
-                                                    <div className="flex-1">
-                                                        <p className="text-sm font-medium text-slate-200">{notif.title}</p>
-                                                        <p className="text-xs text-slate-400 mt-1">{notif.message}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="p-3 bg-slate-800/50">
-                                        <button className="w-full text-sm text-yellow-400 hover:text-yellow-300 transition-colors">
-                                            View all notifications
-                                        </button>
-                                    </div>
+                                <div className="absolute right-0 mt-2 w-80 glass-card rounded-xl shadow-2xl overflow-hidden animate-slide-up p-4">
+                                    <p className="text-sm text-slate-300">Click the main Bell icon in the dashboard to view notifications.</p>
                                 </div>
                             )}
                         </div>

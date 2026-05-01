@@ -94,6 +94,39 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                     }))
                 }));
                 setProjects(mappedProjects);
+
+                // Check for budget alerts
+                mappedProjects.forEach(async (p) => {
+                    if (p.totalBudget > 0 && p.spent >= p.totalBudget * 0.8) {
+                        const title = `Budget Alert: ${p.name}`;
+                        const { data: existing } = await supabase
+                            .from('notifications')
+                            .select('id')
+                            .eq('user_id', user.id)
+                            .eq('title', title)
+                            .eq('read', false)
+                            .limit(1);
+                        
+                        if (!existing || existing.length === 0) {
+                            await supabase.from('notifications').insert({
+                                user_id: user.id,
+                                type: 'system',
+                                title: title,
+                                message: `Your project "${p.name}" has reached ${Math.round((p.spent / p.totalBudget) * 100)}% of its budget.`,
+                                read: false
+                            });
+                        }
+                    }
+                });
+
+                // Cleanup Welcome Message if projects exist
+                if (mappedProjects.length > 0) {
+                    await supabase
+                        .from('notifications')
+                        .delete()
+                        .eq('user_id', user.id)
+                        .eq('title', 'Welcome to BuildCompare SA!');
+                }
             }
         } catch (e: any) {
             clearTimeout(timer);

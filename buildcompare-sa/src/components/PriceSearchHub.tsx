@@ -42,6 +42,8 @@ import { Material, ComparisonResult, PriceQuote } from '@/types';
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
 import { useToast } from '@/contexts/ToastContext';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { createClient } from '@/utils/supabase/client';
 
 interface PriceSearchHubProps {
     initialMaterials?: Material[];
@@ -59,6 +61,8 @@ const popularSearchItems: Material[] = [
 ];
 
 export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
+    const { user } = useAuthContext();
+    const supabase = createClient();
     const { showWarning, showSuccess, showInfo } = useToast();
     const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -247,6 +251,34 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
                         priceConfidence: r.priceConfidence || 'medium',
                         lastUpdated: new Date(),
                     } as PriceQuote));
+
+                    // Trigger Price Drop Notification if discount > 5%
+                    if (user && data.cheapest && data.marketInsight?.averagePrice) {
+                        const avgVal = data.marketInsight.averagePrice;
+                        const currentVal = data.cheapest.price;
+                        const discountVal = (avgVal - currentVal) / avgVal;
+
+                        if (discountVal > 0.05) {
+                            const title = `Price Drop: ${data.cheapest.product}`;
+                            // Only insert if not already alerted for this product today
+                            const { data: existing } = await supabase
+                                .from('notifications')
+                                .select('id')
+                                .eq('user_id', user.id)
+                                .eq('title', title)
+                                .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+                            if (!existing || existing.length === 0) {
+                                await supabase.from('notifications').insert({
+                                    user_id: user.id,
+                                    type: 'price-drop',
+                                    title: title,
+                                    message: `${data.cheapest.product} is now R${currentVal} at ${data.cheapest.storeName} (${Math.round(discountVal * 100)}% below market average).`,
+                                    read: false
+                                });
+                            }
+                        }
+                    }
 
                     const validQuotes = quotes.filter(q => typeof q.price === 'number' && q.price > 0);
                     if (validQuotes.length === 0) return null;
