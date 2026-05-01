@@ -273,11 +273,6 @@ export async function POST(req: NextRequest) {
         const file = formData.get('file') as File;
         const fileName = formData.get('fileName') as string;
 
-        if (!isDeepseekConfigured) {
-            console.warn('⚠️ No AI API keys found. Returning mock data.');
-            return NextResponse.json({ error: 'AI API keys are not configured. Cannot process image.' }, { status: 500 });
-        }
-
         if (!file) {
             return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
         }
