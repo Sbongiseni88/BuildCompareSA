@@ -19,7 +19,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 const PriceSearchHub = dynamic(() => import('@/components/PriceSearchHub'), { ssr: false });
 const ProjectsManager = dynamic(() => import('@/components/ProjectsManager'), { ssr: false });
 const SmartEstimator = dynamic(() => import('@/components/SmartEstimator'), { ssr: false });
-const CostAnalysis = dynamic(() => import('@/components/CostAnalysis'), { ssr: false });
+
 const AccountProfile = dynamic(() => import('@/components/AccountProfile'), { ssr: false });
 const About = dynamic(() => import('@/components/About'), { ssr: false });
 import {
@@ -31,7 +31,7 @@ import {
   Calculator,
   Search,
   FolderOpen,
-  PieChart,
+
   Info as InfoIcon,
   User,
   Keyboard,
@@ -44,7 +44,7 @@ const TAB_META: Record<string, { label: string; icon: React.ElementType }> = {
   'estimator': { label: 'Smart Estimator', icon: Calculator },
   'compare': { label: 'Price Search', icon: Search },
   'projects': { label: 'Projects Hub', icon: FolderOpen },
-  'cost-analysis': { label: 'Cost Analysis', icon: PieChart },
+
   'about': { label: 'About', icon: InfoIcon },
   'account': { label: 'Account', icon: User },
 };
@@ -165,10 +165,7 @@ export default function Home() {
         return <ProjectsManager
           onNavigateToCompare={() => setActiveTab('compare')}
           onNavigateToEstimator={() => setActiveTab('estimator')}
-          onNavigateToAnalytics={() => setActiveTab('cost-analysis')}
         />;
-      case 'cost-analysis':
-        return <CostAnalysis />;
       case 'about':
         return <About />;
       case 'account':

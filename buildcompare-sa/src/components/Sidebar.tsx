@@ -6,7 +6,6 @@ import {
     Calculator,
     Search,
     FolderOpen,
-    PieChart,
     Settings,
     LogOut,
     HardHat,
@@ -30,7 +29,6 @@ export default function Sidebar({ activeTab, onTabChange, onFeedbackClick, isCol
         { id: 'estimator', label: 'Smart Estimator', icon: Calculator },
         { id: 'compare', label: 'Price Search', icon: Search },
         { id: 'projects', label: 'Projects Hub', icon: FolderOpen },
-        { id: 'cost-analysis', label: 'Cost Analysis', icon: PieChart },
     ];
 
     const bottomItems = [

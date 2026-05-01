@@ -14,7 +14,7 @@ import {
     Download,
     ChevronRight,
     Package,
-    TrendingUp,
+
     X,
     Check,
     Loader2,
@@ -32,13 +32,11 @@ import { ProjectCardSkeleton } from '@/components/SkeletonLoader';
 interface ProjectsManagerProps {
     onNavigateToCompare?: () => void;
     onNavigateToEstimator?: () => void;
-    onNavigateToAnalytics?: () => void;
 }
 
 export default function ProjectsManager({
     onNavigateToCompare,
     onNavigateToEstimator,
-    onNavigateToAnalytics
 }: ProjectsManagerProps) {
     const { user, loading: authLoading } = useAuthContext();
     const { showSuccess, showError, showWarning } = useToast();
@@ -350,35 +348,35 @@ export default function ProjectsManager({
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Project Folders</h1>
-                    <p className="text-slate-400">Manage your construction projects and track material costs</p>
+                    <h1 className="text-3xl font-extrabold text-white">Project Folders</h1>
+                    <p className="text-slate-300 text-lg mt-1">Manage your construction projects and track material costs</p>
                 </div>
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="btn-primary flex items-center gap-2"
+                    className="btn-primary flex items-center gap-2 min-h-[48px] text-lg font-bold"
                 >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-5 h-5" />
                     New Project
                 </button>
             </div>
 
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="glass-card p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Total Projects</p>
-                    <p className="text-2xl font-bold text-white mt-1">{stats.total}</p>
+                <div className="glass-card p-5">
+                    <p className="text-sm text-slate-400 uppercase tracking-wider font-bold">Total Projects</p>
+                    <p className="text-3xl font-extrabold text-white mt-1">{stats.total}</p>
                 </div>
-                <div className="glass-card p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Active</p>
-                    <p className="text-2xl font-bold text-green-400 mt-1">{stats.active}</p>
+                <div className="glass-card p-5">
+                    <p className="text-sm text-slate-400 uppercase tracking-wider font-bold">Active</p>
+                    <p className="text-3xl font-extrabold text-green-400 mt-1">{stats.active}</p>
                 </div>
-                <div className="glass-card p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Total Budget</p>
-                    <p className="text-2xl font-bold text-yellow-400 mt-1">{formatCurrency(stats.totalBudget)}</p>
+                <div className="glass-card p-5">
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Total Budget</p>
+                    <p className="text-2xl font-extrabold text-yellow-400 mt-1">{formatCurrency(stats.totalBudget)}</p>
                 </div>
-                <div className="glass-card p-4">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Total Spent</p>
-                    <p className="text-2xl font-bold text-white mt-1">{formatCurrency(stats.totalSpent)}</p>
+                <div className="glass-card p-5">
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">Total Spent</p>
+                    <p className="text-2xl font-extrabold text-white mt-1">{formatCurrency(stats.totalSpent)}</p>
                 </div>
             </div>
 
@@ -450,123 +448,138 @@ export default function ProjectsManager({
                         return (
                             <div
                                 key={project.id}
-                                className={`glass-card p-5 group hover:border-yellow-500/30 transition-all cursor-pointer relative ${isOverBudget ? 'animate-shake border-red-500/50 shadow-red-900/20' : ''} ${(project as any)._pending ? 'animate-pulse border-yellow-500/30' : ''
+                                className={`glass-card group hover:border-yellow-500/30 transition-all cursor-pointer relative overflow-hidden ${isOverBudget ? 'animate-shake border-red-500/50 shadow-red-900/20' : ''} ${(project as any)._pending ? 'animate-pulse border-yellow-500/30' : ''
                                     }`}
                                 style={{ animationDelay: `${index * 50}ms` }}
                                 onClick={() => setSelectedProject(project)}
                             >
-                                {/* Menu Button */}
-                                <div className="absolute top-4 right-4">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setShowMenu(showMenu === project.id ? null : project.id);
-                                        }}
-                                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                    >
-                                        <MoreHorizontal className="w-5 h-5" />
-                                    </button>
-
-                                    {/* Dropdown Menu */}
-                                    {showMenu === project.id && (
-                                        <div className="absolute right-0 top-full mt-1 w-48 glass-card rounded-xl shadow-2xl overflow-hidden z-10 animate-slide-up">
-                                            <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
-                                                <Edit2 className="w-4 h-4" />
-                                                Edit Project
-                                            </button>
-                                            <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left">
-                                                <Archive className="w-4 h-4" />
-                                                Archive
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    exportProjectToPDF(project);
-                                                    setShowMenu(null);
-                                                }}
-                                                className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left"
-                                            >
-                                                <Download className="w-4 h-4" />
-                                                Export PDF
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setDeleteConfirmId(project.id);
-                                                    setShowMenu(null);
-                                                }}
-                                                className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm text-left border-t border-slate-700"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                                Delete
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Project Icon */}
-                                <div className="w-12 h-12 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-xl flex items-center justify-center mb-4">
-                                    <FolderOpen className="w-6 h-6 text-yellow-400" />
-                                </div>
-
-                                {/* Project Info */}
-                                <div className="flex items-start justify-between mb-3">
-                                    <div className="flex-1 pr-8">
-                                        <h3 className="font-semibold text-white group-hover:text-yellow-400 transition-colors">
-                                            {project.name}
-                                        </h3>
-                                        <span className={`badge ${(project as any)._pending ? 'badge-warning' : getStatusColor(project.status)} mt-2`}>
-                                            {(project as any)._pending ? 'Saving...' : project.status}
+                                {/* Folder Tab */}
+                                <div className="flex items-center">
+                                    <div className="bg-yellow-500/20 px-5 py-2 rounded-b-none rounded-t-xl border-b-0 border border-yellow-500/20">
+                                        <FolderOpen className="w-5 h-5 text-yellow-400 inline-block mr-2" />
+                                        <span className={`text-sm font-bold px-3 py-1.5 rounded-full min-h-[36px] inline-flex items-center ${
+                                            project.status === 'active' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                                            project.status === 'completed' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                            'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                                        }`}>
+                                            {(project as any)._pending ? 'Saving...' : project.status.charAt(0).toUpperCase() + project.status.slice(1).replace('-', ' ')}
                                         </span>
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-4 text-sm text-slate-400 mb-4">
-                                    <span className="flex items-center gap-1">
-                                        <MapPin className="w-3.5 h-3.5" />
-                                        {project.location}
-                                    </span>
-                                </div>
-
-                                <div className="flex items-center gap-1 text-xs text-slate-500 mb-4">
-                                    <Clock className="w-3 h-3" />
-                                    Created {new Date(project.createdAt).toLocaleDateString('en-ZA', {
-                                        day: 'numeric',
-                                        month: 'short',
-                                        year: 'numeric'
-                                    })}
-                                </div>
-
-                                {/* Budget Progress */}
-                                <div>
-                                    <div className="flex items-center justify-between text-sm mb-2">
-                                        <span className="text-slate-400">Budget</span>
-                                        <span className={`font-medium ${isOverBudget ? 'text-red-400' : 'text-white'}`}>
-                                            {formatCurrency(project.spent)} / {formatCurrency(project.totalBudget)}
-                                        </span>
-                                    </div>
-                                    <div className="progress-bar">
-                                        <div
-                                            className="progress-bar-fill"
-                                            style={{
-                                                width: `${Math.min(progressPercent, 100)}%`,
-                                                background: isOverBudget
-                                                    ? 'linear-gradient(90deg, #ef4444, #dc2626)'
-                                                    : progressPercent > 80
-                                                        ? 'linear-gradient(90deg, #f97316, #ea580c)'
-                                                        : 'linear-gradient(90deg, #facc15, #eab308)'
+                                <div className="p-5 pt-4">
+                                    {/* Menu Button */}
+                                    <div className="absolute top-4 right-4">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowMenu(showMenu === project.id ? null : project.id);
                                             }}
-                                        />
-                                    </div>
-                                </div>
+                                            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors opacity-0 group-hover:opacity-100 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                                        >
+                                            <MoreHorizontal className="w-5 h-5" />
+                                        </button>
 
-                                {/* Materials Count */}
-                                <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between">
-                                    <div className="flex items-center gap-2 text-sm text-slate-400">
-                                        <Package className="w-4 h-4" />
-                                        {project.materials.length} materials
+                                        {/* Dropdown Menu */}
+                                        {showMenu === project.id && (
+                                            <div className="absolute right-0 top-full mt-1 w-48 glass-card rounded-xl shadow-2xl overflow-hidden z-10 animate-slide-up">
+                                                <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left min-h-[48px]">
+                                                    <Edit2 className="w-4 h-4" />
+                                                    Edit Project
+                                                </button>
+                                                <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left min-h-[48px]">
+                                                    <Archive className="w-4 h-4" />
+                                                    Archive
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        exportProjectToPDF(project);
+                                                        setShowMenu(null);
+                                                    }}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left min-h-[48px]"
+                                                >
+                                                    <Download className="w-4 h-4" />
+                                                    Export PDF
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setDeleteConfirmId(project.id);
+                                                        setShowMenu(null);
+                                                    }}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-sm text-left border-t border-slate-700 min-h-[48px]"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                    <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-yellow-400 transition-colors" />
+
+                                    {/* Project Info */}
+                                    <h3 className="text-xl font-bold text-white group-hover:text-yellow-400 transition-colors mb-2 pr-10">
+                                        {project.name}
+                                    </h3>
+
+                                    <div className="flex items-center gap-4 text-sm text-slate-400 mb-4">
+                                        <span className="flex items-center gap-1">
+                                            <MapPin className="w-4 h-4" />
+                                            {project.location}
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <Clock className="w-3.5 h-3.5" />
+                                            {new Date(project.createdAt).toLocaleDateString('en-ZA', {
+                                                day: 'numeric',
+                                                month: 'short',
+                                                year: 'numeric'
+                                            })}
+                                        </span>
+                                    </div>
+
+                                    {/* Budget Progress */}
+                                    <div className="mb-4">
+                                        <div className="flex items-center justify-between text-sm mb-2">
+                                            <span className="text-slate-400 font-semibold">Budget</span>
+                                            <span className={`font-bold text-lg ${isOverBudget ? 'text-red-400' : 'text-white'}`}>
+                                                {formatCurrency(project.spent)} / {formatCurrency(project.totalBudget)}
+                                            </span>
+                                        </div>
+                                        <div className="progress-bar">
+                                            <div
+                                                className="progress-bar-fill"
+                                                style={{
+                                                    width: `${Math.min(progressPercent, 100)}%`,
+                                                    background: isOverBudget
+                                                        ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                                                        : progressPercent > 80
+                                                            ? 'linear-gradient(90deg, #f97316, #ea580c)'
+                                                            : 'linear-gradient(90deg, #facc15, #eab308)'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Quick View: Last 3 Materials */}
+                                    <div className="pt-4 border-t border-slate-700">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2 text-sm text-slate-400 font-semibold">
+                                                <Package className="w-4 h-4" />
+                                                {project.materials.length} materials
+                                            </div>
+                                            <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-yellow-400 transition-colors" />
+                                        </div>
+                                        {project.materials.length > 0 && (
+                                            <div className="space-y-1">
+                                                {project.materials.slice(-3).map((m) => (
+                                                    <div key={m.id} className="flex items-center justify-between text-sm">
+                                                        <span className="text-slate-400 truncate max-w-[70%]">{m.name}</span>
+                                                        <span className="text-yellow-400 font-mono font-semibold">{m.quantity} {m.unit}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -588,36 +601,36 @@ export default function ProjectsManager({
                 </div>
             )}
 
-            {/* Empty State – Enhanced */}
+            {/* Empty State – Quick Start for 40+ */}
             {!isLoading && !fetchError && filteredProjects.length === 0 && (
-                <div className="glass-card p-12 text-center">
-                    <div className="w-20 h-20 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-5 animate-float">
-                        <FolderOpen className="w-10 h-10 text-yellow-500" />
+                <div className="glass-card p-16 text-center">
+                    <div className="w-24 h-24 bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl flex items-center justify-center mx-auto mb-6 animate-float">
+                        <FolderOpen className="w-12 h-12 text-yellow-500" />
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2">
+                    <h3 className="text-2xl font-extrabold text-white mb-3">
                         {searchQuery ? 'No Matching Job Folders' : 'No Job Folders Yet'}
                     </h3>
-                    <p className="text-slate-400 mb-6 max-w-sm mx-auto leading-relaxed">
+                    <p className="text-slate-300 text-lg mb-8 max-w-md mx-auto leading-relaxed">
                         {searchQuery
                             ? 'Try adjusting your search or filters to find what you\'re looking for.'
-                            : 'Create your first job folder to start tracking materials, budgets, and savings across all your construction sites.'}
+                            : 'Get started by creating your first project folder, or generate a Bill of Quantities with the Smart Estimator.'}
                     </p>
                     {!searchQuery && (
-                        <div className="flex flex-col sm:flex-row items-center gap-3 justify-center">
+                        <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
                             <button
                                 onClick={() => setShowCreateModal(true)}
-                                className="btn-primary flex items-center gap-2"
+                                className="btn-primary flex items-center gap-2 min-h-[56px] text-lg font-bold px-8"
                             >
-                                <Plus className="w-4 h-4" />
+                                <Plus className="w-5 h-5" />
                                 Create Your First Folder
                             </button>
                             {onNavigateToEstimator && (
                                 <button
                                     onClick={onNavigateToEstimator}
-                                    className="btn-secondary flex items-center gap-2 text-sm"
+                                    className="btn-secondary flex items-center gap-2 min-h-[56px] text-lg font-bold px-8"
                                 >
-                                    <Calculator className="w-4 h-4" />
-                                    Or Estimate a BoQ First
+                                    <Zap className="w-5 h-5" />
+                                    Quick Start: Estimate a BoQ
                                 </button>
                             )}
                         </div>
@@ -812,19 +825,9 @@ export default function ProjectsManager({
                         <div className="flex gap-3 mt-6 pt-6 border-t border-slate-700">
                             <button
                                 onClick={() => {
-                                    if (onNavigateToAnalytics) onNavigateToAnalytics();
-                                    // Also could pass project context if needed
-                                }}
-                                className="btn-secondary flex-1 flex items-center justify-center gap-2"
-                            >
-                                <TrendingUp className="w-4 h-4" />
-                                View Analytics
-                            </button>
-                            <button
-                                onClick={() => {
                                     if (onNavigateToCompare) onNavigateToCompare();
                                 }}
-                                className="btn-primary flex-1 flex items-center justify-center gap-2"
+                                className="btn-primary flex-1 flex items-center justify-center gap-2 min-h-[48px]"
                             >
                                 <Package className="w-4 h-4" />
                                 Compare Prices
