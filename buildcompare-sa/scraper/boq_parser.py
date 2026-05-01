@@ -78,7 +78,7 @@ async def process_chunk(client: httpx.AsyncClient, chunk_str: str, location: str
 @router.post("/boq/extract")
 async def extract_boq(file: UploadFile = File(...), location: str = Form(""), deepseek_key: str = Form("")):
     if not deepseek_key:
-        raise HTTPException(status_code=400, detail="Missing DEEPSEEK_API_KEY")
+        raise HTTPException(status_code=400, detail="Missing deepseek_api")
 
     content = await file.read()
     

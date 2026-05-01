@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     }
 
     const isConfigured = checkDeepseekConfigured();
-    console.log(`[Diagnostic] DEEPSEEK_API_KEY present: ${isConfigured}`);
+    console.log(`[Diagnostic] deepseek_api present: ${isConfigured}`);
 
     if (!isConfigured) {
         console.warn('⚠️ Deepseek API keys not found. Falling back to simple heuristic estimation.');

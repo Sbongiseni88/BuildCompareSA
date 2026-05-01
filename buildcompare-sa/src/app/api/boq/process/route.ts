@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
     
     // Pass API Key natively so Python can handle parallel execution
     if (!formData.has('deepseek_key')) {
-        const key = process.env.DEEPSEEK_API_KEY || '';
+        const key = process.env.deepseek_api || '';
         if (key) {
             formData.append('deepseek_key', key);
         }
