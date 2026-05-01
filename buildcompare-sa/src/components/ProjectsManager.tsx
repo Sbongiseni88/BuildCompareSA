@@ -27,7 +27,7 @@ import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ProjectCardSkeleton } from '@/components/SkeletonLoader';
+
 
 interface ProjectsManagerProps {
     onNavigateToCompare?: () => void;
@@ -413,12 +413,14 @@ export default function ProjectsManager({
                 </div>
             </div>
 
-            {/* Loading State – Skeleton */}
+            {/* Loading State – Accessible message instead of silent skeleton */}
     {(authLoading || (isLoading && projects.length === 0 && !fetchError)) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-                <ProjectCardSkeleton key={i} />
-            ))}
+        <div className="glass-card p-12 text-center">
+            <div className="flex flex-col items-center gap-4">
+                <div className="w-14 h-14 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+                <h2 className="text-2xl font-bold text-white">Loading Your Projects...</h2>
+                <p className="text-lg text-slate-300">Fetching your job folders from the cloud.</p>
+            </div>
         </div>
     )}
 

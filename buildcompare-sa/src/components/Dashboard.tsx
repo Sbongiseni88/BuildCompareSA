@@ -19,7 +19,7 @@ import {
     Info,
 } from 'lucide-react';
 import MarketTicker from './MarketTicker';
-import { StatsSkeleton, ProjectCardSkeleton, WelcomeSkeleton, SpendAnalysisSkeleton } from './SkeletonLoader';
+import { StatsSkeleton, ProjectCardSkeleton, SpendAnalysisSkeleton } from './SkeletonLoader';
 import { createClient } from '@/utils/supabase/client';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { Project } from '@/types';
@@ -37,6 +37,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
     const supabase = supabaseRef.current;
     const [projects, setProjects] = React.useState<Project[]>([]);
     const [dataLoading, setDataLoading] = React.useState(false);
+    const [dataReady, setDataReady] = React.useState(false);
     const [fetchError, setFetchError] = React.useState<string | null>(null);
     const abortControllerRef = React.useRef<AbortController | null>(null);
 
@@ -90,23 +91,43 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
             clearTimeout(timer);
             if (e.name !== 'AbortError') {
                 console.error("Dashboard fetch error:", e);
-            }
-            if (projects.length === 0) {
                 setFetchError(e.message || "Failed to load dashboard data");
+            } else {
+                setFetchError("Connection timed out. Please check your internet.");
             }
         } finally {
             setDataLoading(false);
+            setDataReady(true);
         }
-    }, [user, supabase, projects.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, supabase]);
 
     React.useEffect(() => {
         if (authLoading) return;
-        if (!user?.id) return;
+        if (!user?.id) {
+            // Auth resolved but no user — mark ready immediately so we don't shimmer
+            setDataReady(true);
+            setDataLoading(false);
+            return;
+        }
         fetchDashboardData();
         return () => {
             if (abortControllerRef.current) abortControllerRef.current.abort();
         };
-    }, [user?.id, authLoading, fetchDashboardData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, authLoading]);
+
+    // Hard failsafe: if data loading takes >8s, force-stop the shimmer
+    React.useEffect(() => {
+        if (!dataLoading) return;
+        const hardTimeout = setTimeout(() => {
+            console.warn('⚠️ Dashboard: data loading exceeded 8s hard limit. Forcing render.');
+            setDataLoading(false);
+            setDataReady(true);
+            if (!fetchError) setFetchError('Loading took too long. Tap "Try Again" to retry.');
+        }, 8000);
+        return () => clearTimeout(hardTimeout);
+    }, [dataLoading, fetchError]);
 
     const { containerRef, isRefreshing, pullDistance, progress } = usePullToRefresh({
         onRefresh: fetchDashboardData,
@@ -164,8 +185,8 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
         }).format(value);
     };
 
-    // Skeleton loading state
-    const isLoading = authLoading || (dataLoading && projects.length === 0 && !fetchError);
+    // Skeleton loading state — only show if auth is still resolving OR data hasn't been fetched yet
+    const isLoading = authLoading || (!dataReady && !fetchError);
 
     if (isLoading) {
         return (
@@ -175,8 +196,14 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     <MarketTicker />
                 </div>
 
-                {/* Welcome Skeleton */}
-                <WelcomeSkeleton />
+                {/* Accessible loading message instead of silent shimmer */}
+                <div className="glass-card p-8 rounded-2xl text-center">
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="w-14 h-14 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+                        <h2 className="text-2xl font-bold text-white">Loading Your Sites...</h2>
+                        <p className="text-lg text-slate-300">Connecting to your project data. This should only take a moment.</p>
+                    </div>
+                </div>
 
                 {/* Stats Skeleton */}
                 <StatsSkeleton />
