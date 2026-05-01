@@ -443,36 +443,9 @@ export async function GET(request: Request) {
         marketInsight = `Live prices retrieved from ${allQuotes.map(q => q.storeName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}.`;
     }
 
-    // ── STEP 4: Fill in remaining stores with market knowledge ──
-    if (knowledge) {
-        const coveredStores = new Set(allQuotes.map(q => q.store));
-        const missingStores = SA_STORES.filter(s => !coveredStores.has(s.id));
-
-        if (missingStores.length > 0) {
-            const estimates = generateMarketEstimates(query, knowledge, lat, lng);
-            const newEstimates = estimates.filter(e => !coveredStores.has(e.store));
-            allQuotes.push(...newEstimates);
-            console.log(`📊 Added ${newEstimates.length} market-knowledge estimates`);
-        }
-
-        // Add labor estimates to live-scrape results that don't have them
-        const laborRange = knowledge.laborPerUnit;
-        const midLabor = laborRange[0] + (laborRange[1] - laborRange[0]) * 0.5;
-        for (const q of allQuotes) {
-            if (q.laborEstimate === 0 && midLabor > 0) {
-                q.laborEstimate = Math.round(midLabor);
-            }
-            q.totalCost = q.price + q.deliveryCost;
-        }
-
-        if (!marketInsight) {
-            marketInsight = `${knowledge.comparisonNote} Typical range: R${knowledge.priceRange[0]}–R${knowledge.priceRange[1]} per ${knowledge.defaultUnit}.`;
-        }
-    }
-
-    // ── STEP 5: Fallback to full AI estimate if still empty ──
+    // ── STEP 4: Fallback to full AI estimate if no scrape results ──
     if (allQuotes.length === 0) {
-        console.log('⚠️ No results from scraping or knowledge base. Using AI estimate...');
+        console.log('⚠️ No results from scraping. Using AI estimate...');
         allQuotes = await generateAIEstimate(query, lat, lng);
         marketInsight = 'Prices are AI estimates based on typical SA market patterns. Confirm at store before purchasing.';
     }

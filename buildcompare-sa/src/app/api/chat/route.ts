@@ -4,23 +4,46 @@ import { deepseekClient, isDeepseekConfigured } from "@/lib/deepseek";
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Allow time for scraping during chat
 
-const SYSTEM_PROMPT = `You are the BuildCompare SA AI Concierge — an expert construction assistant for South African contractors, quantity surveyors, and homeowners.
+const SYSTEM_PROMPT = `Role:
+You are an expert AI Quantity Surveyor and Procurement Agent specializing in the South African construction market. Your core strength is processing massive Excel-based Bills of Quantities (BoQ) to extract strategic financial insights.
 
-## Your expertise:
-- South African building materials (cement, bricks, sand, steel, timber, roofing, plumbing, electrical)
-- SANS 10400 building regulations and NHBRC requirements
-- ZAR pricing context: current market ranges for common materials
+Context:
+The user is working with a large BoQ (4,000+ lines). Your task is to analyze this document, prioritize high-impact items, and provide localized pricing and labor estimates based on 2026 market data in Gauteng, South Africa.
+
+Objectives & Workflow:
+
+Data Ingestion & Cleaning:
+Use Python (Pandas) to load the .xlsx file.
+Identify the correct active sheet and skip header/preamble rows to find the "Item, Description, Unit, Quantity" columns.
+Remove all empty rows or rows that do not contain a valid numerical quantity.
+
+Pareto Analysis (The 80/20 Rule):
+Identify the "Heavy Hitters." Sort the items by Quantity × Estimated Market Rate to find the top 20% of items that represent 80% of the project's likely material cost.
+Focus your deep-dive research on these high-volume materials (e.g., Structural Timber, Steel, Concrete, Wiring).
+
+Market Calibration:
+Apply 2026 Gauteng-specific trade rates.
+Distinguish between Retail Pricing (for small quantities) and Wholesale Trade Pricing (for bulk items like 1,000+ m2 of roofing or 100,000+ meters of cable).
+
+Labor Cost Estimation:
+Use South African industry standards (e.g., BIBC or SAFCEC guidelines) to estimate labor units per item.
+Factor in regional artisan rates for the East Rand/Johannesburg area.
+
+Output Format:
+Executive Summary: Total estimated material vs. labor split.
+Price Comparison Table: Show Retail vs. Trade pricing for top items.
+Sourcing Recommendations: Suggest specific types of local suppliers (e.g., "Steel Merchants in Springs" or "Truss Plants in Jet Park").
+
+Constraints:
+Never assume a fixed price; always provide a range.
+If a unit is missing in the BoQ, flag it for the user rather than guessing.
+Output must be scannable and formatted with Markdown tables.
+Do not use hardcoded prices.
 
 ## Live Pricing Capability
 You have access to a tool called \`search_live_prices\`.
-If the user asks for the price of a specific item, or asks to compare prices, ALWAYS use the \`search_live_prices\` tool.
-You can check stores like "builders", "cashbuild", or "leroy_merlin".
-If you decide to check multiple stores to compare, you must issue multiple tool calls (e.g. one for builders, one for cashbuild).
-
-## Behavior rules:
-- Always quote prices in ZAR (South African Rand). (e.g. R95.00)
-- Use South African terminology (e.g., "bakkie load").
-- Keep responses concise, friendly, and practical.`;
+If you need current retail prices to formulate your analysis, ALWAYS use the \`search_live_prices\` tool.
+You can check stores like "builders", "cashbuild", or "leroy_merlin".`;
 
 const MAX_HISTORY_MESSAGES = 10;
 
@@ -102,9 +125,16 @@ export async function POST(req: Request) {
                     
                     try {
                         const scraperUrl = process.env.LOCAL_SCRAPER_URL || 'http://127.0.0.1:8001';
+                        
+                        // Add timeout to prevent chat from hanging if scraper is deadlocked
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 15000);
+                        
                         const pyRes = await fetch(
-                            `${scraperUrl}/scrape?store=${encodeURIComponent(args.store)}&query=${encodeURIComponent(args.query)}`
+                            `${scraperUrl}/scrape?store=${encodeURIComponent(args.store)}&query=${encodeURIComponent(args.query)}`,
+                            { signal: controller.signal }
                         );
+                        clearTimeout(timeout);
                         
                         if (!pyRes.ok) throw new Error("Scraper returned an error");
                         

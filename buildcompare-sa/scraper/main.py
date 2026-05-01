@@ -105,8 +105,8 @@ async def scrape_store(store: str = Query(...), query: str = Query(...)):
     url = STORE_URLS[store].format(query=safe_q)
     
     try:
-        # Tier 2 fallback: Heavy headless playwright rendering
-        html = await fetch_html_playwright(url)
+        # Tier 2 fallback: Heavy headless playwright rendering with absolute timeout
+        html = await asyncio.wait_for(fetch_html_playwright(url), timeout=25.0)
         clean_text = extract_meaningful_text(html)
         
         return {
