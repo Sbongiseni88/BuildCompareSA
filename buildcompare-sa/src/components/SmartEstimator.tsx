@@ -12,7 +12,9 @@ import {
     Loader2,
     FileCheck,
     Plus,
-    Download
+    Download,
+    AlertCircle,
+    RefreshCw
 } from 'lucide-react';
 import { Material } from '@/types';
 import { useToast } from '@/contexts/ToastContext';
@@ -70,7 +72,7 @@ export default function SmartEstimator() {
                 }));
 
                 // Tack on labor line items if the checkbox was ticked
-                if (includeLabor) {
+                if (includeLabor && materials.length > 0) {
                     materials.push({ id: `lab-${Date.now()}-1`, name: 'General Labor', category: 'labor', quantity: Math.ceil(materials.length / 5) * 2, unit: 'days' });
                     materials.push({ id: `lab-${Date.now()}-2`, name: 'Artisan (Bricklayer/Plasterer)', category: 'labor', quantity: Math.ceil(materials.length / 5) * 3, unit: 'days' });
                 }
@@ -80,6 +82,7 @@ export default function SmartEstimator() {
             } else {
                 // Fallback logic could go here if needed
                 setGeneratedBoQ([]);
+                setStep(2);
             }
 
         } catch (error) {
@@ -266,60 +269,78 @@ export default function SmartEstimator() {
                                     </h3>
                                     <p className="text-sm text-slate-400">Based on engineering inputs provided</p>
                                 </div>
-                                <span className="px-3 py-1 bg-yellow-500/10 text-yellow-400 text-xs font-bold rounded-full border border-yellow-500/20">
-                                    AI CONFIDENCE: 94%
-                                </span>
+                                {generatedBoQ.length > 0 && (
+                                    <span className="px-3 py-1 bg-yellow-500/10 text-yellow-400 text-xs font-bold rounded-full border border-yellow-500/20">
+                                        AI CONFIDENCE: 94%
+                                    </span>
+                                )}
                             </div>
 
-                            <div className="table-container">
-                                <table className="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Material Item</th>
-                                            <th>Category</th>
-                                            <th>Est. Quantity</th>
-                                            <th>Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {generatedBoQ.map((item) => (
-                                            <tr key={item.id}>
-                                                <td className="font-medium text-white">{item.name}</td>
-                                                <td className="text-slate-400 text-sm">
-                                                    <span className={`px-2 py-0.5 rounded text-xs ${item.category === 'labor' ? 'bg-blue-500/20 text-blue-400' :
-                                                        item.category === 'cement' ? 'bg-gray-500/20 text-gray-300' : 'bg-slate-800 text-slate-400'
-                                                        }`}>
-                                                        {item.category?.toUpperCase() || 'GENERAL'}
-                                                    </span>
-                                                </td>
-                                                <td className="font-mono text-yellow-400">{item.quantity} {item.unit}</td>
-                                                <td>
-                                                    <button className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-700 hover:bg-yellow-500 hover:text-slate-900 rounded-lg transition-colors text-slate-300 font-medium">
-                                                        <Plus className="w-3 h-3" /> Add
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {generatedBoQ.length > 0 ? (
+                                <>
+                                    <div className="table-container">
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Material Item</th>
+                                                    <th>Category</th>
+                                                    <th>Est. Quantity</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {generatedBoQ.map((item) => (
+                                                    <tr key={item.id}>
+                                                        <td className="font-medium text-white">{item.name}</td>
+                                                        <td className="text-slate-400 text-sm">
+                                                            <span className={`px-2 py-0.5 rounded text-xs ${item.category === 'labor' ? 'bg-blue-500/20 text-blue-400' :
+                                                                item.category === 'cement' ? 'bg-gray-500/20 text-gray-300' : 'bg-slate-800 text-slate-400'
+                                                                }`}>
+                                                                {item.category?.toUpperCase() || 'GENERAL'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="font-mono text-yellow-400">{item.quantity} {item.unit}</td>
+                                                        <td>
+                                                            <button className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-700 hover:bg-yellow-500 hover:text-slate-900 rounded-lg transition-colors text-slate-300 font-medium">
+                                                                <Plus className="w-3 h-3" /> Add
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                            <div className="p-6 bg-slate-800/50 border-t border-slate-700 flex justify-end gap-3">
-                                <button onClick={reset} className="text-sm text-slate-400 hover:text-white px-4 py-2">
-                                    Discard
-                                </button>
-                                <button
-                                    onClick={handleDownloadPDF}
-                                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors border border-slate-600"
-                                >
-                                    <Download className="w-4 h-4" />
-                                    Download PDF
-                                </button>
-                                <button className="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
-                                    <CheckCircle className="w-4 h-4" />
-                                    Approve & Price Check
-                                </button>
-                            </div>
+                                    <div className="p-6 bg-slate-800/50 border-t border-slate-700 flex justify-end gap-3">
+                                        <button onClick={reset} className="text-sm text-slate-400 hover:text-white px-4 py-2">
+                                            Discard
+                                        </button>
+                                        <button
+                                            onClick={handleDownloadPDF}
+                                            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors border border-slate-600"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Download PDF
+                                        </button>
+                                        <button className="btn-primary flex items-center gap-2 px-6 py-2 text-sm">
+                                            <CheckCircle className="w-4 h-4" />
+                                            Approve & Price Check
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="p-12 text-center flex flex-col items-center justify-center">
+                                    <AlertCircle className="w-12 h-12 text-slate-500 mb-4" />
+                                    <h3 className="text-xl font-bold text-white mb-2">No results found</h3>
+                                    <p className="text-slate-400 mb-6 max-w-sm">
+                                        The AI couldn't generate a material list from the provided specifications. Try adding more detail.
+                                    </p>
+                                    <button onClick={generateBoQ} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition-colors border border-slate-700">
+                                        <RefreshCw className="w-4 h-4" />
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

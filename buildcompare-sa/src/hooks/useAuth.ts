@@ -25,7 +25,7 @@ export interface AuthActions {
 export type UseAuthReturn = AuthState & AuthActions;
 
 // Maximum time we wait for auth to resolve before showing the app anyway
-const AUTH_TIMEOUT_MS = 5000;
+const AUTH_TIMEOUT_MS = 3000;
 
 /**
  * Custom hook for Supabase Authentication
@@ -92,20 +92,28 @@ export function useAuth(): UseAuthReturn {
 
         async function getSession() {
             try {
+                if (!supabase) {
+                    console.error('Supabase client not initialized');
+                    setLoading(false);
+                    return;
+                }
+
                 console.log('🔐 Starting auth session check...');
                 const { data: { session }, error } = await supabase.auth.getSession();
 
                 if (cancelled) return;
 
-                if (error) {
-                    console.error('Error getting session:', error);
+                if (error || !session) {
+                    console.error('Error getting session or session is null:', error);
+                    setSession(null);
+                    setUser(null);
                     setLoading(false);
                     return;
                 }
 
                 console.log('🔐 Session result:', session ? 'Authenticated' : 'No session');
                 setSession(session);
-                setUser(session?.user ?? null);
+                setUser(session.user);
 
                 if (session?.user) {
                     try {
