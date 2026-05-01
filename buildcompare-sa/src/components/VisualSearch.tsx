@@ -86,9 +86,6 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
         const uploadedFile = acceptedFiles[0];
         if (!uploadedFile) return;
 
-        // Check if this is an image — use legacy endpoint instead
-        const isImage = uploadedFile.type.startsWith('image/');
-
         setFile(uploadedFile);
         setIsProcessing(true);
         setErrorMessage(null);
@@ -100,73 +97,9 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
         setStatusMessage('Starting...');
         setStages(INITIAL_STAGES.map(s => ({ ...s, status: 'pending', detail: undefined })));
 
-        if (isImage) {
-            // Images use the existing /api/analyze endpoint (non-streaming)
-            await handleImageUpload(uploadedFile);
-            return;
-        }
-
-        // Documents use streaming BOQ processor
-        const formData = new FormData();
-        formData.append('file', uploadedFile);
-        formData.append('fileName', uploadedFile.name);
-
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-
-        try {
-            const response = await fetch('/api/boq/process', {
-                method: 'POST',
-                body: formData,
-                signal: abortController.signal,
-            });
-
-            if (!response.ok) {
-                throw new Error(`Server error: ${response.status}`);
-            }
-
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response stream');
-
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep incomplete line
-
-                for (const line of lines) {
-                    if (!line.trim()) continue;
-                    try {
-                        const event: ProgressEvent = JSON.parse(line);
-                        handleProgressEvent(event);
-                    } catch {
-                        // Ignore malformed lines
-                    }
-                }
-            }
-
-            // Process any remaining buffer
-            if (buffer.trim()) {
-                try {
-                    const event: ProgressEvent = JSON.parse(buffer);
-                    handleProgressEvent(event);
-                } catch { /* ignore */ }
-            }
-
-        } catch (error: any) {
-            if (error.name === 'AbortError') return;
-            console.error('BOQ processing error:', error);
-            setErrorMessage(error.message || 'An unknown error occurred');
-            setStages(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'error' } : s));
-        } finally {
-            setIsProcessing(false);
-            abortControllerRef.current = null;
-        }
+        // Route ALL uploads (Images, PDFs, Excel) to the Vercel-hosted /api/analyze endpoint
+        await handleFileUpload(uploadedFile);
+        return;
     }, [onMaterialsExtracted]);
 
     const handleProgressEvent = (event: ProgressEvent) => {
@@ -205,15 +138,15 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
         updateStage(event.stage, event.message);
     };
 
-    // Legacy image upload handler (non-streaming)
-    const handleImageUpload = async (imageFile: File) => {
+    // Process file via Vercel-hosted /api/analyze endpoint
+    const handleFileUpload = async (uploadFile: File) => {
         const formData = new FormData();
-        formData.append('file', imageFile);
-        formData.append('fileName', imageFile.name);
+        formData.append('file', uploadFile);
+        formData.append('fileName', uploadFile.name);
 
         const simpleStages: ProcessingStage[] = [
-            { id: 'upload', label: 'Uploading image', icon: <Upload className="w-4 h-4" />, status: 'active' },
-            { id: 'analyze', label: 'AI Visual Analysis', icon: <Search className="w-4 h-4" />, status: 'pending' },
+            { id: 'upload', label: 'Uploading file', icon: <Upload className="w-4 h-4" />, status: 'active' },
+            { id: 'analyze', label: 'AI Document Analysis', icon: <Search className="w-4 h-4" />, status: 'pending' },
             { id: 'complete', label: 'Finalizing', icon: <CheckCircle className="w-4 h-4" />, status: 'pending' },
         ];
         setStages(simpleStages);
@@ -225,7 +158,7 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
                 s.id === 'analyze' ? { ...s, status: 'active' } : s
             ));
             setProgress(40);
-            setStatusMessage('AI is analyzing your image...');
+            setStatusMessage('AI is analyzing your document...');
 
             const response = await fetch('/api/analyze', {
                 method: 'POST',
