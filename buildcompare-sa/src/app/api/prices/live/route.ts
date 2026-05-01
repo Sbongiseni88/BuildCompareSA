@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
+import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 
 // Vercel serverless functions will timeout in 10-15s natively.
 // We explicitly request up to 60s since Playwright headless scraping takes time.
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
     }
 
-    if (!isDeepseekConfigured) {
+    if (!checkDeepseekConfigured()) {
         return NextResponse.json({ error: 'DeepSeek key missing' }, { status: 500 });
     }
 
@@ -98,7 +98,8 @@ ${rawText}
 
         console.log(`🤖 Passing ${rawText.length} chars to DeepSeek for structural parsing...`);
         
-        const chatCompletion = await deepseekClient.chat.completions.create({
+        const client = getDeepseekClient();
+        const chatCompletion = await client.chat.completions.create({
             messages: [{ role: 'system', content: systemPrompt }],
             model: 'deepseek-chat',
             temperature: 0.1,

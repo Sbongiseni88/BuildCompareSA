@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
+import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 import {
     SA_STORES,
@@ -79,9 +79,10 @@ interface CompareResponse {
 // ── AI Helper ────────────────────────────────────────────────────────────
 
 async function callAI(systemPrompt: string): Promise<string> {
-    if (isDeepseekConfigured) {
+    if (checkDeepseekConfigured()) {
         try {
-            const res = await deepseekClient.chat.completions.create({
+            const client = getDeepseekClient();
+            const res = await client.chat.completions.create({
                 messages: [{ role: 'system', content: systemPrompt }],
                 model: 'deepseek-chat',
                 temperature: 0.1,

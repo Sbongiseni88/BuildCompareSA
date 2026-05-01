@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
+import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -10,7 +10,10 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
     }
 
-    if (!isDeepseekConfigured) {
+    const isConfigured = checkDeepseekConfigured();
+    console.log(`[Diagnostic] DEEPSEEK_API_KEY present: ${isConfigured}`);
+
+    if (!isConfigured) {
         console.warn('⚠️ Deepseek API keys not found. Falling back to simple heuristic estimation.');
         return NextResponse.json({
             category: 'other',
@@ -32,10 +35,11 @@ ONLY RETURN VALID JSON. Nothing else.`;
     let rawResponse = '{}';
     let success = false;
 
-    if (isDeepseekConfigured) {
+    if (isConfigured) {
         try {
             console.log('Attempting DeepSeek model: deepseek-chat for estimate');
-            const chatCompletion = await deepseekClient.chat.completions.create({
+            const client = getDeepseekClient();
+            const chatCompletion = await client.chat.completions.create({
                 messages: [{ role: 'system', content: systemPrompt }],
                 model: 'deepseek-chat',
                 temperature: 0.1,

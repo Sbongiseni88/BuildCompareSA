@@ -16,7 +16,7 @@
 
 import { NextRequest } from 'next/server';
 import { Material } from '@/types';
-import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
+import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 import {
     isSpreadsheetFile,
@@ -56,9 +56,10 @@ interface ProgressEvent {
 
 // ── AI Call Helper ───────────────────────────────────────────────────────
 async function callAI(prompt: string): Promise<string> {
-    if (isDeepseekConfigured) {
+    if (checkDeepseekConfigured()) {
         try {
-            const res = await deepseekClient.chat.completions.create({
+            const client = getDeepseekClient();
+            const res = await client.chat.completions.create({
                 messages: [{ role: 'user', content: prompt }],
                 model: 'deepseek-chat',
                 temperature: 0.1,

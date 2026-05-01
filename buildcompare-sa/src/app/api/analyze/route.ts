@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { Material } from '@/types';
 
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
-import { deepseekClient, isDeepseekConfigured } from '@/lib/deepseek';
+import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 
 // Vision-capable models for image analysis.
 // NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
@@ -194,11 +194,12 @@ function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
 // ─── DeepSeek helpers ─────────────────────────────────────────────────────────────
 
 async function runDeepSeekCompletion(messages: any[]): Promise<string> {
-    if (!isDeepseekConfigured) throw new Error('DeepSeek API not configured');
+    if (!checkDeepseekConfigured()) throw new Error('DeepSeek API not configured');
     
     try {
         console.log('Attempting DeepSeek model: deepseek-chat');
-        const completion = await deepseekClient.chat.completions.create({
+        const client = getDeepseekClient();
+        const completion = await client.chat.completions.create({
             messages: messages as any,
             model: 'deepseek-chat',
             temperature: 0.1,

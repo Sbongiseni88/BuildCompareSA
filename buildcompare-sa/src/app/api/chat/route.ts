@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deepseekClient, isDeepseekConfigured } from "@/lib/deepseek";
+import { getDeepseekClient, checkDeepseekConfigured } from "@/lib/deepseek";
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Allow time for scraping during chat
@@ -67,7 +67,7 @@ const chatTools = [
 ];
 
 export async function POST(req: Request) {
-    if (!isDeepseekConfigured) {
+    if (!checkDeepseekConfigured()) {
         return NextResponse.json({ error: "DeepSeek API key missing. Please configure it." }, { status: 500 });
     }
 
@@ -90,7 +90,8 @@ export async function POST(req: Request) {
 
         // First pass: Ask DeepSeek if it wants to use a tool
         console.log("Chat route: Requesting DeepSeek tool decision...");
-        const response1 = await deepseekClient.chat.completions.create({
+        const client = getDeepseekClient();
+        const response1 = await client.chat.completions.create({
             model: "deepseek-chat",
             messages: messages,
             tools: chatTools,
@@ -166,7 +167,7 @@ export async function POST(req: Request) {
 
             // Second pass: Send tool results back to DeepSeek to generate the final streaming response
             console.log("Chat route: Streaming final DeepSeek response with tool data...");
-            const stream = await deepseekClient.chat.completions.create({
+            const stream = await client.chat.completions.create({
                 model: "deepseek-chat",
                 messages: messages,
                 stream: true,

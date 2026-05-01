@@ -1,11 +1,16 @@
 import OpenAI from 'openai';
 
-// Initialize the OpenAI client pointed at DeepSeek's API
-// This reads the DEEPSEEK_API_KEY from the environment
-export const deepseekClient = new OpenAI({
-    baseURL: 'https://api.deepseek.com',
-    apiKey: process.env.DEEPSEEK_API_KEY || 'missing-key',
-});
+// Initialize the OpenAI client dynamically to ensure we capture the env var at execution time
+export const getDeepseekClient = () => {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    return new OpenAI({
+        baseURL: 'https://api.deepseek.com',
+        apiKey: apiKey || 'missing-key',
+    });
+};
 
-// Helper flag so other modules know if we're actually configured
-export const isDeepseekConfigured = process.env.DEEPSEEK_API_KEY !== undefined && process.env.DEEPSEEK_API_KEY !== '';
+// Helper function to verify configuration at runtime
+export const checkDeepseekConfigured = () => {
+    const key = process.env.DEEPSEEK_API_KEY;
+    return typeof key === 'string' && key.trim().length > 0;
+};
