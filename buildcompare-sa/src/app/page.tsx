@@ -156,6 +156,7 @@ export default function Home() {
         return <Dashboard
           onNavigateToProjects={() => setActiveTab('projects')}
           onNavigateToCompare={() => setActiveTab('compare')}
+          onFeedbackClick={() => setIsFeedbackOpen(true)}
         />;
       case 'estimator':
         return <SmartEstimator />;
@@ -174,6 +175,7 @@ export default function Home() {
         return <Dashboard
           onNavigateToProjects={() => setActiveTab('projects')}
           onNavigateToCompare={() => setActiveTab('compare')}
+          onFeedbackClick={() => setIsFeedbackOpen(true)}
         />;
     }
   };

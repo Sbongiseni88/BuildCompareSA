@@ -33,9 +33,10 @@ import { useToast } from '@/contexts/ToastContext';
 interface DashboardProps {
     onNavigateToProjects: () => void;
     onNavigateToCompare: () => void;
+    onFeedbackClick?: () => void;
 }
 
-export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }: DashboardProps) {
+export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, onFeedbackClick }: DashboardProps) {
     const { user, userProfile, loading: authLoading } = useAuthContext();
     const { showInfo } = useToast();
     const supabaseRef = React.useRef(createClient());
@@ -501,16 +502,16 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                         <BookOpen className="w-6 h-6 text-blue-400" />
                         Builder's Toolkit & Tutorials
                     </h2>
-                    
-                    <a 
-                        href="https://wa.me/27820000000?text=Howzit%20Sibongiseni%2C%20I%20need%20help%20with%20my%20project%20on%20BuildCompare" 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="hidden md:flex items-center gap-2 min-h-[56px] px-6 bg-green-500 hover:bg-green-400 text-white font-bold rounded-xl shadow-lg shadow-green-500/20 transition-all hover:scale-105"
+                    <button 
+                        onClick={onFeedbackClick}
+                        className="hidden md:flex flex-col items-start justify-center p-3 px-5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-blue-400/50 rounded-xl shadow-lg transition-all hover:scale-[1.02] hover:shadow-blue-500/10 cursor-pointer text-left group"
                     >
-                        <MessageCircle className="w-5 h-5" />
-                        Gauteng WhatsApp Support
-                    </a>
+                        <div className="flex items-center gap-2 text-white font-bold text-sm">
+                            <MessageCircle className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
+                            Help & Feedback
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-medium mt-1">Tell us what features you need or report a problem</span>
+                    </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -563,16 +564,17 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     </div>
                 </div>
                 
-                {/* Mobile WhatsApp Button */}
-                <a 
-                    href="https://wa.me/27820000000?text=Howzit%20Sibongiseni%2C%20I%20need%20help%20with%20my%20project%20on%20BuildCompare" 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="md:hidden mt-6 flex w-full items-center justify-center gap-2 min-h-[56px] px-6 bg-green-500 hover:bg-green-400 text-white font-bold rounded-xl shadow-lg transition-all"
+                {/* Mobile Feedback Button */}
+                <button 
+                    onClick={onFeedbackClick}
+                    className="md:hidden mt-6 flex flex-col items-center justify-center gap-1 w-full p-4 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-blue-400/50 rounded-xl shadow-lg transition-all hover:scale-[1.02] cursor-pointer group"
                 >
-                    <MessageCircle className="w-5 h-5" />
-                    Gauteng WhatsApp Support
-                </a>
+                    <div className="flex items-center gap-2 text-white font-bold">
+                        <MessageCircle className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
+                        Help & Feedback
+                    </div>
+                    <span className="text-xs text-slate-400 font-medium text-center">Tell us what features you need or report a problem</span>
+                </button>
             </div>
         </div>
     );
