@@ -28,6 +28,7 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { Project } from '@/types';
 import usePullToRefresh from '@/hooks/usePullToRefresh';
 import PullToRefreshIndicator from '@/components/PullToRefreshIndicator';
+import { useToast } from '@/contexts/ToastContext';
 
 interface DashboardProps {
     onNavigateToProjects: () => void;
@@ -36,6 +37,7 @@ interface DashboardProps {
 
 export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }: DashboardProps) {
     const { user, userProfile, loading: authLoading } = useAuthContext();
+    const { showInfo } = useToast();
     const supabaseRef = React.useRef(createClient());
     const supabase = supabaseRef.current;
     const [projects, setProjects] = React.useState<Project[]>([]);
@@ -501,7 +503,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     </h2>
                     
                     <a 
-                        href="https://wa.me/27820000000" 
+                        href="https://wa.me/27820000000?text=Howzit%20Sibongiseni%2C%20I%20need%20help%20with%20my%20project%20on%20BuildCompare" 
                         target="_blank" 
                         rel="noreferrer"
                         className="hidden md:flex items-center gap-2 min-h-[56px] px-6 bg-green-500 hover:bg-green-400 text-white font-bold rounded-xl shadow-lg shadow-green-500/20 transition-all hover:scale-105"
@@ -513,7 +515,10 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Card 1 */}
-                    <div className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all">
+                    <div 
+                        onClick={() => showInfo("This tutorial is being updated for 2026 standards—coming soon!")}
+                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10"
+                    >
                         <div className="h-40 bg-gradient-to-br from-blue-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
                             <PlayCircle className="w-16 h-16 text-blue-400 group-hover:scale-110 transition-transform drop-shadow-lg" />
@@ -526,7 +531,10 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     </div>
 
                     {/* Card 2 */}
-                    <div className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all">
+                    <div 
+                        onClick={() => showInfo("This tutorial is being updated for 2026 standards—coming soon!")}
+                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-yellow-500/10"
+                    >
                         <div className="h-40 bg-gradient-to-br from-yellow-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
                             <BookOpen className="w-16 h-16 text-yellow-500 group-hover:scale-110 transition-transform drop-shadow-lg" />
@@ -539,7 +547,10 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                     </div>
 
                     {/* Card 3 */}
-                    <div className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all">
+                    <div 
+                        onClick={() => showInfo("This tutorial is being updated for 2026 standards—coming soon!")}
+                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/10"
+                    >
                         <div className="h-40 bg-gradient-to-br from-green-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
                             <TrendingUp className="w-16 h-16 text-green-400 group-hover:scale-110 transition-transform drop-shadow-lg" />
@@ -554,7 +565,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare }:
                 
                 {/* Mobile WhatsApp Button */}
                 <a 
-                    href="https://wa.me/27820000000" 
+                    href="https://wa.me/27820000000?text=Howzit%20Sibongiseni%2C%20I%20need%20help%20with%20my%20project%20on%20BuildCompare" 
                     target="_blank" 
                     rel="noreferrer"
                     className="md:hidden mt-6 flex w-full items-center justify-center gap-2 min-h-[56px] px-6 bg-green-500 hover:bg-green-400 text-white font-bold rounded-xl shadow-lg transition-all"
