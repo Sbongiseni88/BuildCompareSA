@@ -22,9 +22,10 @@ import remarkGfm from 'remark-gfm';
 interface AIConciergeProps {
     isOpen: boolean;
     onToggle: () => void;
+    onSearchAction?: (query: string) => void;
 }
 
-export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
+export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConciergeProps) {
     const { showWarning } = useToast();
     const [messages, setMessages] = useState<ChatMessage[]>([
         {
@@ -265,7 +266,30 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                                                     ol: ({node, ...props}) => <ol className="list-decimal ml-5 mb-3 space-y-1.5" {...props} />,
                                                     li: ({node, ...props}) => <li className="pl-1" {...props} />,
                                                     strong: ({node, ...props}) => <strong className="font-bold text-yellow-500" {...props} />,
-                                                    h3: ({node, ...props}) => <h3 className="text-[16px] font-black tracking-tight text-white mt-4 mb-2" {...props} />
+                                                    h3: ({node, ...props}) => <h3 className="text-[16px] font-black tracking-tight text-white mt-4 mb-2" {...props} />,
+                                                    table: ({node, ...props}) => (
+                                                        <div className="overflow-x-auto my-4 rounded-xl border border-white/10 bg-white/5">
+                                                            <table className="w-full text-left border-collapse" {...props} />
+                                                        </div>
+                                                    ),
+                                                    th: ({node, ...props}) => <th className="px-3 py-2 text-xs font-black uppercase tracking-wider text-slate-400 border-b border-white/10" {...props} />,
+                                                    td: ({node, ...props}) => <td className="px-3 py-2 text-sm border-b border-white/5" {...props} />,
+                                                    a: ({node, ...props}) => {
+                                                        const href = props.href || '';
+                                                        if (href.startsWith('/search?q=')) {
+                                                            const query = href.split('=')[1];
+                                                            return (
+                                                                <button
+                                                                    onClick={() => onSearchAction?.(decodeURIComponent(query))}
+                                                                    className="w-full mt-4 flex items-center justify-center gap-2 bg-gradient-to-r from-yellow-400 to-yellow-600 hover:from-yellow-300 hover:to-yellow-500 text-slate-900 font-black py-4 px-6 rounded-2xl shadow-xl shadow-yellow-500/10 transition-all hover:scale-[1.02] active:scale-95 group"
+                                                                >
+                                                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                                                                    {props.children}
+                                                                </button>
+                                                            );
+                                                        }
+                                                        return <a className="text-yellow-500 hover:text-yellow-400 underline transition-colors" target="_blank" rel="noopener noreferrer" {...props} />;
+                                                    }
                                                 }}
                                             >
                                                 {message.content}

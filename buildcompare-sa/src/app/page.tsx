@@ -58,6 +58,13 @@ export default function Home() {
   });
   const [isConciergeOpen, setIsConciergeOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [pendingSearchQuery, setPendingSearchQuery] = useState<string | null>(null);
+
+  const handleSearchAction = (query: string) => {
+    setPendingSearchQuery(query);
+    setActiveTab('compare');
+    setIsConciergeOpen(false);
+  };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('buildcompare_sidebar_collapsed') === 'true'; } catch { return false; }
   });
@@ -161,7 +168,10 @@ export default function Home() {
       case 'estimator':
         return <SmartEstimator />;
       case 'compare':
-        return <PriceSearchHub />;
+        return <PriceSearchHub 
+          initialMaterials={pendingSearchQuery ? [{ id: `ai-${Date.now()}`, name: pendingSearchQuery, category: 'other', quantity: 1, unit: 'unit' }] : []} 
+          onClearInitial={() => setPendingSearchQuery(null)}
+        />;
       case 'projects':
         return <ProjectsManager
           onNavigateToCompare={() => setActiveTab('compare')}
@@ -288,6 +298,7 @@ export default function Home() {
           <AIConcierge
             isOpen={isConciergeOpen}
             onToggle={() => setIsConciergeOpen(!isConciergeOpen)}
+            onSearchAction={handleSearchAction}
           />
 
           {/* Feedback Modal */}

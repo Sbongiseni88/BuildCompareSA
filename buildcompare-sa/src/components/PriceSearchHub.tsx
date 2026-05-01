@@ -47,6 +47,7 @@ import { createClient } from '@/utils/supabase/client';
 
 interface PriceSearchHubProps {
     initialMaterials?: Material[];
+    onClearInitial?: () => void;
 }
 
 const popularSearchItems: Material[] = [
@@ -60,7 +61,7 @@ const popularSearchItems: Material[] = [
     { id: 'mat-8', name: 'IBR Roof Sheeting 0.47mm x 6m', category: 'roofing', quantity: 1, unit: 'sheet' },
 ];
 
-export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHubProps) {
+export default function PriceSearchHub({ initialMaterials = [], onClearInitial }: PriceSearchHubProps) {
     const { user } = useAuthContext();
     const supabase = createClient();
     const { showWarning, showSuccess, showInfo } = useToast();
@@ -171,8 +172,9 @@ export default function PriceSearchHub({ initialMaterials = [] }: PriceSearchHub
         if (initialMaterials.length > 0) {
             setSelectedMaterials(initialMaterials);
             performSearch(initialMaterials);
+            onClearInitial?.();
         }
-    }, [initialMaterials]);
+    }, [initialMaterials, onClearInitial]);
 
     // Debounced autocomplete — waits 200ms after typing stops
     React.useEffect(() => {
