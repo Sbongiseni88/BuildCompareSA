@@ -120,6 +120,11 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
             const decoder = new TextDecoder();
             let aiContent = '';
 
+            const sanitizeOutput = (text: string) => {
+                // Strip <｜...｜> tags and DSML text artifacts
+                return text.replace(/<｜.*?｜>/g, '').replace(/DSML/g, '');
+            };
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -127,9 +132,11 @@ export default function AIConcierge({ isOpen, onToggle }: AIConciergeProps) {
                 const chunk = decoder.decode(value, { stream: true });
                 aiContent += chunk;
 
+                const cleanContent = sanitizeOutput(aiContent);
+
                 setMessages(prev => prev.map(msg =>
                     msg.id === aiMessageId
-                        ? { ...msg, content: aiContent }
+                        ? { ...msg, content: cleanContent }
                         : msg
                 ));
             }
