@@ -368,8 +368,8 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
     };
 
     /**
-     * Batch search for BoQ uploads — uses the dedicated batch endpoint
-     * that resolves all materials in 1-2 API calls instead of N*2.
+     * Batch search for BoQ uploads — chunks the materials into small batches
+     * to keep each API call extremely fast and prevent Vercel 504 timeouts.
      */
     const performBatchSearch = async (materials: Material[]) => {
         if (isSearching) return;
@@ -381,74 +381,93 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
             await new Promise(r => setTimeout(r, 400)); // UX delay
             setSearchStep(2);
 
-            const response = await fetch('/api/prices/boq-batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    materials,
-                    lat: userCoords?.lat,
-                    lng: userCoords?.lng,
-                }),
-            });
-
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error || `Batch pricing failed (${response.status})`);
+            // Chunk materials into batches of 8 items to stay well within Vercel's 10s timeout limit
+            const chunkSize = 8;
+            const chunks: Material[][] = [];
+            for (let i = 0; i < materials.length; i += chunkSize) {
+                chunks.push(materials.slice(i, i + chunkSize));
             }
 
-            const data = await response.json();
+            const allResults: ComparisonResult[] = [];
+            let totalKnowledge = 0;
+            let totalAi = 0;
+
+            // Execute all chunks in parallel
+            const chunkPromises = chunks.map(async (chunk) => {
+                const response = await fetch('/api/prices/boq-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        materials: chunk,
+                        lat: userCoords?.lat,
+                        lng: userCoords?.lng,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || `Batch pricing failed (${response.status})`);
+                }
+
+                const data = await response.json();
+                if (!data.success || !data.results) return [];
+
+                totalKnowledge += data.stats?.knowledgeMatched || 0;
+                totalAi += data.stats?.aiEstimated || 0;
+
+                // Map batch results into ComparisonResult format
+                return data.results
+                    .filter((r: any) => r.quotes && r.quotes.length > 0)
+                    .map((r: any): ComparisonResult => {
+                        const quotes: PriceQuote[] = r.quotes.map((q: any) => ({
+                            supplierId: q.store,
+                            supplierName: q.storeName,
+                            supplierLogo: '',
+                            supplierType: q.storeType || 'chain',
+                            price: q.price,
+                            inStock: q.inStock,
+                            deliveryFee: q.deliveryCost || 0,
+                            deliveryDays: 2,
+                            distance: q.distance || 5,
+                            productUrl: q.url,
+                            isFallback: r.source !== 'market-knowledge',
+                            laborCostEstimate: q.laborEstimate || 0,
+                            priceConfidence: q.priceConfidence || 'medium',
+                            lastUpdated: new Date(),
+                        } as PriceQuote));
+
+                        const best = quotes.reduce((prev, curr) =>
+                            prev.price < curr.price ? prev : curr, quotes[0]);
+
+                        return {
+                            material: r.material,
+                            quotes,
+                            bestPrice: best,
+                            averagePrice: r.averagePrice,
+                            potentialSavings: r.potentialSavings,
+                            isLive: r.source === 'market-knowledge',
+                        };
+                    });
+            });
+
+            const resolvedChunks = await Promise.all(chunkPromises);
+            for (const chunkRes of resolvedChunks) {
+                allResults.push(...chunkRes);
+            }
+
             setSearchStep(3);
             await new Promise(r => setTimeout(r, 400));
 
-            if (!data.success || !data.results || data.results.length === 0) {
+            if (allResults.length === 0) {
                 showWarning('No pricing results found for the uploaded materials.');
                 return;
             }
 
-            // Map batch results into ComparisonResult format for the existing UI
-            const results: ComparisonResult[] = data.results
-                .filter((r: any) => r.quotes && r.quotes.length > 0)
-                .map((r: any): ComparisonResult => {
-                    const quotes: PriceQuote[] = r.quotes.map((q: any) => ({
-                        supplierId: q.store,
-                        supplierName: q.storeName,
-                        supplierLogo: '',
-                        supplierType: q.storeType || 'chain',
-                        price: q.price,
-                        inStock: q.inStock,
-                        deliveryFee: q.deliveryCost || 0,
-                        deliveryDays: 2,
-                        distance: q.distance || 5,
-                        productUrl: q.url,
-                        isFallback: r.source !== 'market-knowledge',
-                        laborCostEstimate: q.laborEstimate || 0,
-                        priceConfidence: q.priceConfidence || 'medium',
-                        lastUpdated: new Date(),
-                    } as PriceQuote));
-
-                    const best = quotes.reduce((prev, curr) =>
-                        prev.price < curr.price ? prev : curr, quotes[0]);
-
-                    return {
-                        material: r.material,
-                        quotes,
-                        bestPrice: best,
-                        averagePrice: r.averagePrice,
-                        potentialSavings: r.potentialSavings,
-                        isLive: r.source === 'market-knowledge',
-                    };
-                });
-
-            if (results.length > 0) {
-                setComparisonResults(results);
-                const stats = data.stats;
-                showSuccess(
-                    `Found prices for ${results.length} items ` +
-                    `(${stats?.knowledgeMatched || 0} from market data, ${stats?.aiEstimated || 0} AI estimated)`
-                );
-            } else {
-                showWarning('No pricing results could be generated. Try simplifying the material descriptions.');
-            }
+            setComparisonResults(allResults);
+            showSuccess(
+                `Found prices for ${allResults.length} items ` +
+                `(${totalKnowledge} from market data, ${totalAi} AI estimated)`
+            );
         } catch (error: any) {
             console.error('Batch search failed:', error);
             showWarning(error.message || 'Batch pricing encountered an error. Please try again.');

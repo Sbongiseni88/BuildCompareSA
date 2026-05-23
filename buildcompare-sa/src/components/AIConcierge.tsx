@@ -11,7 +11,8 @@ import {
     Minimize2,
     Maximize2,
     Mic,
-    MicOff
+    MicOff,
+    Paperclip
 } from 'lucide-react';
 import { ChatMessage } from '@/types';
 
@@ -39,7 +40,9 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
     const [isTyping, setIsTyping] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [isListening, setIsListening] = useState(false);
+    const [isFileParsing, setIsFileParsing] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Voice Recognition Setup
     const startVoiceRecognition = () => {
@@ -76,18 +79,21 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
         scrollToBottom();
     }, [messages]);
 
-    const handleSendMessage = async () => {
-        if (!inputValue.trim()) return;
+    const handleSendMessage = async (customMessage?: string) => {
+        const textToSend = customMessage || inputValue;
+        if (!textToSend.trim()) return;
 
         const userMessage: ChatMessage = {
             id: `user-${Date.now()}`,
             role: 'user',
-            content: inputValue,
+            content: textToSend,
             timestamp: new Date(),
         };
 
         setMessages(prev => [...prev, userMessage]);
-        setInputValue('');
+        if (!customMessage) {
+            setInputValue('');
+        }
         setIsTyping(true);
 
         try {
@@ -100,7 +106,7 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: inputValue,
+                    message: textToSend,
                     history: history.slice(0, -1), // Exclude current message (sent separately)
                 }),
             });
@@ -155,6 +161,85 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
             setMessages(prev => [...prev, errorFallback]);
         } finally {
             setIsTyping(false);
+        }
+    };
+
+    const handleFileUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsFileParsing(true);
+        setIsTyping(true); // show typing bubble
+
+        const parseMsgId = `parsing-${Date.now()}`;
+        setMessages(prev => [...prev, {
+            id: parseMsgId,
+            role: 'assistant',
+            content: `📂 **Analyzing "${file.name}"...** Please wait while I extract the materials list.`,
+            timestamp: new Date()
+        }]);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('fileName', file.name);
+
+            const response = await fetch('/api/analyze', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || 'Failed to parse document');
+            }
+
+            const data = await response.json();
+            const materials = data.materials || [];
+
+            if (materials.length === 0) {
+                setMessages(prev => prev.map(msg =>
+                    msg.id === parseMsgId
+                        ? { ...msg, content: `⚠️ I couldn't extract any structured materials from **"${file.name}"**. Make sure it's a valid Bill of Quantities.` }
+                        : msg
+                ));
+                setIsFileParsing(false);
+                setIsTyping(false);
+                return;
+            }
+
+            // Remove the temporary parsing message
+            setMessages(prev => prev.filter(msg => msg.id !== parseMsgId));
+
+            // Format materials
+            const matList = materials.map((m: any) => 
+                `- **${m.name}** (Qty: ${m.quantity} ${m.unit || 'unit'})`
+            ).join('\n');
+
+            const messageText = `I have uploaded a Bill of Quantities file named **"${file.name}"**. 
+
+Here are the extracted materials:
+${matList}
+
+Please analyze these materials and estimate their prices for South African retailers (Builders, Cashbuild, Leroy Merlin, BUCO, etc.). Output a structured quantity surveyor pricing report and a breakdown table with columns: | Material | Supplier | Unit Price | Qty | Subtotal |. Include separate estimates for labour and delivery.`;
+
+            await handleSendMessage(messageText);
+
+        } catch (error: any) {
+            console.error('File parsing failed:', error);
+            setMessages(prev => prev.map(msg =>
+                msg.id === parseMsgId
+                    ? { ...msg, content: `❌ Error parsing **"${file.name}"**: ${error.message || 'Unknown error'}. Please try again.` }
+                    : msg
+            ));
+        } finally {
+            setIsFileParsing(false);
+            setIsTyping(false);
+            if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
         }
     };
 
@@ -371,6 +456,24 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
                                     style={{ height: 'auto' }}
                                 />
                             </div>
+                            {/* Hidden file input */}
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleFileChange}
+                                accept=".xlsx,.xls,.pdf,.csv,image/*"
+                                className="hidden"
+                                disabled={isFileParsing || isTyping}
+                            />
+                            {/* File Upload Button */}
+                            <button
+                                onClick={handleFileUploadClick}
+                                disabled={isFileParsing || isTyping}
+                                className="w-14 h-[52px] bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-white hover:border-slate-600 rounded-2xl flex items-center justify-center transition-all disabled:opacity-50 active:scale-95"
+                                title="Upload BoQ document"
+                            >
+                                <Paperclip className="w-5 h-5" />
+                            </button>
                             {/* Voice Input Button */}
                             <button
                                 onClick={startVoiceRecognition}
@@ -385,7 +488,7 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
                             </button>
                             {/* Send Button */}
                             <button
-                                onClick={handleSendMessage}
+                                onClick={() => handleSendMessage()}
                                 disabled={!inputValue.trim() || isTyping}
                                 className="w-14 h-[52px] bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-2xl flex items-center justify-center text-slate-900 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-yellow-500/20 disabled:opacity-50 disabled:hover:scale-100"
                             >

@@ -264,8 +264,9 @@ export async function resolveBatchPrices(
             batches.push(unknowns.slice(i, i + 30));
         }
 
-        for (const batch of batches) {
-            const batchResults = await batchAIEstimate(batch);
+        const batchPromises = batches.map(batch => batchAIEstimate(batch));
+        const allBatchResults = await Promise.all(batchPromises);
+        for (const batchResults of allBatchResults) {
             for (const [id, result] of batchResults) {
                 aiResults.set(id, result);
             }
