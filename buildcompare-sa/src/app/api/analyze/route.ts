@@ -132,7 +132,7 @@ function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
     const allMaterials: Material[] = [];
 
     // Column aliases — handles many real-world BoQ header variations
-    const DESC_ALIASES  = ['description', 'desc', 'item', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars'];
+    const DESC_ALIASES  = ['description', 'desc', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars'];
     const QTY_ALIASES   = ['quantity', 'qty', 'amount', 'no', 'number', 'count', 'nos', 'no.', 'qnty'];
     const UNIT_ALIASES  = ['unit', 'uom', 'measure', 'u/m', 'u.o.m'];
     const IGNORE_TERMS  = ['total', 'sub-total', 'subtotal', 'summary', 'allow', 'provisional', 'p.c.', 'pc sum', ''];

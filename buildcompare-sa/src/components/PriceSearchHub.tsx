@@ -550,21 +550,81 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
     );
 
     const handleDownload = () => {
-        const headers = "Item,Quantity,Supplier,Material Price,Labour Estimate,Total Value,Distance\n";
-        const rows = comparisonResults.flatMap(res =>
-            res.quotes.map(q => {
-                const materialTotal = q.price * res.material.quantity;
-                const laborTotal = (q.laborCostEstimate || 0) * res.material.quantity; // labor per original unit
-                const total = materialTotal + laborTotal;
-                return `"${res.material.name}",${res.material.quantity},"${q.supplierName}",${q.price},${laborTotal},${total},${q.distance}`;
-            })
-        ).join('\n');
+        // Headers for the comparison pivot table
+        const headers = "Material Description,Category,Quantity,Unit,Cheapest Supplier,Cheapest Price (ZAR),Estimated Labor (ZAR),Builders Warehouse (ZAR),Cashbuild (ZAR),Leroy Merlin (ZAR),BUCO (ZAR),Build it (ZAR),Total Cost (ZAR),Savings (ZAR)\n";
+        
+        // Helper to escape commas and quotes in CSV fields to prevent column shifting
+        const escapeCSV = (val: any) => {
+            if (val === undefined || val === null) return '""';
+            const str = String(val);
+            return `"${str.replace(/"/g, '""')}"`;
+        };
 
-        const blob = new Blob([headers + rows], { type: 'text/csv' });
+        const rows = comparisonResults.map(res => {
+            const material = res.material;
+            const quantity = material.quantity;
+            const unit = material.unit || 'unit';
+            const category = material.category || 'other';
+
+            // Find prices for each of the stores
+            const getPrice = (storeId: string) => {
+                const quote = res.quotes.find(q => q.supplierId === storeId);
+                return quote && quote.price > 0 ? quote.price : null;
+            };
+
+            const buildersPrice = getPrice('builders');
+            const cashbuildPrice = getPrice('cashbuild');
+            const leroyPrice = getPrice('leroy_merlin');
+            const bucoPrice = getPrice('buco') || getPrice('buco-gauteng') || getPrice('buco-national');
+            const builditPrice = getPrice('buildit') || getPrice('build-it');
+
+            const cheapestQuote = res.bestPrice;
+            const cheapestSupplier = cheapestQuote ? cheapestQuote.supplierName : 'N/A';
+            const cheapestPrice = cheapestQuote ? cheapestQuote.price : 0;
+            const laborUnit = cheapestQuote ? (cheapestQuote.laborCostEstimate || 0) : 0;
+
+            const totalCost = (cheapestPrice * quantity) + (laborUnit * quantity);
+            const savings = res.potentialSavings;
+
+            return [
+                escapeCSV(material.name),
+                escapeCSV(category),
+                quantity,
+                escapeCSV(unit),
+                escapeCSV(cheapestSupplier),
+                cheapestPrice > 0 ? cheapestPrice : '""',
+                laborUnit > 0 ? laborUnit * quantity : 0,
+                buildersPrice || '""',
+                cashbuildPrice || '""',
+                leroyPrice || '""',
+                bucoPrice || '""',
+                builditPrice || '""',
+                totalCost,
+                savings > 0 ? savings : 0
+            ].join(',');
+        }).join('\n');
+
+        // Add a totals summary block at the bottom of the CSV
+        const totalMaterialCost = comparisonResults.reduce((acc, r) => acc + (r.bestPrice ? r.bestPrice.price * r.material.quantity : 0), 0);
+        const totalLaborCost = comparisonResults.reduce((acc, r) => acc + ((r.bestPrice?.laborCostEstimate || 0) * r.material.quantity), 0);
+        const grandTotal = totalMaterialCost + totalLaborCost;
+        const totalSavingsVal = comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0);
+
+        const summaryRows = [
+            "",
+            "--- PROJECT SUMMARY ---",
+            `Total Material Cost (Cheapest Option),R${totalMaterialCost.toFixed(2)}`,
+            `Total Labor Cost,R${totalLaborCost.toFixed(2)}`,
+            `Grand Total Project Cost,R${grandTotal.toFixed(2)}`,
+            `Total Potential Savings,R${totalSavingsVal.toFixed(2)}`
+        ].join('\n');
+
+        const csvContent = headers + rows + '\n' + summaryRows;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `BuildCompare_Quote_${Date.now()}.csv`;
+        a.download = `BuildCompare_Estimation_Report_${Date.now()}.csv`;
         a.click();
     };
 
