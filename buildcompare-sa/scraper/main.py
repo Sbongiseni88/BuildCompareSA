@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
@@ -18,16 +19,31 @@ STORE_URLS = {
 }
 
 async def fetch_html_playwright(url: str) -> str:
+    browserbase_api_key = os.environ.get("BROWSERBASE_API_KEY")
+    browserbase_project_id = os.environ.get("BROWSERBASE_PROJECT_ID")
+    
     async with async_playwright() as p:
-        # Launch chromium in a memory-efficient headless mode
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--disable-dev-shm-usage", "--no-sandbox"]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        page = await context.new_page()
+        if browserbase_api_key:
+            # Connect to Browserbase cloud browser over CDP
+            cdp_url = f"wss://connect.browserbase.com?apiKey={browserbase_api_key}"
+            if browserbase_project_id:
+                cdp_url += f"&projectId={browserbase_project_id}"
+            
+            print(f"Connecting to Browserbase CDP (Project ID: {browserbase_project_id})...")
+            browser = await p.chromium.connect_over_cdp(cdp_url)
+            context = browser.contexts[0]
+            page = context.pages[0] if context.pages else await context.new_page()
+        else:
+            # Launch chromium in a memory-efficient headless mode locally
+            print("BROWSERBASE_API_KEY not found. Launching local Chromium...")
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--disable-dev-shm-usage", "--no-sandbox"]
+            )
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
 
         try:
             # Wait until there are no more than 2 network connections for at least 500 ms (Networkidle)
