@@ -367,10 +367,108 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
         setShowSuggestions(false);
     };
 
+    /**
+     * Batch search for BoQ uploads — uses the dedicated batch endpoint
+     * that resolves all materials in 1-2 API calls instead of N*2.
+     */
+    const performBatchSearch = async (materials: Material[]) => {
+        if (isSearching) return;
+        setIsSearching(true);
+        setSearchStep(1);
+        setComparisonResults([]);
+
+        try {
+            await new Promise(r => setTimeout(r, 400)); // UX delay
+            setSearchStep(2);
+
+            const response = await fetch('/api/prices/boq-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    materials,
+                    lat: userCoords?.lat,
+                    lng: userCoords?.lng,
+                }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `Batch pricing failed (${response.status})`);
+            }
+
+            const data = await response.json();
+            setSearchStep(3);
+            await new Promise(r => setTimeout(r, 400));
+
+            if (!data.success || !data.results || data.results.length === 0) {
+                showWarning('No pricing results found for the uploaded materials.');
+                return;
+            }
+
+            // Map batch results into ComparisonResult format for the existing UI
+            const results: ComparisonResult[] = data.results
+                .filter((r: any) => r.quotes && r.quotes.length > 0)
+                .map((r: any): ComparisonResult => {
+                    const quotes: PriceQuote[] = r.quotes.map((q: any) => ({
+                        supplierId: q.store,
+                        supplierName: q.storeName,
+                        supplierLogo: '',
+                        supplierType: q.storeType || 'chain',
+                        price: q.price,
+                        inStock: q.inStock,
+                        deliveryFee: q.deliveryCost || 0,
+                        deliveryDays: 2,
+                        distance: q.distance || 5,
+                        productUrl: q.url,
+                        isFallback: r.source !== 'market-knowledge',
+                        laborCostEstimate: q.laborEstimate || 0,
+                        priceConfidence: q.priceConfidence || 'medium',
+                        lastUpdated: new Date(),
+                    } as PriceQuote));
+
+                    const best = quotes.reduce((prev, curr) =>
+                        prev.price < curr.price ? prev : curr, quotes[0]);
+
+                    return {
+                        material: r.material,
+                        quotes,
+                        bestPrice: best,
+                        averagePrice: r.averagePrice,
+                        potentialSavings: r.potentialSavings,
+                        isLive: r.source === 'market-knowledge',
+                    };
+                });
+
+            if (results.length > 0) {
+                setComparisonResults(results);
+                const stats = data.stats;
+                showSuccess(
+                    `Found prices for ${results.length} items ` +
+                    `(${stats?.knowledgeMatched || 0} from market data, ${stats?.aiEstimated || 0} AI estimated)`
+                );
+            } else {
+                showWarning('No pricing results could be generated. Try simplifying the material descriptions.');
+            }
+        } catch (error: any) {
+            console.error('Batch search failed:', error);
+            showWarning(error.message || 'Batch pricing encountered an error. Please try again.');
+        } finally {
+            setIsSearching(false);
+            setSearchStep(0);
+        }
+    };
+
     const handleMaterialsExtracted = (materials: Material[]) => {
         setSelectedMaterials(materials);
         setSearchMode('manual'); // Switch back to results view
-        performSearch(materials);
+
+        // Use batch endpoint for BoQ uploads (multiple materials)
+        // Use single-item search for 1 material
+        if (materials.length > 1) {
+            performBatchSearch(materials);
+        } else {
+            performSearch(materials);
+        }
     };
 
     const handleCategoryClick = (term: string) => {

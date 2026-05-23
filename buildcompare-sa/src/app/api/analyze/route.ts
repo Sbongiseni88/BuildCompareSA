@@ -4,6 +4,7 @@ import { Material } from '@/types';
 
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
+import { generateSearchString } from '@/lib/boq-engine';
 
 // Vision-capable models for image analysis.
 // NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
@@ -184,6 +185,7 @@ function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
                 category: guessCategory(rawDesc) as any,
                 quantity: qty,
                 unit: rawUnit || 'unit',
+                search_string: generateSearchString(rawDesc),
             });
         }
     }
@@ -375,6 +377,7 @@ ${BOQ_PROMPT_SUFFIX}`;
                 quantity: Number(m.quantity) || 1,
                 unit: m.unit || 'unit',
                 laborCostEstimate: Number(m.laborCostEstimate) || undefined,
+                search_string: generateSearchString(m.name || 'Unknown Item'),
             }));
 
             return NextResponse.json({ success: true, mode: 'live-deepseek', materials });

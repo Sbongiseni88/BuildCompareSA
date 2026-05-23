@@ -167,7 +167,7 @@ function lookupPriceFromKnowledge(material: Material): PriceResult {
 
 export async function POST(req: NextRequest) {
     const formData = await req.formData();
-    
+
     // Pass API Key natively so Python can handle parallel execution
     if (!formData.has('deepseek_key')) {
         const key = process.env.deepseek_api || '';

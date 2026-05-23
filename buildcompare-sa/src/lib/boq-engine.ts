@@ -247,6 +247,67 @@ export function estimateRemainingTime(
     return Math.round((remaining * avgTimePerItem) / 1000); // seconds
 }
 
+// ─── Search String Generation ─────────────────────────────────────────────────
+
+/**
+ * Strips BoQ verbiage from a raw material description
+ * and returns a clean search term suitable for SA hardware stores.
+ *
+ * "Supply and install 50kg PPC Cement CEM II 42.5N including all necessary materials"
+ * → "PPC Cement 50kg 42.5N"
+ */
+export function generateSearchString(rawDescription: string): string {
+    let s = rawDescription;
+
+    // 1. Remove common BoQ preamble phrases
+    const BOQ_NOISE = [
+        /\b(supply\s+and\s+install(ation\s+of)?|supply\s+&\s+install)\b/gi,
+        /\b(provide\s+and\s+fix|provide\s+and\s+install|provide)\b/gi,
+        /\b(including\s+all\s+necessary\s+(materials?|fixings?|accessories?))\b/gi,
+        /\b(as\s+per\s+(specification|drawing|plan|detail)s?)\b/gi,
+        /\b(in\s+accordance\s+with)\b/gi,
+        /\b(to\s+engineer'?s?\s+detail)\b/gi,
+        /\b(complete\s+with\s+all\s+accessories)\b/gi,
+        /\b(allow(ance)?\s+for)\b/gi,
+        /\b(provisional\s+sum)\b/gi,
+        /\b(refer\s+to\s+drawing)\b/gi,
+        /\b(measured\s+net|measured)\b/gi,
+        /\b(approved\s+equal)\b/gi,
+        /\b(or\s+similar|or\s+equivalent|or\s+equal)\b/gi,
+        /\b(all\s+as\s+described)\b/gi,
+        /\b(rate\s+only|p\.?c\.?\s*sum)\b/gi,
+    ];
+
+    for (const re of BOQ_NOISE) {
+        s = s.replace(re, ' ');
+    }
+
+    // 2. Extract brand names, sizes, and grades before we lose them
+    const sizeMatch = s.match(/\b(\d+(?:\.\d+)?)\s*(kg|mm|m[23²³]?|l|litre|ml|cm)\b/gi);
+    const gradeMatch = s.match(/\b(CEM\s*I{1,3}|42\.5N|32\.5N|52\.5N|0\.4[37]mm|0\.5[03]mm)\b/gi);
+
+    // 3. Remove section/clause numbers (e.g. "5.3.1", "A.02")
+    s = s.replace(/^[A-Z]?\d+(\.\d+)+\s*/g, '');
+
+    // 4. Remove remaining noise words
+    s = s.replace(/\b(the|a|an|to|of|for|with|and|in|on|at|by|per|from|into)\b/gi, ' ');
+
+    // 5. Collapse whitespace
+    s = s.replace(/\s+/g, ' ').trim();
+
+    // 6. If the cleaned string is too short/empty, fall back to original
+    if (s.length < 4) {
+        s = rawDescription.replace(/\s+/g, ' ').trim();
+    }
+
+    // 7. Truncate to reasonable search length (max ~80 chars)
+    if (s.length > 80) {
+        s = s.slice(0, 80).replace(/\s\S*$/, ''); // break at word boundary
+    }
+
+    return s;
+}
+
 // ─── AI Prompt ────────────────────────────────────────────────────────────────
 
 export const BOQ_EXTRACT_PROMPT = `### ROLE: Chunk-Based BoQ Parser
