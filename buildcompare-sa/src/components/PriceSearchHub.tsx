@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import {
     Search,
     MapPin,
@@ -550,23 +551,58 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
     );
 
     const handleDownload = () => {
-        // Headers for the comparison pivot table
-        const headers = "Material Description,Category,Quantity,Unit,Cheapest Supplier,Cheapest Price (ZAR),Estimated Labor (ZAR),Builders Warehouse (ZAR),Cashbuild (ZAR),Leroy Merlin (ZAR),BUCO (ZAR),Build it (ZAR),Total Cost (ZAR),Savings (ZAR)\n";
-        
-        // Helper to escape commas and quotes in CSV fields to prevent column shifting
-        const escapeCSV = (val: any) => {
-            if (val === undefined || val === null) return '""';
-            const str = String(val);
-            return `"${str.replace(/"/g, '""')}"`;
+        const aoa: any[][] = [];
+
+        // Calculating total values first
+        const totalMaterialCost = comparisonResults.reduce((acc, r) => acc + (r.bestPrice ? r.bestPrice.price * r.material.quantity : 0), 0);
+        const totalLaborCost = comparisonResults.reduce((acc, r) => acc + ((r.bestPrice?.laborCostEstimate || 0) * r.material.quantity), 0);
+        const grandTotal = totalMaterialCost + totalLaborCost;
+        const totalSavingsVal = comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0);
+
+        // Standard Excel accounting format for Rands
+        const RAND_ACCOUNTING_FORMAT = `_("R"* #,##0.00_);_("R"* (#,##0.00);_("R"* "-"_);_(@_)`;
+
+        // 1. Summary Header Block (Rows 1-5)
+        aoa.push(["BUILDCOMPARE SA - PROJECT QUOTATION ESTIMATE"]);
+        aoa.push(["Grand Total Project Cost", { v: grandTotal, t: 'n', z: RAND_ACCOUNTING_FORMAT }]);
+        aoa.push(["Total Sourcing Savings", { v: totalSavingsVal, t: 'n', z: RAND_ACCOUNTING_FORMAT }]);
+        aoa.push(["Total Labor Estimate", { v: totalLaborCost, t: 'n', z: RAND_ACCOUNTING_FORMAT }]);
+        aoa.push([]); // Row 5: blank
+
+        // 2. Comparison Matrix Table Header (Row 6)
+        const headers = [
+            "Item Ref",
+            "Material Description",
+            "Category",
+            "Qty",
+            "Unit",
+            "Builders Warehouse",
+            "Cashbuild",
+            "Leroy Merlin",
+            "BUCO",
+            "Build it",
+            "Cheapest Supplier",
+            "Cheapest Price (ZAR)",
+            "Labour Estimate (ZAR)",
+            "Total Cost (ZAR)",
+            "Potential Savings (ZAR)",
+            "Detailed Technical Specification"
+        ];
+        aoa.push(headers);
+
+        // Helper to format currency values safely in SheetJS
+        const makeCell = (val: number | null) => {
+            if (val === null || val === undefined || val <= 0) return { v: '', t: 'z' };
+            return { v: val, t: 'n', z: RAND_ACCOUNTING_FORMAT };
         };
 
-        const rows = comparisonResults.map(res => {
+        // 3. Comparison Matrix Rows
+        comparisonResults.forEach((res, idx) => {
             const material = res.material;
             const quantity = material.quantity;
             const unit = material.unit || 'unit';
             const category = material.category || 'other';
 
-            // Find prices for each of the stores
             const getPrice = (storeId: string) => {
                 const quote = res.quotes.find(q => q.supplierId === storeId);
                 return quote && quote.price > 0 ? quote.price : null;
@@ -579,53 +615,68 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
             const builditPrice = getPrice('buildit') || getPrice('build-it');
 
             const cheapestQuote = res.bestPrice;
-            const cheapestSupplier = cheapestQuote ? cheapestQuote.supplierName : 'N/A';
+            const cheapestSupplier = cheapestQuote ? `⭐ ${cheapestQuote.supplierName}` : 'N/A';
             const cheapestPrice = cheapestQuote ? cheapestQuote.price : 0;
             const laborUnit = cheapestQuote ? (cheapestQuote.laborCostEstimate || 0) : 0;
 
             const totalCost = (cheapestPrice * quantity) + (laborUnit * quantity);
             const savings = res.potentialSavings;
 
-            return [
-                escapeCSV(material.name),
-                escapeCSV(category),
+            const shortName = material.name.length > 50 ? material.name.substring(0, 47) + '...' : material.name;
+
+            aoa.push([
+                `Item ${100 + idx}`,
+                shortName,
+                category,
                 quantity,
-                escapeCSV(unit),
-                escapeCSV(cheapestSupplier),
-                cheapestPrice > 0 ? cheapestPrice : '""',
-                laborUnit > 0 ? laborUnit * quantity : 0,
-                buildersPrice || '""',
-                cashbuildPrice || '""',
-                leroyPrice || '""',
-                bucoPrice || '""',
-                builditPrice || '""',
-                totalCost,
-                savings > 0 ? savings : 0
-            ].join(',');
-        }).join('\n');
+                unit,
+                makeCell(buildersPrice),
+                makeCell(cashbuildPrice),
+                makeCell(leroyPrice),
+                makeCell(bucoPrice),
+                makeCell(builditPrice),
+                cheapestSupplier,
+                makeCell(cheapestPrice),
+                makeCell(laborUnit * quantity),
+                makeCell(totalCost),
+                makeCell(savings > 0 ? savings : 0),
+                material.name // original full spec
+            ]);
+        });
 
-        // Add a totals summary block at the bottom of the CSV
-        const totalMaterialCost = comparisonResults.reduce((acc, r) => acc + (r.bestPrice ? r.bestPrice.price * r.material.quantity : 0), 0);
-        const totalLaborCost = comparisonResults.reduce((acc, r) => acc + ((r.bestPrice?.laborCostEstimate || 0) * r.material.quantity), 0);
-        const grandTotal = totalMaterialCost + totalLaborCost;
-        const totalSavingsVal = comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0);
+        // Create worksheet
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-        const summaryRows = [
-            "",
-            "--- PROJECT SUMMARY ---",
-            `Total Material Cost (Cheapest Option),R${totalMaterialCost.toFixed(2)}`,
-            `Total Labor Cost,R${totalLaborCost.toFixed(2)}`,
-            `Grand Total Project Cost,R${grandTotal.toFixed(2)}`,
-            `Total Potential Savings,R${totalSavingsVal.toFixed(2)}`
-        ].join('\n');
+        // Apply merges for title row
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 15 } }
+        ];
 
-        const csvContent = headers + rows + '\n' + summaryRows;
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `BuildCompare_Estimation_Report_${Date.now()}.csv`;
-        a.click();
+        // Configure custom column widths so cells do not truncate visually
+        const colWidths = [
+            { wch: 12 },  // A: Item Ref
+            { wch: 35 },  // B: Material Description
+            { wch: 15 },  // C: Category
+            { wch: 8 },   // D: Qty
+            { wch: 10 },  // E: Unit
+            { wch: 18 },  // F: Builders Warehouse
+            { wch: 18 },  // G: Cashbuild
+            { wch: 18 },  // H: Leroy Merlin
+            { wch: 18 },  // I: BUCO
+            { wch: 18 },  // J: Build it
+            { wch: 22 },  // K: Cheapest Supplier
+            { wch: 20 },  // L: Cheapest Price (ZAR)
+            { wch: 20 },  // M: Labour Estimate (ZAR)
+            { wch: 20 },  // N: Total Cost (ZAR)
+            { wch: 20 },  // O: Potential Savings (ZAR)
+            { wch: 60 },  // P: Detailed Technical Specification
+        ];
+        ws['!cols'] = colWidths;
+
+        // Create workbook and write binary spreadsheet file
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Estimation Report");
+        XLSX.writeFile(wb, `BuildCompare_Estimation_Report_${Date.now()}.xlsx`);
     };
 
     // Build a WhatsApp-friendly message with the best deals and send via wa.me
@@ -899,12 +950,12 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                         >
                                             <Share2 className="w-4 h-4" /> Share
                                         </button>
-                                        {/* CSV Export */}
+                                        {/* Excel Export */}
                                         <button
                                             onClick={handleDownload}
                                             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-medium text-white border border-slate-700 flex items-center gap-2 transition-colors"
                                         >
-                                            <Download className="w-4 h-4" /> Export CSV
+                                            <Download className="w-4 h-4" /> Export Excel
                                         </button>
                                         <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-medium text-slate-300 border border-slate-700">
                                             {comparisonResults.length} Items Found
@@ -975,8 +1026,18 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                         })()}
                                                     </div>
                                                     <div>
-                                                        <h3 className="text-base font-bold text-white line-clamp-1" title={result.material.name}>{result.material.name}</h3>
-                                                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="bg-yellow-400/20 text-yellow-400 border border-yellow-400/30 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">
+                                                                Item {100 + idx}
+                                                            </span>
+                                                        </div>
+                                                        <h3 
+                                                            className="text-base font-bold text-white truncate max-w-[180px] sm:max-w-[220px]" 
+                                                            title={result.material.name}
+                                                        >
+                                                            {result.material.name}
+                                                        </h3>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
                                                             <span className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-white uppercase tracking-wider">{result.material.category}</span>
                                                             <span>•</span>
                                                             <span>{result.material.quantity} {result.material.unit}</span>
