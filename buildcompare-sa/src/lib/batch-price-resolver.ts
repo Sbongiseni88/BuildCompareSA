@@ -16,6 +16,7 @@ import {
     type ProductKnowledge,
     type StoreProfile,
 } from '@/data/sa-market-knowledge';
+import { groqClient, isGroqConfigured } from '@/lib/groq';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 import { generateSearchString, normalizeMaterialName } from '@/lib/boq-engine';
 
@@ -162,23 +163,50 @@ CRITICAL:
 - Do NOT hallucinate extreme prices. Use your training knowledge of SA hardware retail.
 - Return ONLY valid JSON. No markdown.`;
 
-    try {
-        if (!checkDeepseekConfigured()) {
-            console.warn('DeepSeek not configured — returning empty estimates');
-            return results;
+    let rawContent: string | null = null;
+    let usedModel = '';
+
+    // Step 1: Try DeepSeek first (Primary)
+    if (checkDeepseekConfigured()) {
+        try {
+            console.log('Attempting batch AI estimate via DeepSeek (Primary)...');
+            const client = getDeepseekClient();
+            const res = await client.chat.completions.create({
+                messages: [{ role: 'system', content: prompt }],
+                model: 'deepseek-chat',
+                temperature: 0.1,
+                response_format: { type: 'json_object' },
+            });
+            rawContent = res.choices[0]?.message?.content || null;
+            usedModel = 'deepseek';
+        } catch (err: any) {
+            console.warn('DeepSeek batch estimate failed, falling back to Groq:', err.message);
         }
+    }
 
-        const client = getDeepseekClient();
-        const res = await client.chat.completions.create({
-            messages: [{ role: 'system', content: prompt }],
-            model: 'deepseek-chat',
-            temperature: 0.1,
-            response_format: { type: 'json_object' },
-        });
+    // Step 2: Try Groq if DeepSeek failed or was not configured (Secondary/Fallback)
+    if (!rawContent && isGroqConfigured) {
+        try {
+            console.log('Attempting batch AI estimate via Groq (Secondary)...');
+            const res = await groqClient.chat.completions.create({
+                messages: [{ role: 'system', content: prompt }],
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0.1,
+                response_format: { type: 'json_object' },
+            });
+            rawContent = res.choices[0]?.message?.content || null;
+            usedModel = 'groq';
+        } catch (err: any) {
+            console.error('Groq fallback batch estimate failed:', err.message);
+        }
+    }
 
-        const rawContent = res.choices[0]?.message?.content;
-        if (!rawContent) return results;
+    if (!rawContent) {
+        console.warn('Both Groq and DeepSeek AI estimators failed or were unconfigured.');
+        return results;
+    }
 
+    try {
         const parsed = JSON.parse(rawContent);
         const estimates = Array.isArray(parsed.estimates) ? parsed.estimates : [];
 
@@ -227,7 +255,7 @@ CRITICAL:
             });
         }
     } catch (err) {
-        console.error('Batch AI estimate failed:', err);
+        console.error(`Failed to parse AI batch results (source: ${usedModel}):`, err);
     }
 
     return results;

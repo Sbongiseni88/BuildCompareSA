@@ -18,7 +18,7 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
     const clientIP = getClientIP(req);
-    const rateLimitResult = checkRateLimit(clientIP, 'scraping');
+    const rateLimitResult = checkRateLimit(clientIP, 'default');
 
     if (!rateLimitResult.success) {
         return NextResponse.json(
