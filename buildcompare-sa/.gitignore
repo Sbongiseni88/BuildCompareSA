@@ -45,3 +45,12 @@ buildcompare-9afbd-firebase-adminsdk-fbsvc-8c39a6c12f.json
 .env*.local
 
 scraper/venv/
+
+# python and backend caching
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# local databases
+chroma_db/
+*.sqlite3
