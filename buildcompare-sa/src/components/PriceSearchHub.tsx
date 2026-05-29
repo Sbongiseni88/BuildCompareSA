@@ -382,8 +382,9 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
             await new Promise(r => setTimeout(r, 400)); // UX delay
             setSearchStep(2);
 
-            // Chunk materials into batches of 8 items to stay well within Vercel's 10s timeout limit
-            const chunkSize = 8;
+            // Chunk materials into batches of 30 items to stay well within Vercel's 10s timeout limit
+            // and optimize batching for AI estimation (reducing duplicate DeepSeek calls)
+            const chunkSize = 30;
             const chunks: Material[][] = [];
             for (let i = 0; i < materials.length; i += chunkSize) {
                 chunks.push(materials.slice(i, i + chunkSize));
@@ -407,7 +408,16 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
                 if (!response.ok) {
                     const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.error || `Batch pricing failed (${response.status})`);
+                    const rawError = errData.error;
+                    let errMsg = `Batch pricing failed (${response.status})`;
+                    if (rawError) {
+                        if (typeof rawError === 'object') {
+                            errMsg = rawError.message || rawError.error || JSON.stringify(rawError);
+                        } else {
+                            errMsg = String(rawError);
+                        }
+                    }
+                    throw new Error(errMsg);
                 }
 
                 const data = await response.json();

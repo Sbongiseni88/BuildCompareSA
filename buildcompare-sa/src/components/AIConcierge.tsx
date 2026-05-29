@@ -195,7 +195,16 @@ export default function AIConcierge({ isOpen, onToggle, onSearchAction }: AIConc
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error || 'Failed to parse document');
+                const rawError = errData.error;
+                let errMsg = 'Failed to parse document';
+                if (rawError) {
+                    if (typeof rawError === 'object') {
+                        errMsg = rawError.message || rawError.error || JSON.stringify(rawError);
+                    } else {
+                        errMsg = String(rawError);
+                    }
+                }
+                throw new Error(errMsg);
             }
 
             const data = await response.json();

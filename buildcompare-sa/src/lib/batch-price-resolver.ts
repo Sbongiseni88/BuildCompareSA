@@ -19,6 +19,62 @@ import {
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
 import { generateSearchString, normalizeMaterialName } from '@/lib/boq-engine';
+import fs from 'fs';
+import path from 'path';
+
+// ── Cache Settings ───────────────────────────────────────────────────────────
+
+interface CachedBatchResult {
+    quotes: BatchQuote[];
+    laborEstimate: number;
+    timestamp: number;
+}
+
+const AI_RESOLVED_CACHE = new Map<string, CachedBatchResult>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+const cacheDir = path.join(process.cwd(), '.next', 'cache');
+const cacheFilePath = path.join(cacheDir, 'ai-prices-cache.json');
+
+function loadCacheFromFile() {
+    try {
+        if (fs.existsSync(cacheFilePath)) {
+            const data = fs.readFileSync(cacheFilePath, 'utf8');
+            const parsed = JSON.parse(data);
+            if (typeof parsed === 'object' && parsed !== null) {
+                const now = Date.now();
+                for (const [key, val] of Object.entries(parsed)) {
+                    const cachedVal = val as CachedBatchResult;
+                    if (now - cachedVal.timestamp < CACHE_TTL_MS) {
+                        AI_RESOLVED_CACHE.set(key, cachedVal);
+                    }
+                }
+                console.log(`💾 Loaded ${AI_RESOLVED_CACHE.size} cached AI estimates from file.`);
+            }
+        }
+    } catch (err: any) {
+        console.warn('Failed to load AI prices cache from file:', err.message);
+    }
+}
+
+function saveCacheToFile() {
+    try {
+        fs.mkdirSync(cacheDir, { recursive: true });
+        const obj: Record<string, CachedBatchResult> = {};
+        const now = Date.now();
+        for (const [key, val] of AI_RESOLVED_CACHE.entries()) {
+            if (now - val.timestamp < CACHE_TTL_MS) {
+                obj[key] = val;
+            }
+        }
+        fs.writeFileSync(cacheFilePath, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (err: any) {
+        console.warn('Failed to save AI prices cache to file:', err.message);
+    }
+}
+
+// Load cache initially
+loadCacheFromFile();
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -253,6 +309,18 @@ CRITICAL:
                 source: 'ai-batch-estimate',
                 laborEstimate: typeof est.laborEstimate === 'number' ? est.laborEstimate : 0,
             });
+
+            // Store in cache
+            const cacheKey = normalizeMaterialName(material.name);
+            AI_RESOLVED_CACHE.set(cacheKey, {
+                quotes,
+                laborEstimate: typeof est.laborEstimate === 'number' ? est.laborEstimate : 0,
+                timestamp: Date.now(),
+            });
+        }
+
+        if (estimates.length > 0) {
+            saveCacheToFile();
         }
     } catch (err) {
         console.error(`Failed to parse AI batch results (source: ${usedModel}):`, err);
@@ -271,7 +339,7 @@ export async function resolveBatchPrices(
     const knowledgeResults: BatchPriceResult[] = [];
     const unknowns: Material[] = [];
 
-    // Phase 1: Try market knowledge for each material (instant)
+    // Phase 1: Try market knowledge / cache for each material (instant)
     for (const material of materials) {
         const searchTerm = material.search_string || material.name;
         const knowledge = findProductKnowledge(searchTerm) || findProductKnowledge(material.name);
@@ -279,7 +347,25 @@ export async function resolveBatchPrices(
         if (knowledge) {
             knowledgeResults.push(resolveFromKnowledge(material, knowledge, userLat, userLng));
         } else {
-            unknowns.push(material);
+            const cacheKey = normalizeMaterialName(material.name);
+            const cached = AI_RESOLVED_CACHE.get(cacheKey);
+            const now = Date.now();
+            if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+                const quotes = cached.quotes;
+                const best = quotes[0];
+                const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
+                knowledgeResults.push({
+                    material,
+                    quotes,
+                    bestPrice: best,
+                    averagePrice: Math.round(avg * 100) / 100,
+                    potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
+                    source: 'ai-batch-estimate',
+                    laborEstimate: cached.laborEstimate,
+                });
+            } else {
+                unknowns.push(material);
+            }
         }
     }
 
@@ -331,12 +417,15 @@ export async function resolveBatchPrices(
         });
     }
 
+    const knowledgeMatchedCount = allResults.filter(r => r.source === 'market-knowledge').length;
+    const aiEstimatedCount = allResults.filter(r => r.source === 'ai-batch-estimate' && r.quotes.length > 0).length;
+
     return {
         results: allResults,
         stats: {
             total: materials.length,
-            knowledgeMatched: knowledgeResults.length,
-            aiEstimated: aiResults.size,
+            knowledgeMatched: knowledgeMatchedCount,
+            aiEstimated: aiEstimatedCount,
             failed,
         },
     };

@@ -4,7 +4,7 @@ import { Material } from '@/types';
 
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
-import { generateSearchString } from '@/lib/boq-engine';
+import { generateSearchString, tryDirectBoQParse, guessCategory } from '@/lib/boq-engine';
 
 // Vision-capable models for image analysis.
 // NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
@@ -99,99 +99,7 @@ function extractSpreadsheetText(buffer: ArrayBuffer): string {
     return result.length > 30000 ? result.slice(0, 30000) + '\n\n[...TRUNCATED]' : result;
 }
 
-/**
- * Materialtype categories we can detect from descriptions.
- */
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-    cement:      ['cement', 'concrete', 'mortar', 'screed', 'plaster'],
-    bricks:      ['brick', 'block', 'masonry', 'paver'],
-    steel:       ['steel', 'rebar', 'reinforcement', 'iron', 'metal', 'frame'],
-    timber:      ['timber', 'wood', 'door', 'window', 'frame', 'sill', 'board', 'plank', 'plywood'],
-    roofing:     ['roof', 'tile', 'sheet', 'cladding', 'IBR', 'corrugated'],
-    plumbing:    ['pipe', 'plumb', 'tap', 'fitting', 'valve', 'drain', 'sewer', 'water'],
-    electrical:  ['electric', 'cable', 'wire', 'conduit', 'switch', 'plug', 'light', 'panel'],
-    paint:       ['paint', 'primer', 'sealer', 'coat', 'varnish'],
-    hardware:    ['bolt', 'screw', 'nail', 'hinge', 'lock', 'anchor', 'fix'],
-};
 
-function guessCategory(description: string): string {
-    const lower = description.toLowerCase();
-    for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
-        if (kws.some(kw => lower.includes(kw))) return cat;
-    }
-    return 'other';
-}
-
-/**
- * Tries to parse a structured Excel/CSV BoQ directly — no AI, no token limits.
- * Detects common column patterns (Description, Qty, Unit) and maps every row.
- * Returns null if the spreadsheet doesn't have recognisable headers.
- */
-function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const allMaterials: Material[] = [];
-
-    // Column aliases — handles many real-world BoQ header variations
-    const DESC_ALIASES  = ['description', 'desc', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars'];
-    const QTY_ALIASES   = ['quantity', 'qty', 'amount', 'no', 'number', 'count', 'nos', 'no.', 'qnty'];
-    const UNIT_ALIASES  = ['unit', 'uom', 'measure', 'u/m', 'u.o.m'];
-    const IGNORE_TERMS  = ['total', 'sub-total', 'subtotal', 'summary', 'allow', 'provisional', 'p.c.', 'pc sum', ''];
-
-    for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        if (!sheet) continue;
-
-        // Convert to array-of-arrays so we can scan rows
-        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
-        if (rows.length < 2) continue;
-
-        // Find the header row (first row that contains a known column alias)
-        let headerRowIdx = -1;
-        let descCol = -1, qtyCol = -1, unitCol = -1;
-
-        for (let r = 0; r < Math.min(rows.length, 20); r++) {
-            const row = rows[r].map((c: any) => String(c).toLowerCase().trim());
-            const di = row.findIndex(c => DESC_ALIASES.some(a => c.includes(a)));
-            if (di >= 0) {
-                headerRowIdx = r;
-                descCol = di;
-                qtyCol  = row.findIndex(c => QTY_ALIASES.some(a => c.includes(a)));
-                unitCol = row.findIndex(c => UNIT_ALIASES.some(a => c.includes(a)));
-                break;
-            }
-        }
-
-        // No recognisable header found in this sheet
-        if (headerRowIdx < 0 || descCol < 0) continue;
-
-        let itemIndex = 0;
-        for (let r = headerRowIdx + 1; r < rows.length; r++) {
-            const row = rows[r];
-            const rawDesc = String(row[descCol] ?? '').trim();
-
-            // Skip blanks, totals, and noise rows
-            if (!rawDesc || IGNORE_TERMS.some(t => t && rawDesc.toLowerCase().startsWith(t))) continue;
-            if (rawDesc.length < 3) continue;
-
-            const rawQty  = qtyCol  >= 0 ? row[qtyCol]  : null;
-            const rawUnit = unitCol >= 0 ? String(row[unitCol] ?? '').trim() : '';
-
-            const qty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, '')) || 1;
-
-            allMaterials.push({
-                id: `boq-direct-${sheetName}-${itemIndex++}`,
-                name: rawDesc,
-                brand: undefined,
-                category: guessCategory(rawDesc) as any,
-                quantity: qty,
-                unit: rawUnit || 'unit',
-                search_string: generateSearchString(rawDesc),
-            });
-        }
-    }
-
-    return allMaterials.length > 0 ? allMaterials : null;
-}
 
 // ─── DeepSeek helpers ─────────────────────────────────────────────────────────────
 

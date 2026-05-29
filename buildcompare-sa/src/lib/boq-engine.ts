@@ -104,9 +104,16 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const allMaterials: Material[] = [];
 
-    const DESC_ALIASES  = ['description', 'desc', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars'];
-    const QTY_ALIASES   = ['quantity', 'qty', 'amount', 'no', 'number', 'count', 'nos', 'no.', 'qnty'];
-    const UNIT_ALIASES  = ['unit', 'uom', 'measure', 'u/m', 'u.o.m'];
+    const DESC_ALIASES  = [
+        'description', 'desc', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars',
+        'item', 'items', 'detail', 'details', 'name', 'product', 'products', 'specification', 'specifications', 'scope', 'work'
+    ];
+    const QTY_ALIASES   = [
+        'quantity', 'qty', 'amount', 'no', 'number', 'count', 'nos', 'no.', 'qnty', 'vol', 'volume', 'qty.', 'qnty.'
+    ];
+    const UNIT_ALIASES  = [
+        'unit', 'uom', 'measure', 'u/m', 'u.o.m', 'units', 'u.m', 'u.m.'
+    ];
     const IGNORE_TERMS  = ['total', 'sub-total', 'subtotal', 'summary', 'allow', 'provisional', 'p.c.', 'pc sum', ''];
 
     for (const sheetName of workbook.SheetNames) {
@@ -119,7 +126,8 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
         let headerRowIdx = -1;
         let descCol = -1, qtyCol = -1, unitCol = -1;
 
-        for (let r = 0; r < Math.min(rows.length, 20); r++) {
+        // Scan up to 50 rows for header aliases
+        for (let r = 0; r < Math.min(rows.length, 50); r++) {
             const row = rows[r].map((c: any) => String(c).toLowerCase().trim());
             const di = row.findIndex(c => DESC_ALIASES.some(a => c.includes(a)));
             if (di >= 0) {
@@ -128,6 +136,87 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
                 qtyCol  = row.findIndex(c => QTY_ALIASES.some(a => c.includes(a)));
                 unitCol = row.findIndex(c => UNIT_ALIASES.some(a => c.includes(a)));
                 break;
+            }
+        }
+
+        // If we didn't find headers via alias matching, try heuristic matching based on content characteristics
+        if (headerRowIdx < 0 || descCol < 0) {
+            const numCols = Math.max(...rows.map(r => r.length));
+            if (numCols > 0) {
+                let bestDescCol = -1;
+                let bestDescScore = 0;
+                
+                // 1. Guess description column: column with the longest average non-numeric string length
+                for (let c = 0; c < numCols; c++) {
+                    let totalLen = 0;
+                    let strCount = 0;
+                    let totalRows = 0;
+                    
+                    for (let r = 0; r < Math.min(rows.length, 50); r++) {
+                        const val = String(rows[r][c] ?? '').trim();
+                        if (!val) continue;
+                        totalRows++;
+                        const isNum = !isNaN(Number(val.replace(/[^0-9.-]/g, ''))) && val.replace(/[^0-9.-]/g, '') !== '';
+                        if (!isNum) {
+                            totalLen += val.length;
+                            strCount++;
+                        }
+                    }
+                    
+                    if (strCount > 0) {
+                        const avgLen = totalLen / strCount;
+                        const density = totalRows / Math.min(rows.length, 50);
+                        const score = avgLen * density;
+                        if (avgLen > 10 && score > bestDescScore) {
+                            bestDescScore = score;
+                            bestDescCol = c;
+                        }
+                    }
+                }
+                
+                if (bestDescCol >= 0) {
+                    descCol = bestDescCol;
+                    headerRowIdx = 0; // Scan all rows if heuristic
+                    
+                    // 2. Guess quantity column: column with the highest density of numbers (that is not description)
+                    let bestQtyCol = -1;
+                    let bestQtyCount = 0;
+                    for (let c = 0; c < numCols; c++) {
+                        if (c === descCol) continue;
+                        let qtyCount = 0;
+                        for (let r = 0; r < Math.min(rows.length, 50); r++) {
+                            const val = String(rows[r][c] ?? '').trim();
+                            if (!val) continue;
+                            const isNum = !isNaN(Number(val.replace(/[^0-9.-]/g, ''))) && val.replace(/[^0-9.-]/g, '') !== '';
+                            if (isNum) qtyCount++;
+                        }
+                        if (qtyCount > bestQtyCount) {
+                            bestQtyCount = qtyCount;
+                            bestQtyCol = c;
+                        }
+                    }
+                    qtyCol = bestQtyCol;
+                    
+                    // 3. Guess unit column: column containing common unit terms
+                    let bestUnitCol = -1;
+                    let bestUnitCount = 0;
+                    const COMMON_UNITS = ['m', 'm2', 'm3', 'kg', 'bag', 'bags', 'ea', 'each', 'no', 'nos', 'l', 'litre', 'litres', 'ton', 'tons', 'length', 'lengths', 'sheet', 'sheets', 'roll', 'rolls', 'lot', 'u', 'unit', 'units'];
+                    for (let c = 0; c < numCols; c++) {
+                        if (c === descCol || c === qtyCol) continue;
+                        let unitCount = 0;
+                        for (let r = 0; r < Math.min(rows.length, 50); r++) {
+                            const val = String(rows[r][c] ?? '').toLowerCase().trim();
+                            if (COMMON_UNITS.includes(val)) {
+                                unitCount++;
+                            }
+                        }
+                        if (unitCount > bestUnitCount) {
+                            bestUnitCount = unitCount;
+                            bestUnitCol = c;
+                        }
+                    }
+                    unitCol = bestUnitCol;
+                }
             }
         }
 
@@ -145,12 +234,13 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             const qty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, '')) || 1;
 
             allMaterials.push({
-                id: `boq-${sheetName}-${itemIndex++}`,
+                id: `boq-direct-${sheetName}-${itemIndex++}`,
                 name: rawDesc,
                 brand: undefined,
                 category: guessCategory(rawDesc) as any,
                 quantity: qty,
                 unit: rawUnit || 'unit',
+                search_string: generateSearchString(rawDesc),
             });
         }
     }

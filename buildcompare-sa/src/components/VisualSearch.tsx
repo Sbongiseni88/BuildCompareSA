@@ -166,7 +166,18 @@ export default function VisualSearch({ onMaterialsExtracted }: VisualSearchProps
             });
 
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Analysis failed');
+            if (!response.ok) {
+                const rawError = data.error;
+                let errMsg = 'Analysis failed';
+                if (rawError) {
+                    if (typeof rawError === 'object') {
+                        errMsg = rawError.message || rawError.error || JSON.stringify(rawError);
+                    } else {
+                        errMsg = String(rawError);
+                    }
+                }
+                throw new Error(errMsg);
+            }
 
             setStages(prev => prev.map(s => ({ ...s, status: 'completed' })));
             setProgress(100);

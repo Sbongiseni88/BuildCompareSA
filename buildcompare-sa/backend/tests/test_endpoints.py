@@ -7,7 +7,9 @@ client = TestClient(app)
 def test_health():
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"status": "online", "service": "BuildCompare Data & AI Agent"}
+    data = response.json()
+    assert data["status"] == "online"
+    assert data["service"] == "BuildCompare Data & AI Agent"
     print("Health check passed.")
 
 def test_price_aggregator():

@@ -44,7 +44,7 @@ export async function GET(request: Request) {
 
         // ── SCRAPE LAYER ──
         // Fully localized connection, sever AWS proxy
-        const scraperUrl = process.env.LOCAL_SCRAPER_URL || 'http://127.0.0.1:8001';
+        const scraperUrl = process.env.SCRAPER_URL || process.env.LOCAL_SCRAPER_URL || 'http://127.0.0.1:8001';
         const pyRes = await fetch(
             `${scraperUrl}/scrape?store=${encodeURIComponent(store)}&query=${encodeURIComponent(query)}`,
             { signal: controller.signal }
