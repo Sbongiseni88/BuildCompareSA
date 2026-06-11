@@ -299,8 +299,25 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
                     if (!res.ok) return null;
                     const data = await res.json();
+                    if (!data.success) return null;
 
-                    if (!data.success || !data.results || data.results.length === 0) return null;
+                    // No verified store prices anywhere — render the single
+                    // indicative estimate honestly (no fabricated spread).
+                    if (!data.results || data.results.length === 0) {
+                        if (!data.indicativeEstimate) return null;
+                        return {
+                            material,
+                            quotes: [],
+                            bestPrice: null,
+                            averagePrice: 0,
+                            potentialSavings: 0,
+                            isLive: false,
+                            marketInsight: data.marketInsight,
+                            comparisonNote: data.comparisonNote,
+                            indicativeEstimateZar: data.indicativeEstimate.priceZar,
+                            estimateBasis: data.indicativeEstimate.basis,
+                        } as ComparisonResult;
+                    }
 
                     // Map the compare agent results into our PriceQuote format
                     const quotes: PriceQuote[] = data.results.map((r: any) => ({
@@ -316,7 +333,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                         deliveryDays: 2,
                         distance: r.distance || 5,
                         productUrl: r.url,
-                        isFallback: r.source !== 'live-scrape',
+                        isFallback: r.source !== 'live-scrape' && r.source !== 'cached-scrape',
                         laborCostEstimate: r.laborEstimate || undefined,
                         priceConfidence: r.priceConfidence || 'medium',
                         lastUpdated: new Date(),
@@ -464,6 +481,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
             const allResults: ComparisonResult[] = [];
             let totalKnowledge = 0;
             let totalAi = 0;
+            let totalCached = 0;
 
             // Execute all chunks in parallel
             const chunkPromises = chunks.map(async (chunk) => {
@@ -496,6 +514,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
                 totalKnowledge += data.stats?.knowledgeMatched || 0;
                 totalAi += data.stats?.aiEstimated || 0;
+                totalCached += data.stats?.cached || 0;
 
                 // Map batch results into ComparisonResult format. Zero-quote
                 // lines (Preliminaries / structural — source 'no-retail-pricing')
@@ -528,9 +547,11 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                             bestPrice: best,
                             averagePrice: r.averagePrice,
                             potentialSavings: r.potentialSavings,
-                            isLive: r.source === 'market-knowledge',
+                            isLive: r.source === 'cached-scrape',
                             tenderCategory: r.tenderCategory,
                             pgService: r.pgService ?? null,
+                            indicativeEstimateZar: r.indicativeEstimateZar ?? null,
+                            estimateBasis: r.estimateBasis,
                         };
                     });
             });
@@ -550,8 +571,8 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
             setComparisonResults(allResults);
             showSuccess(
-                `Found prices for ${allResults.length} items ` +
-                `(${totalKnowledge} from market data, ${totalAi} AI estimated)`
+                `Priced ${allResults.length} lines ` +
+                `(${totalCached} store-verified, ${totalKnowledge + totalAi} indicative estimates)`
             );
         } catch (error: any) {
             console.error('Batch search failed:', error);
@@ -1125,33 +1146,56 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                 )}
                                             </div>
 
-                                            {/* No-retail lines (Preliminaries / P&G / structural):
-                                                an allowance panel instead of fabricated store prices. */}
+                                            {/* No-quote lines never get fabricated store prices. Three
+                                                honest cases: P&G service fee, unverified market estimate,
+                                                or plain all-N/A. */}
                                             {!result.bestPrice && (
-                                                <div className="p-4 bg-gradient-to-r from-blue-500/10 to-transparent border-b border-white/5">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="text-[10px] font-black bg-blue-500 text-white px-2 py-0.5 rounded-full uppercase">
-                                                            {(result.tenderCategory || '').toLowerCase() === 'preliminaries' ? 'P&G Allowance' : 'No Retail Pricing'}
-                                                        </span>
-                                                        <span className="text-xs font-bold text-blue-300">Site Operations / Service Fee</span>
-                                                    </div>
-                                                    {result.pgService ? (
-                                                        <div className="space-y-1">
-                                                            <p className="text-sm font-bold text-white">
-                                                                {result.pgService.label}: {formatCurrency(result.pgService.totalZar)}
-                                                            </p>
-                                                            <p className="text-[10px] text-slate-400" title={result.pgService.basis}>
-                                                                {formatCurrency(result.pgService.rateZar)}/{result.pgService.unit} × {result.pgService.qty} — indicative B2B
-                                                                site-services rate, not a retail price.
-                                                            </p>
+                                                (result.tenderCategory || '').toLowerCase() === 'preliminaries' || result.pgService ? (
+                                                    <div className="p-4 bg-gradient-to-r from-blue-500/10 to-transparent border-b border-white/5">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <span className="text-[10px] font-black bg-blue-500 text-white px-2 py-0.5 rounded-full uppercase">P&G Allowance</span>
+                                                            <span className="text-xs font-bold text-blue-300">Site Operations / Service Fee</span>
                                                         </div>
-                                                    ) : (
-                                                        <p className="text-xs text-slate-400">
-                                                            No hardware-retail product applies to this line. Supplier columns export as
-                                                            N/A — cost it via the BCCEI labour estimate in the sourcing file.
+                                                        {result.pgService ? (
+                                                            <div className="space-y-1">
+                                                                <p className="text-sm font-bold text-white">
+                                                                    {result.pgService.label}: {formatCurrency(result.pgService.totalZar)}
+                                                                </p>
+                                                                <p className="text-[10px] text-slate-400" title={result.pgService.basis}>
+                                                                    {formatCurrency(result.pgService.rateZar)}/{result.pgService.unit} × {result.pgService.qty} — indicative B2B
+                                                                    site-services rate, not a retail price.
+                                                                </p>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-xs text-slate-400">
+                                                                No hardware-retail product applies to this line. Supplier columns export as
+                                                                N/A — cost it via the BCCEI labour estimate in the sourcing file.
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ) : (result.indicativeEstimateZar ?? 0) > 0 ? (
+                                                    <div className="p-4 bg-gradient-to-r from-yellow-500/10 to-transparent border-b border-white/5">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <span className="text-[10px] font-black bg-yellow-500 text-black px-2 py-0.5 rounded-full uppercase">Unverified Estimate</span>
+                                                            <span className="text-xs font-bold text-yellow-300">No store-verified price yet</span>
+                                                        </div>
+                                                        <p className="text-sm font-bold text-white">
+                                                            ≈ {formatCurrency(result.indicativeEstimateZar!)} <span className="text-xs font-medium text-slate-400">/ {result.material.unit || 'unit'} (indicative)</span>
                                                         </p>
-                                                    )}
-                                                </div>
+                                                        <p className="text-[10px] text-slate-400 mt-1" title={result.estimateBasis}>
+                                                            Single market estimate — all 5 supplier columns stay N/A until the daily
+                                                            price pipeline verifies real store prices. Never a comparison.
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-4 bg-gradient-to-r from-slate-500/10 to-transparent border-b border-white/5">
+                                                        <span className="text-[10px] font-black bg-slate-600 text-white px-2 py-0.5 rounded-full uppercase">No Pricing Available</span>
+                                                        <p className="text-xs text-slate-400 mt-2">
+                                                            No store returned a verified price and no reliable estimate exists.
+                                                            All supplier columns export as N/A.
+                                                        </p>
+                                                    </div>
+                                                )
                                             )}
 
                                             {/* Best Price Highlight */}
@@ -1216,7 +1260,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                             <div className="flex-1 overflow-y-auto max-h-[200px] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                                                 {result.quotes.length === 0 && (
                                                     <div className="p-3 text-xs text-slate-500 font-medium">
-                                                        Retail matrix: N/A across all 5 suppliers (nothing to buy for this line).
+                                                        Retail matrix: N/A across all 5 suppliers — no verified store prices for this line.
                                                     </div>
                                                 )}
                                                 {result.quotes

@@ -1,7 +1,10 @@
 // BuildCompare SA — Service Worker
 // Enables offline caching and PWA install capability
 
-const CACHE_NAME = 'buildcompare-v1';
+// Version MUST be bumped on every release that changes the app shell —
+// a stale cache under the old name kept serving the pre-pivot bundle
+// (legacy AI concierge UI) long after the code was deleted from the repo.
+const CACHE_NAME = 'buildcompare-v2-tender';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to cache immediately on install

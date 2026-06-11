@@ -222,7 +222,7 @@ describe('resolveBatchPrices — Preliminaries rows get a null retail matrix', (
         expect(stats.aiEstimated).toBe(0);
     });
 
-    it('does NOT intercept a real material (knowledge path still prices it)', async () => {
+    it('real material on a cache miss → single indicative estimate, NO fabricated spread', async () => {
         const cement: Material = {
             id: 'mat-1',
             name: 'PPC Surebuild Cement 42.5N 50kg',
@@ -231,9 +231,21 @@ describe('resolveBatchPrices — Preliminaries rows get a null retail matrix', (
             unit: 'bags',
         };
         const { results, stats } = await resolveBatchPrices([cement]);
+        const r = results[0];
 
         expect(stats.nonRetail).toBe(0);
-        expect(results[0].source).not.toBe('no-retail-pricing');
-        expect(results[0].quotes.length).toBeGreaterThan(0);
+        expect(r.source).toBe('market-knowledge');
+
+        // The market-knowledge fallback must NEVER invent a per-store
+        // comparison (the old `pricePosition` curve crowned Cashbuild on
+        // every line). One labelled estimate; all 5 columns honest N/A.
+        expect(r.quotes).toHaveLength(0);
+        expect(r.bestPrice).toBeNull();
+        expect(r.indicativeEstimateZar).toBeGreaterThan(0);
+        expect(r.estimateBasis).toContain('not store-verified');
+        for (const store of RETAIL_STORES) {
+            expect(r.matrix[store].priceZar).toBeNull();
+            expect(r.matrix[store].status).toBe('N/A');
+        }
     });
 });

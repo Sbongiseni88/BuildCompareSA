@@ -28,7 +28,6 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { Project } from '@/types';
 import usePullToRefresh from '@/hooks/usePullToRefresh';
 import PullToRefreshIndicator from '@/components/PullToRefreshIndicator';
-import { useToast } from '@/contexts/ToastContext';
 import { readDashboardCache, writeDashboardCache } from '@/lib/dashboard-cache';
 import ComplianceGuideOverlay, { type ComplianceGuideId } from './ComplianceGuide';
 
@@ -40,7 +39,6 @@ interface DashboardProps {
 
 export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, onFeedbackClick }: DashboardProps) {
     const { user, userProfile, loading: authLoading } = useAuthContext();
-    const { showInfo } = useToast();
     const supabaseRef = React.useRef(createClient());
     const supabase = supabaseRef.current;
 
@@ -562,19 +560,23 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Card 1 */}
-                    <div 
-                        onClick={() => showInfo("This tutorial is being updated for 2026 standards—coming soon!")}
-                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10"
+                    {/* Card 1 — routes straight to the live Upload BoQ flow
+                        (replaced the old "coming soon" toast stub). */}
+                    <div
+                        onClick={onNavigateToCompare}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigateToCompare(); } }}
+                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10 focus:outline-none focus:ring-2 focus:ring-blue-400"
                     >
                         <div className="h-40 bg-gradient-to-br from-blue-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
                             <PlayCircle className="w-16 h-16 text-blue-400 group-hover:scale-110 transition-transform drop-shadow-lg" />
                         </div>
                         <div className="p-5">
-                            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2 block">Quick Video</span>
-                            <h3 className="text-lg font-bold text-white mb-2">How to Upload a BoQ</h3>
-                            <p className="text-slate-400 text-sm">Learn how to instantly extract materials from any Excel or PDF document.</p>
+                            <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2 block">Try It Now</span>
+                            <h3 className="text-lg font-bold text-white mb-2">Upload a BoQ</h3>
+                            <p className="text-slate-400 text-sm">Extract materials from any Excel or PDF document and price them across 5 suppliers — opens the Price Search Hub.</p>
                         </div>
                     </div>
 

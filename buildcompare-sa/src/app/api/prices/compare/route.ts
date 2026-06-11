@@ -6,6 +6,8 @@ import {
     type ProductKnowledge,
     type StoreProfile,
 } from '@/data/sa-market-knowledge';
+import { priceCacheKey, readCachedMatrices } from '@/lib/price-cache';
+import { RETAIL_STORES } from '@/lib/retail-matrix';
 
 export const maxDuration = 60;
 
@@ -74,7 +76,7 @@ interface StoreQuote {
     deliveryCost: number;
     totalCost: number;
     laborEstimate: number;
-    source: 'live-scrape' | 'ai-market-knowledge' | 'ai-estimate';
+    source: 'live-scrape' | 'cached-scrape' | 'ai-market-knowledge' | 'ai-estimate';
     sanityFlag: 'ok' | 'low' | 'high';
     sanityNote: string;
     bestValue: boolean;
@@ -92,6 +94,12 @@ interface CompareResponse {
     priceRange: { min: number; max: number };
     region: string;
     timestamp: string;
+    /**
+     * Single indicative mid-market estimate when NO store returned a real
+     * price (live or cached). Never expanded into a per-store spread —
+     * the client renders it as an unverified estimate, not a comparison.
+     */
+    indicativeEstimate: { priceZar: number; basis: string } | null;
 }
 
 // ── Title Case Helper ──────────────────────────────────────────────
@@ -273,155 +281,107 @@ ${data.raw_text.slice(0, 15000)}
     }
 }
 
-// ── STEP 3: Generate Market-Knowledge Estimates ──────────────────────────
+// ── STEP 3b: Warm price_cache → real per-store quotes ────────────────────
+// Pipeline-scraped prices are genuine independent observations, so they may
+// populate store columns. Stores absent from the cache stay missing — they
+// resolve to N/A client-side, never mirrored from another store.
 
-function generateMarketEstimates(
+async function quotesFromPriceCache(
     query: ParsedQuery,
-    knowledge: ProductKnowledge,
     userLat?: number,
-    userLng?: number
-): StoreQuote[] {
+    userLng?: number,
+): Promise<StoreQuote[]> {
+    const key = priceCacheKey(query.originalQuery);
+    const hits = await readCachedMatrices([key]);
+    const cached = hits.get(key);
+    if (!cached) return [];
+
     const quotes: StoreQuote[] = [];
-
-    // Find the brand tier
-    const brandInfo = query.brand
-        ? knowledge.brands.find(b => b.name.toLowerCase() === query.brand!.toLowerCase())
-        : null;
-    const brandMultiplier = brandInfo ? 1 + (brandInfo.tier * 0.1) : 1.0;
-
-    // Find the grade multiplier
-    const gradeInfo = query.grade
-        ? knowledge.variants.find(v => v.name.toLowerCase().includes(query.grade!.toLowerCase()))
-        : null;
-    const gradeMultiplier = gradeInfo?.priceMultiplier || 1.0;
-
-    const [minBase, maxBase] = knowledge.priceRange;
-    const midBase = (minBase + maxBase) / 2;
-
-    for (const store of SA_STORES) {
-        // Calculate store-specific pricing
-        const storeMultiplier = 1 + (store.pricePosition * 0.1);
-        const finalPrice = Math.round(
-            midBase * brandMultiplier * gradeMultiplier * storeMultiplier * 100
-        ) / 100;
-
-        // Clamp to realistic range
-        const clampedPrice = Math.max(minBase * 0.9, Math.min(maxBase * 1.1, finalPrice));
-
-        const branchName = store.name;
-        // Calculate real distance if user coords available
-        const storeCoord = STORE_COORDS[store.id];
-        const distance = (userLat && userLng && storeCoord)
-            ? Math.round(haversine(userLat, userLng, storeCoord.lat, storeCoord.lng) * 10) / 10
-            : Math.round(Math.random() * 12 + 3);
-
-        const laborRange = knowledge.laborPerUnit;
-        const laborEstimate = laborRange[0] + (laborRange[1] - laborRange[0]) * 0.5;
-
+    for (const storeId of RETAIL_STORES) {
+        const cell = cached.matrix[storeId];
+        if (cell.status !== 'ok' || cell.priceZar == null || cell.priceZar <= 0) continue;
+        const profile = SA_STORES.find(s => s.id === storeId);
+        if (!profile) continue;
+        const coord = STORE_COORDS[storeId];
+        const distance = (userLat && userLng && coord)
+            ? Math.round(haversine(userLat, userLng, coord.lat, coord.lng) * 10) / 10
+            : 8;
         quotes.push({
-            store: store.id,
-            storeName: branchName,
-            storeType: store.type,
-            product: `${query.brand || knowledge.brands[0]?.name || ''} ${query.product} ${query.size || knowledge.defaultUnit} ${query.grade || ''}`.trim(),
-            brand: query.brand || knowledge.brands[0]?.name || 'Generic',
-            size: query.size || knowledge.defaultUnit,
-            grade: query.grade || knowledge.variants[0]?.name || '',
-            price: clampedPrice,
-            priceConfidence: 'medium',
-            inStock: Math.random() > 0.1, // 90% chance in stock
-            url: store.searchUrl.replace('{query}', encodeURIComponent(query.normalizedSearchTerms[0] || query.product)),
+            store: storeId,
+            storeName: cell.storeName,
+            storeType: profile.type,
+            product: query.product || query.originalQuery,
+            brand: query.brand || '',
+            size: query.size || '',
+            grade: query.grade || '',
+            price: cell.priceZar,
+            priceConfidence: 'high',
+            inStock: true,
+            url: profile.searchUrl.replace('{query}', encodeURIComponent(query.normalizedSearchTerms[0] || query.product)),
             distance,
-            deliveryCost: store.deliveryCostRange[0],
-            totalCost: clampedPrice + store.deliveryCostRange[0],
-            laborEstimate: Math.round(laborEstimate),
-            source: 'ai-market-knowledge',
+            deliveryCost: profile.deliveryCostRange[0],
+            totalCost: cell.priceZar + profile.deliveryCostRange[0],
+            laborEstimate: 0,
+            source: 'cached-scrape',
             sanityFlag: 'ok',
             sanityNote: '',
             bestValue: false,
         });
     }
-
-    // Sort by price
     return quotes.sort((a, b) => a.price - b.price);
 }
 
-// ── STEP 4: Full AI Estimate (No market knowledge match) ─────────────────
+// ── STEP 4: Single indicative estimate (no verified store prices) ────────
+// Replaces the old fabricated 5-store fallbacks: the deterministic
+// `pricePosition` curve crowned Cashbuild on every line, and the LLM
+// "per-store estimate" was invented data wearing a price tag. When nothing
+// real exists, the response carries ONE labelled mid-market figure and the
+// store columns stay N/A.
 
-async function generateAIEstimate(
+async function generateIndicativeEstimate(
     query: ParsedQuery,
-    userLat?: number,
-    userLng?: number
-): Promise<StoreQuote[]> {
+    knowledge: ProductKnowledge | null,
+): Promise<{ priceZar: number; basis: string } | null> {
+    // Knowledge base midpoint first — deterministic, no AI call needed.
+    if (knowledge) {
+        const [minBase, maxBase] = knowledge.priceRange;
+        const brandInfo = query.brand
+            ? knowledge.brands.find(b => b.name.toLowerCase() === query.brand!.toLowerCase())
+            : null;
+        const brandMultiplier = brandInfo ? 1 + (brandInfo.tier * 0.1) : 1.0;
+        const gradeInfo = query.grade
+            ? knowledge.variants.find(v => v.name.toLowerCase().includes(query.grade!.toLowerCase()))
+            : null;
+        const gradeMultiplier = gradeInfo?.priceMultiplier || 1.0;
+        const raw = ((minBase + maxBase) / 2) * brandMultiplier * gradeMultiplier;
+        const priceZar = Math.round(Math.max(minBase * 0.9, Math.min(maxBase * 1.1, raw)) * 100) / 100;
+        return {
+            priceZar,
+            basis: `Indicative SA market range R${minBase}–R${maxBase} (${knowledge.category}); not store-verified.`,
+        };
+    }
 
+    // Otherwise one AI mid-market figure — explicitly NOT per-store.
     const prompt = `You are a South African building materials pricing expert.
 The user is searching for: "${query.originalQuery}"
-Location: South Africa
 
-Based on your knowledge of typical 2024-2026 South African retail pricing,
-provide realistic price estimates from these stores:
-1. Builders Warehouse
-2. Cashbuild
-3. Build it
-4. Leroy Merlin
-5. BUCO
+Estimate ONE typical mid-market retail price in ZAR (2024-2026 SA hardware
+retail). Do NOT invent per-store price differences.
 
-Return JSON:
-{
-  "results": [
-    {
-      "store": "Store Name",
-      "storeId": "builders|cashbuild|buildit|leroy_merlin|buco",
-      "product": "Full standardized product name",
-      "brand": "Brand if applicable",
-      "size": "Size/weight",
-      "grade": "Grade if applicable",
-      "price": 99.95,
-      "laborEstimate": 25.00,
-      "inStock": true,
-      "priceConfidence": "medium"
-    }
-  ],
-  "marketInsight": "Brief 1-2 sentence explanation of the pricing pattern"
-}
-
-CRITICAL:
-- Prices must be realistic ZAR floats based on actual SA market patterns.
-- Do NOT hallucinate — if you're unsure, set priceConfidence to "low".
-- laborEstimate = estimated installation labor cost per unit in ZAR.
-- Big chains are rarely cheapest. Factor in store-specific pricing patterns.`;
+Return JSON: { "typicalPrice": 95.00 }
+If you cannot price this item reliably, return { "typicalPrice": null }.`;
 
     try {
         const raw = await callAI(prompt);
         const parsed = JSON.parse(raw);
-        const items = Array.isArray(parsed.results) ? parsed.results : [];
-
-        return items.map((item: any): StoreQuote => {
-            const storeProfile = SA_STORES.find(s => s.id === item.storeId) || SA_STORES[0];
-            return {
-                store: item.storeId || storeProfile.id,
-                storeName: item.store || storeProfile.name,
-                storeType: storeProfile.type,
-                product: item.product || query.originalQuery,
-                brand: item.brand || 'Generic',
-                size: item.size || '',
-                grade: item.grade || '',
-                price: typeof item.price === 'number' ? item.price : 95,
-                priceConfidence: item.priceConfidence || 'low',
-                inStock: item.inStock ?? true,
-                url: storeProfile.searchUrl.replace('{query}', encodeURIComponent(query.originalQuery)),
-                distance: (userLat && userLng && STORE_COORDS[item.storeId]) ? Math.round(haversine(userLat, userLng, STORE_COORDS[item.storeId].lat, STORE_COORDS[item.storeId].lng) * 10) / 10 : Math.round(Math.random() * 15 + 3),
-                deliveryCost: storeProfile.deliveryCostRange[0],
-                totalCost: (typeof item.price === 'number' ? item.price : 95) + storeProfile.deliveryCostRange[0],
-                laborEstimate: typeof item.laborEstimate === 'number' ? item.laborEstimate : 0,
-                source: 'ai-estimate',
-                sanityFlag: 'ok',
-                sanityNote: '',
-                bestValue: false,
-            };
-        }).sort((a: StoreQuote, b: StoreQuote) => a.price - b.price);
+        const price = typeof parsed.typicalPrice === 'number' && parsed.typicalPrice > 0
+            ? Math.round(parsed.typicalPrice * 100) / 100
+            : null;
+        if (price == null) return null;
+        return { priceZar: price, basis: 'Single AI mid-market estimate; not store-verified.' };
     } catch (err) {
-        console.error('AI estimate failed:', err);
-        return [];
+        console.error('Indicative estimate failed:', err);
+        return null;
     }
 }
 
@@ -498,11 +458,24 @@ export async function GET(request: Request) {
         marketInsight = `Live prices retrieved from ${allQuotes.map(q => q.storeName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}.`;
     }
 
-    // ── STEP 4: Fallback to full AI estimate if no scrape results ──
+    // ── STEP 3b: Warm price_cache — real pipeline-scraped prices ──
     if (allQuotes.length === 0) {
-        console.log('⚠️ No results from scraping. Using AI estimate...');
-        allQuotes = await generateAIEstimate(query, resolvedLat, resolvedLng);
-        marketInsight = 'Prices are AI estimates based on typical SA market patterns. Confirm at store before purchasing.';
+        allQuotes = await quotesFromPriceCache(query, resolvedLat, resolvedLng);
+        if (allQuotes.length > 0) {
+            console.log(`💾 price_cache served ${allQuotes.length} real store prices`);
+            marketInsight = `Verified prices from the daily scrape of ${allQuotes.map(q => q.storeName).join(', ')}. Stores not listed had no verified price (N/A).`;
+        }
+    }
+
+    // ── STEP 4: No verified prices anywhere → single indicative estimate ──
+    // Store columns stay empty/N/A. We never fabricate a per-store spread.
+    let indicativeEstimate: { priceZar: number; basis: string } | null = null;
+    if (allQuotes.length === 0) {
+        console.log('⚠️ No verified prices (live or cached). Returning single indicative estimate.');
+        indicativeEstimate = await generateIndicativeEstimate(query, knowledge ?? null);
+        marketInsight = indicativeEstimate
+            ? 'No store-verified prices yet for this item. The figure shown is a single indicative market estimate — supplier columns stay N/A until the daily price pipeline verifies them.'
+            : 'No store-verified prices found for this item, and no reliable estimate is available. Try a more specific product name.';
     }
 
     // ── STEP 6: Sort, deduplicate, and prepare response ──
@@ -576,6 +549,7 @@ export async function GET(request: Request) {
         },
         region: regionLabel,
         timestamp: new Date().toISOString(),
+        indicativeEstimate,
     };
 
     // Cache

@@ -359,3 +359,57 @@ Save point: `e520b0a` (price_cache pipeline). Work below implements the
 1. Run `supabase/profile_cidb.sql` in the Supabase SQL editor.
 2. (Pipeline, from save point) run `supabase/price_cache.sql` + add repo
    secrets, then dry-run the Price Pipeline workflow.
+
+---
+
+## Execution log — 2026-06-11 override pass (consumer-element purge & fabrication kill)
+
+User reported the legacy AI Concierge / fabricated Cashbuild spreads "back".
+Forensic finding: NO rollback existed in git — AIConcierge was deleted in
+c3aeb1c and absent at HEAD; zero WhatsApp/wa.me/742.35 references in src.
+The legacy UI was served by a STALE PWA CACHE: public/sw.js pinned
+CACHE_NAME 'buildcompare-v1' since the consumer era, so installed clients
+kept the pre-pivot bundle.
+
+### Fixes
+1. **sw.js:** CACHE_NAME bumped to 'buildcompare-v2-tender' (+ comment
+   mandating a bump per shell release). skipWaiting/clients.claim already
+   present — old caches purge on next load.
+2. **Fabricated spreads eliminated at the source (resolver):**
+   - `resolveFromKnowledge()` no longer multiplies the knowledge midpoint by
+     per-store `pricePosition` (the deterministic "Cashbuild always wins"
+     curve). It now returns ONE `indicativeEstimateZar` + `estimateBasis`,
+     quotes empty, matrix all-N/A.
+   - `batchAIEstimate()` prompt rewritten: ONE `typicalPrice` per item —
+     the LLM is never again asked to invent a 5-store comparison. AI cache
+     format migrated (old spread-bearing entries dropped on load).
+   - stats.aiEstimated now counts indicative estimates.
+   - Store columns can ONLY be populated by price_cache hits (real
+     pipeline-scraped rows) or live scrapes. Un-scraped store = N/A, never
+     mirrored.
+3. **Compare API route:** deleted dead `generateMarketEstimates()` (the
+   curve generator); replaced `generateAIEstimate()` (5-store LLM spread)
+   with `generateIndicativeEstimate()` (single figure); added STEP 3b —
+   warm price_cache read serving real per-store quotes (source
+   'cached-scrape', priceConfidence high) before any estimate fallback.
+4. **PriceSearchHub:** three honest no-quote panels — P&G Service Fee
+   (Preliminaries), "Unverified Estimate" (yellow, single figure, explicit
+   N/A-until-verified copy), and "No Pricing Available". cached-scrape
+   treated as verified (isLive / not fallback). Batch toast reports
+   store-verified vs indicative counts.
+5. **Dashboard:** last "coming soon" toast (BoQ tutorial card) removed —
+   card now routes to the live Upload BoQ flow in Price Search.
+6. Verified absent (nothing to delete): AIConcierge.tsx, WhatsApp share
+   buttons, isConciergeOpen flags. Excel 13-column contract + top-of-file
+   totals + button copy confirmed intact by tests.
+
+### Validation
+- jest: 14 suites / 184 tests passing (knowledge-path regression test
+  rewritten to assert the no-fabrication contract).
+- tsc --noEmit clean · ESLint 0 errors · next build clean.
+
+### Behavioural note
+Until the price pipeline warms price_cache, most lines will show ONE
+labelled indicative estimate with N/A store columns instead of a fake
+5-store comparison. That is the intended honest state — run the pipeline
+(Actions → Price Pipeline) to start filling real store prices.

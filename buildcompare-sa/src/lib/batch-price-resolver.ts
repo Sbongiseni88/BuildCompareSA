@@ -14,7 +14,6 @@ import {
     findProductKnowledge,
     SA_STORES,
     type ProductKnowledge,
-    type StoreProfile,
 } from '@/data/sa-market-knowledge';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
@@ -60,7 +59,8 @@ import path from 'path';
 // ── Cache Settings ───────────────────────────────────────────────────────────
 
 interface CachedBatchResult {
-    quotes: BatchQuote[];
+    /** Single indicative mid-market estimate (ZAR) — never a per-store spread. */
+    estimateZar: number;
     laborEstimate: number;
     timestamp: number;
 }
@@ -80,7 +80,13 @@ function loadCacheFromFile() {
                 const now = Date.now();
                 for (const [key, val] of Object.entries(parsed)) {
                     const cachedVal = val as CachedBatchResult;
-                    if (now - cachedVal.timestamp < CACHE_TTL_MS) {
+                    // Entries from the old format carried per-store quote
+                    // arrays (fabricated spreads) — drop them on sight.
+                    if (
+                        typeof cachedVal.estimateZar === 'number' &&
+                        cachedVal.estimateZar > 0 &&
+                        now - cachedVal.timestamp < CACHE_TTL_MS
+                    ) {
                         AI_RESOLVED_CACHE.set(key, cachedVal);
                     }
                 }
@@ -136,6 +142,14 @@ export interface BatchPriceResult {
      * part of the 5-store matrix.
      */
     pgService?: PgServiceEstimate | null;
+    /**
+     * Single indicative mid-market estimate (ZAR/unit) for lines the warm
+     * price_cache could not verify. NEVER expanded into a per-store spread —
+     * the 5-store matrix stays N/A until real scraped prices exist.
+     */
+    indicativeEstimateZar?: number | null;
+    /** Audit trace for the indicative estimate's origin. */
+    estimateBasis?: string;
     /** BCCEI-traceable labour estimate (ZAR, total for this material's qty). */
     bccei: {
         totalZar: number;
@@ -297,16 +311,21 @@ function bcceiForMaterial(material: Material): BatchPriceResult['bccei'] {
 
 // ── Market Knowledge Resolver (no API call) ──────────────────────────────────
 
+/**
+ * Knowledge hits yield ONE indicative mid-market estimate — never a per-store
+ * spread. The old implementation multiplied the midpoint by each store's
+ * `pricePosition`, which deterministically crowned Cashbuild on every line
+ * (the fabricated "742.35 repeating" curve). Store columns now stay N/A
+ * until the price_cache pipeline has real scraped prices for them.
+ */
 function resolveFromKnowledge(
     material: Material,
     knowledge: ProductKnowledge,
-    userLat?: number,
-    userLng?: number
 ): BatchPriceResult {
     const [minBase, maxBase] = knowledge.priceRange;
     const midBase = (minBase + maxBase) / 2;
 
-    // Try to detect brand/grade from the material name for better pricing
+    // Brand/grade detection still refines the single estimate.
     const nameLC = material.name.toLowerCase();
     let brandMultiplier = 1.0;
     let gradMultiplier = 1.0;
@@ -324,48 +343,40 @@ function resolveFromKnowledge(
         }
     }
 
-    const quotes: BatchQuote[] = SA_STORES.map((store: StoreProfile) => {
-        const storeMultiplier = 1 + (store.pricePosition * 0.1);
-        const rawPrice = midBase * brandMultiplier * gradMultiplier * storeMultiplier;
-        const price = Math.round(Math.max(minBase * 0.9, Math.min(maxBase * 1.1, rawPrice)) * 100) / 100;
+    const raw = midBase * brandMultiplier * gradMultiplier;
+    const estimate = Math.round(Math.max(minBase * 0.9, Math.min(maxBase * 1.1, raw)) * 100) / 100;
+    const labour = Math.round((knowledge.laborPerUnit[0] + knowledge.laborPerUnit[1]) / 2);
 
-        const searchTerm = material.search_string || generateSearchString(material.name);
-        return {
-            store: store.id,
-            storeName: store.name,
-            storeType: store.type,
-            price,
-            priceConfidence: 'medium' as const,
-            inStock: true,
-            url: store.searchUrl.replace('{query}', encodeURIComponent(searchTerm)),
-            distance: Math.round(Math.random() * 12 + 3), // Placeholder — real geo would be used if coords available
-            deliveryCost: store.deliveryCostRange[0],
-            laborEstimate: Math.round((knowledge.laborPerUnit[0] + knowledge.laborPerUnit[1]) / 2),
-        };
-    }).sort((a, b) => a.price - b.price);
-
-    const best = quotes[0];
-    const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
-
-    const matrix = buildMatrixFromQuotes(quotes, 'market-knowledge', material.name);
-    const bccei = bcceiForMaterial(material);
+    const matrix = blankMatrix('not_found');
+    for (const store of RETAIL_STORES) logMatrixNa(store, 'not_found', material.name);
+    assertSymmetric(matrix);
 
     return {
         material,
-        quotes,
-        bestPrice: best,
-        averagePrice: Math.round(avg * 100) / 100,
-        potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
+        quotes: [],
+        bestPrice: null,
+        averagePrice: 0,
+        potentialSavings: 0,
         source: 'market-knowledge',
-        laborEstimate: quotes[0]?.laborEstimate || 0,
+        laborEstimate: labour,
         matrix,
         tenderCategory: resolveTenderCategory(material),
-        bccei,
+        bccei: bcceiForMaterial(material),
+        indicativeEstimateZar: estimate,
+        estimateBasis:
+            `Indicative SA market range R${minBase}–R${maxBase} (${knowledge.category}); ` +
+            `not store-verified — supplier columns stay N/A until the price pipeline scrapes them.`,
     };
 }
 
 // ── AI Batch Estimate (single API call for unknowns) ─────────────────────────
 
+/**
+ * One indicative mid-market estimate per unknown item — the AI is no longer
+ * asked to invent a 5-store comparison (LLM store spreads were fabricated
+ * data wearing a price tag). Store columns stay N/A; the estimate is
+ * labelled and excluded from "Cheapest Supplier" logic everywhere.
+ */
 async function batchAIEstimate(materials: Material[]): Promise<Map<string, BatchPriceResult>> {
     const results = new Map<string, BatchPriceResult>();
     if (materials.length === 0) return results;
@@ -374,13 +385,8 @@ async function batchAIEstimate(materials: Material[]): Promise<Map<string, Batch
     const itemList = materials.map((m, i) => `${i + 1}. "${m.search_string || m.name}" (qty: ${m.quantity} ${m.unit})`).join('\n');
 
     const prompt = `You are a South African building materials pricing expert.
-Provide realistic 2024-2026 ZAR price estimates for each of the following items.
-For EACH item, estimate the price at these 5 SA stores:
-- Builders Warehouse
-- Cashbuild
-- Build it
-- Leroy Merlin
-- BUCO
+For each item below, estimate ONE typical mid-market retail price in ZAR
+(2024-2026 SA hardware retail). Do NOT invent per-store price differences.
 
 Items to price:
 ${itemList}
@@ -391,22 +397,16 @@ Return JSON:
     {
       "itemIndex": 1,
       "product": "Standardized product name",
-      "stores": [
-        { "storeId": "builders", "store": "Builders Warehouse", "price": 99.95, "inStock": true },
-        { "storeId": "cashbuild", "store": "Cashbuild", "price": 89.95, "inStock": true },
-        { "storeId": "buildit", "store": "Build it", "price": 94.50, "inStock": true },
-        { "storeId": "leroy_merlin", "store": "Leroy Merlin", "price": 102.00, "inStock": true },
-        { "storeId": "buco", "store": "BUCO", "price": 95.00, "inStock": true }
-      ],
+      "typicalPrice": 95.00,
       "laborEstimate": 25.00
     }
   ]
 }
 
 CRITICAL:
-- Prices must be realistic ZAR floats based on actual SA market patterns.
+- typicalPrice = a single realistic mid-market ZAR float per unit.
 - laborEstimate = estimated installation labor cost per unit in ZAR.
-- Do NOT hallucinate extreme prices. Use your training knowledge of SA hardware retail.
+- If you cannot price an item reliably, OMIT it from "estimates".
 - Return ONLY valid JSON. No markdown.`;
 
     let rawContent: string | null = null;
@@ -461,56 +461,38 @@ CRITICAL:
             if (idx < 0 || idx >= materials.length) continue;
 
             const material = materials[idx];
-            const stores = Array.isArray(est.stores) ? est.stores : [];
-            const searchTerm = material.search_string || generateSearchString(material.name);
+            const estimate = typeof est.typicalPrice === 'number' && est.typicalPrice > 0
+                ? Math.round(est.typicalPrice * 100) / 100
+                : null;
+            if (estimate == null) continue;
 
-            const quotes: BatchQuote[] = stores
-                .filter((s: any) => typeof s.price === 'number' && s.price > 0)
-                .map((s: any): BatchQuote => {
-                    const storeProfile = SA_STORES.find(sp => sp.id === s.storeId);
-                    return {
-                        store: s.storeId || 'unknown',
-                        storeName: s.store || storeProfile?.name || 'Unknown Store',
-                        storeType: storeProfile?.type || 'chain',
-                        price: s.price,
-                        priceConfidence: 'low',
-                        inStock: s.inStock ?? true,
-                        url: storeProfile
-                            ? storeProfile.searchUrl.replace('{query}', encodeURIComponent(searchTerm))
-                            : `https://www.google.com/search?q=${encodeURIComponent(searchTerm + ' price South Africa')}`,
-                        distance: Math.round(Math.random() * 12 + 3),
-                        deliveryCost: storeProfile?.deliveryCostRange[0] || 150,
-                        laborEstimate: typeof est.laborEstimate === 'number' ? est.laborEstimate : 0,
-                    };
-                })
-                .sort((a: BatchQuote, b: BatchQuote) => a.price - b.price);
-
-            if (quotes.length === 0) continue;
-
-            const best = quotes[0];
-            const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
-
-            const matrix = buildMatrixFromQuotes(quotes, 'ai-batch-estimate', material.name);
-            const bccei = bcceiForMaterial(material);
+            const labour = typeof est.laborEstimate === 'number' ? est.laborEstimate : 0;
+            const matrix = blankMatrix('not_found');
+            for (const store of RETAIL_STORES) logMatrixNa(store, 'not_found', material.name);
+            assertSymmetric(matrix);
 
             results.set(material.id, {
                 material,
-                quotes,
-                bestPrice: best,
-                averagePrice: Math.round(avg * 100) / 100,
-                potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
+                quotes: [],
+                bestPrice: null,
+                averagePrice: 0,
+                potentialSavings: 0,
                 source: 'ai-batch-estimate',
-                laborEstimate: typeof est.laborEstimate === 'number' ? est.laborEstimate : 0,
+                laborEstimate: labour,
                 matrix,
                 tenderCategory: resolveTenderCategory(material),
-                bccei,
+                bccei: bcceiForMaterial(material),
+                indicativeEstimateZar: estimate,
+                estimateBasis:
+                    `Single AI mid-market estimate (${usedModel}); not store-verified — ` +
+                    `supplier columns stay N/A until the price pipeline scrapes them.`,
             });
 
             // Store in cache
             const cacheKey = normalizeMaterialName(material.name);
             AI_RESOLVED_CACHE.set(cacheKey, {
-                quotes,
-                laborEstimate: typeof est.laborEstimate === 'number' ? est.laborEstimate : 0,
+                estimateZar: estimate,
+                laborEstimate: labour,
                 timestamp: Date.now(),
             });
         }
@@ -532,6 +514,10 @@ export async function resolveBatchPrices(
     userLat?: number,
     userLng?: number
 ): Promise<BatchResolveResult> {
+    // Coordinates stay in the signature for the API route; estimates no
+    // longer fabricate per-store data, so nothing geo-dependent runs here.
+    void userLat;
+    void userLng;
     const knowledgeResults: BatchPriceResult[] = [];
     const nonRetailResults = new Map<string, BatchPriceResult>();
     const cachedResults = new Map<string, BatchPriceResult>();
@@ -574,28 +560,30 @@ export async function resolveBatchPrices(
         const knowledge = findProductKnowledge(searchTerm) || findProductKnowledge(material.name);
 
         if (knowledge) {
-            knowledgeResults.push(resolveFromKnowledge(material, knowledge, userLat, userLng));
+            knowledgeResults.push(resolveFromKnowledge(material, knowledge));
         } else {
             const cacheKey = normalizeMaterialName(material.name);
             const cached = AI_RESOLVED_CACHE.get(cacheKey);
             const now = Date.now();
             if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
-                const quotes = cached.quotes;
-                const best = quotes[0];
-                const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
-                const matrix = buildMatrixFromQuotes(quotes, 'ai-batch-estimate', material.name);
-                const bccei = bcceiForMaterial(material);
+                // Replay the cached single indicative estimate — store
+                // columns stay N/A, exactly like a fresh AI estimate.
+                const matrix = buildMatrixFromQuotes([], 'ai-batch-estimate', material.name);
                 knowledgeResults.push({
                     material,
-                    quotes,
-                    bestPrice: best,
-                    averagePrice: Math.round(avg * 100) / 100,
-                    potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
+                    quotes: [],
+                    bestPrice: null,
+                    averagePrice: 0,
+                    potentialSavings: 0,
                     source: 'ai-batch-estimate',
                     laborEstimate: cached.laborEstimate,
                     matrix,
                     tenderCategory: resolveTenderCategory(material),
-                    bccei,
+                    bccei: bcceiForMaterial(material),
+                    indicativeEstimateZar: cached.estimateZar,
+                    estimateBasis:
+                        'Single AI mid-market estimate (cached); not store-verified — ' +
+                        'supplier columns stay N/A until the price pipeline scrapes them.',
                 });
             } else {
                 unknowns.push(material);
@@ -669,7 +657,9 @@ export async function resolveBatchPrices(
     }
 
     const knowledgeMatchedCount = allResults.filter(r => r.source === 'market-knowledge').length;
-    const aiEstimatedCount = allResults.filter(r => r.source === 'ai-batch-estimate' && r.quotes.length > 0).length;
+    const aiEstimatedCount = allResults.filter(
+        r => r.source === 'ai-batch-estimate' && (r.indicativeEstimateZar ?? 0) > 0,
+    ).length;
 
     return {
         results: allResults,

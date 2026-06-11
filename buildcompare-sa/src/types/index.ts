@@ -115,6 +115,13 @@ export interface ComparisonResult {
         totalZar: number;
         basis: string;
     } | null;
+    /**
+     * Single indicative mid-market estimate (ZAR/unit) when no store-verified
+     * price exists. Never a per-store spread — supplier columns stay N/A.
+     */
+    indicativeEstimateZar?: number | null;
+    /** Audit trace for the indicative estimate's origin. */
+    estimateBasis?: string;
 }
 
 // Search Types
