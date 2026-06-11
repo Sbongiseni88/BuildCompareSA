@@ -1,8 +1,5 @@
 name: Price Pipeline
 
-# Background scraper that refreshes the Supabase price_cache so the app serves
-# real per-store prices instead of fabricated estimates. Runs daily; can also
-# be triggered manually (optionally as a dry run) from the Actions tab.
 on:
   schedule:
     - cron: '0 2 * * *' # 02:00 UTC daily (≈04:00 SAST)
@@ -43,10 +40,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scraper/requirements.txt
 
-      # Only needed when BROWSERBASE_API_KEY is NOT set (local Chromium path).
-      # Harmless to always install; Browserbase ignores it.
-      - name: Install Playwright Chromium
-        run: python -m playwright install --with-deps chromium
+      # Only downloads local browser frameworks if running a local test without Browserbase keys
+      - - name: Install Playwright Chromium (Fallback Only)
+        if: secrets.BROWSERBASE_API_KEY == ''
+        run: |
+          python -m playwright install chromium
+          # Note: We omit --with-deps to completely prevent Ubuntu 24.04 package manager errors.
 
       - name: Run price pipeline
         env:
