@@ -41,7 +41,7 @@ jobs:
           pip install -r scraper/requirements.txt
 
       # Only downloads local browser frameworks if running a local test without Browserbase keys
-      - - name: Install Playwright Chromium (Fallback Only)
+      -  name: Install Playwright Chromium (Fallback Only)
         if: secrets.BROWSERBASE_API_KEY == ''
         run: |
           python -m playwright install chromium
