@@ -164,6 +164,115 @@ describe('shouldBypassRetailPricing — no fabricated spreads for non-retail lin
     });
 });
 
+describe('tryDirectBoQParse — dynamic section context (2,750-row "all Preliminaries" regression)', () => {
+    // A multi-section document: the bug classified EVERY row below
+    // "Section No 1: Preliminaries" as Preliminaries → entire sheet N/A.
+    const buf = sheetBuffer([
+        ['Description', 'Unit', 'Qty'],
+        ['SECTION NO 1: PRELIMINARIES', '', ''],
+        ['Daily record keeping and site instructions', 'sum', 1],
+        ['SECTION NO 2: BUILDERS WORK', '', ''],
+        ['Make good existing surfaces where damaged', 'm2', 40],
+        ['PPC Surebuild Cement 42.5N 50kg', 'bags', 100],
+        ['PLUMBING: DRAINAGE', '', ''],
+        ['Excavate trench and backfill for services', 'm', 120],
+        ['SECTION NO 4: ELECTRICAL INSTALLATION', '', ''],
+        ['Test and commission the installation', 'sum', 1],
+        ['20A single pole circuit breaker', 'No', 12],
+    ]);
+    const materials = tryDirectBoQParse(buf)!;
+    const byName = (n: string) => materials.find((m) => m.name === n)!;
+
+    it('section headings are consumed as context, never emitted as materials', () => {
+        const names = materials.map((m) => m.name);
+        expect(names).not.toContain('SECTION NO 1: PRELIMINARIES');
+        expect(names).not.toContain('PLUMBING: DRAINAGE');
+        expect(materials).toHaveLength(6);
+    });
+
+    it('keyword-less rows inherit the ACTIVE section — not the first one', () => {
+        expect(byName('Daily record keeping and site instructions').tenderCategory).toBe('Preliminaries');
+        expect(byName('Make good existing surfaces where damaged').tenderCategory).toBe('Masonry');
+        expect(byName('Excavate trench and backfill for services').tenderCategory).toBe('Plumbing');
+        expect(byName('Test and commission the installation').tenderCategory).toBe('Electrical');
+    });
+
+    it('a high-confidence row keyword still beats the section trade', () => {
+        // Cement line inside "Builders Work" is Concrete, not Masonry.
+        expect(byName('PPC Surebuild Cement 42.5N 50kg').tenderCategory).toBe('Concrete');
+        expect(byName('20A single pole circuit breaker').tenderCategory).toBe('Electrical');
+    });
+
+    it('ONLY Section-1 rows bypass retail pricing — later sections get priced', () => {
+        expect(shouldBypassRetailPricing(byName('Daily record keeping and site instructions'))).toBe(true);
+        expect(shouldBypassRetailPricing(byName('Make good existing surfaces where damaged'))).toBe(false);
+        expect(shouldBypassRetailPricing(byName('Excavate trench and backfill for services'))).toBe(false);
+        expect(shouldBypassRetailPricing(byName('Test and commission the installation'))).toBe(false);
+        expect(shouldBypassRetailPricing(byName('20A single pole circuit breaker'))).toBe(false);
+    });
+
+    it('resolver integration: Section 1 → N/A allowance, Section 4 → pricing path', async () => {
+        const { results, stats } = await resolveBatchPrices([
+            byName('Daily record keeping and site instructions'),
+            byName('Test and commission the installation'),
+            byName('PPC Surebuild Cement 42.5N 50kg'),
+        ]);
+
+        // Exactly the Section-1 row is non-retail; nothing else is bypassed.
+        expect(stats.nonRetail).toBe(1);
+        expect(results[0].source).toBe('no-retail-pricing');
+        expect(results[0].matrix.cashbuild.status).toBe('N/A');
+
+        // The Section-4 row reaches the pricing path (NOT the N/A bypass).
+        expect(results[1].source).not.toBe('no-retail-pricing');
+
+        // A knowledge-matched material pulls a valid indicative number.
+        expect(results[2].source).toBe('market-knowledge');
+        expect(results[2].indicativeEstimateZar).toBeGreaterThan(0);
+    });
+});
+
+describe('materialsFromParsedRows — dynamic section context for LLM rows', () => {
+    const today = new Date('2026-06-11T08:00:00Z');
+
+    it('switches trade context at LLM-emitted section headings', () => {
+        const { materials } = materialsFromParsedRows(
+            [
+                { description: 'Section No 4: Electrical Installation', qty: 1, unit: 'sum' },
+                { description: 'Test and commission the installation', qty: 1, unit: 'sum' },
+            ],
+            { today },
+        );
+        expect(materials).toHaveLength(1);
+        expect(materials[0].tenderCategory).toBe('Electrical');
+        expect(shouldBypassRetailPricing(materials[0])).toBe(false);
+    });
+
+    it('does NOT trust the LLM "Preliminaries" default outside a P&G section', () => {
+        const { materials } = materialsFromParsedRows(
+            [
+                { description: 'Section No 4: Electrical Installation', qty: 1, unit: 'sum' },
+                { description: 'Surface mounted galvanised wireway 75mm', qty: 10, unit: 'm', category: 'Preliminaries' },
+            ],
+            { today },
+        );
+        expect(materials[0].tenderCategory).toBe('Electrical');
+        expect(shouldBypassRetailPricing(materials[0])).toBe(false);
+    });
+
+    it('still trusts "Preliminaries" inside a Preliminaries section', () => {
+        const { materials } = materialsFromParsedRows(
+            [
+                { description: 'Section No 1: Preliminaries', qty: 1, unit: 'sum' },
+                { description: 'Daily record keeping and site instructions', qty: 1, unit: 'sum', category: 'Preliminaries' },
+            ],
+            { today },
+        );
+        expect(materials[0].tenderCategory).toBe('Preliminaries');
+        expect(shouldBypassRetailPricing(materials[0])).toBe(true);
+    });
+});
+
 describe('materialsFromParsedRows — structural rows are dropped, not priced', () => {
     it('drops heading rows the LLM extracted anyway', () => {
         const { materials, dropped } = materialsFromParsedRows(

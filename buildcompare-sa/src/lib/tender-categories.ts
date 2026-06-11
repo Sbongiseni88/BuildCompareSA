@@ -133,6 +133,80 @@ export function mapLegacyToTenderCategory(legacy: string): BoqCategory {
   }
 }
 
+// ─── Section-heading context detection ──────────────────────────────────────
+//
+// SA tender BoQs are organised into trade sections ("Section No 2: Builders
+// Work", "BILL NO 4 - ELECTRICAL INSTALLATION", "PLUMBING: DRAINAGE"). Rows
+// inside a section inherit its trade unless their own text says otherwise.
+// Without this context, keyword-less rows ("Make good existing surfaces…")
+// all collapsed into the low-confidence Preliminaries default — which the
+// pricing layer then bypassed, returning N/A for entire documents.
+
+/** Heading-title → trade mapping. Order matters: first match wins. */
+const SECTION_TRADE_RULES: [RegExp, BoqCategory][] = [
+  [/preliminar|p\s*&\s*g\b|general\s+(?:conditions|requirements)/i, 'Preliminaries'],
+  [/concrete|formwork/i, 'Concrete'],
+  [/structural\s+steel|steel\s*work|metal\s*work|reinforcement/i, 'Structural Steel'],
+  [/electrical|earthing|lightning\s+protection/i, 'Electrical'],
+  [/plumbing|drainage|sanitary|wet\s+services|fire\s+(?:installation|services)|water\s+(?:installation|reticulation)/i, 'Plumbing'],
+  [/builders?\s+work|brick\s*work|masonry|earth\s*works|excavation|alterations/i, 'Masonry'],
+  [/carpentry|joinery|doors?\b|windows?\b|glazing|ironmongery/i, 'Openings'],
+  [/finish|paint|tiling|ceilings?|floor\s+cover|plastering|roof(?:ing|\s+cover)|waterproofing/i, 'Finishes'],
+];
+
+export interface SectionContext {
+  /** Trade of the new section, or null for a recognised heading with an
+   *  unknown trade (context RESETS — never carries stale state across it). */
+  category: BoqCategory | null;
+}
+
+/**
+ * Detect whether a BoQ row is a SECTION/BILL heading and, if so, which
+ * trade context it switches to.
+ *
+ * Two heading shapes are recognised:
+ * 1. Numbered headings — "Section No 2: Builders Work", "BILL NO 4 -
+ *    ELECTRICAL INSTALLATION". Always headings.
+ * 2. ALL-CAPS trade captions — "PLUMBING: DRAINAGE". Only when the row has
+ *    no quantity (`hasQty: false`): a real all-caps item row ("PVC SEWER
+ *    PIPE") always carries a qty, a caption never does.
+ *
+ * Returns null when the row is not a heading (context unchanged).
+ */
+export function detectSectionContext(
+  line: string,
+  opts: { hasQty?: boolean } = {},
+): SectionContext | null {
+  const text = (line ?? '').trim();
+  if (!text) return null;
+
+  let title: string | null = null;
+  let isNumberedHeading = false;
+
+  const numbered = text.match(/^(?:section|bill)\s*(?:no\.?)?\s*\d+\s*[:\-–—]?\s*(.*)$/i);
+  if (numbered) {
+    title = numbered[1] ?? '';
+    isNumberedHeading = true;
+  } else if (
+    !opts.hasQty &&
+    text === text.toUpperCase() &&
+    /^[A-Z][A-Z\s&:/().'\-]{3,60}$/.test(text)
+  ) {
+    title = text;
+  }
+
+  if (title == null) return null;
+
+  for (const [re, cat] of SECTION_TRADE_RULES) {
+    if (re.test(title)) return { category: cat };
+  }
+  // A NUMBERED heading with an unknown trade (e.g. "Section No 1 Summary")
+  // is a definite boundary — reset the context rather than leak a stale
+  // trade forward. An unknown ALL-CAPS caption (a mid-section note like
+  // "SUPPLY ONLY") is NOT a boundary — leave the context untouched.
+  return isNumberedHeading ? { category: null } : null;
+}
+
 /**
  * Classify a raw BoQ description into a tender category.
  * Scores keyword matches by length — longer, more specific matches win.

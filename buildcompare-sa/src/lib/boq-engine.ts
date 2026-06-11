@@ -11,6 +11,7 @@ import {
     guessTenderCategory,
     mapTenderToLegacyCategory,
     lineItemViolation,
+    detectSectionContext,
 } from './tender-categories';
 import { isBoqCategory, type BoqCategory } from './bccei/labour-defaults';
 import { estimateLabour } from './bccei/labour';
@@ -170,7 +171,10 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
     const UNIT_ALIASES  = [
         'unit', 'uom', 'measure', 'u/m', 'u.o.m', 'units', 'u.m', 'u.m.'
     ];
-    const IGNORE_TERMS  = ['total', 'sub-total', 'subtotal', 'summary', 'allow', 'provisional', 'p.c.', 'pc sum', ''];
+    // NOTE: 'allow' / 'provisional' / 'p.c.' rows are deliberately KEPT —
+    // they are payable P&G lines, costed via the B2B services module and
+    // BCCEI labour (never retail-priced). Only summary scaffolding is skipped.
+    const IGNORE_TERMS  = ['total', 'sub-total', 'subtotal', 'summary', ''];
 
     for (const sheetName of workbook.SheetNames) {
         const sheet = workbook.Sheets[sheetName];
@@ -278,6 +282,12 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
 
         if (headerRowIdx < 0 || descCol < 0) continue;
 
+        // Dynamic section context — "Section No 2: Builders Work" switches
+        // the active trade for every FOLLOWING row until the next heading.
+        // Without this, keyword-less rows across a 2,750-row document all
+        // collapsed into the Preliminaries default and priced as N/A.
+        let activeSection: BoqCategory | null = null;
+
         let itemIndex = 0;
         for (let r = headerRowIdx + 1; r < rows.length; r++) {
             const row = rows[r];
@@ -287,21 +297,48 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             // Guard: a bare number (or "item 12") is an item-ref that leaked into the
             // description column — never a real material. Skip it rather than emit junk.
             if (/^\d+(\.\d+)?$/.test(rawDesc) || /^item\s*\d+$/i.test(rawDesc)) continue;
-            // Guard: section/bill headings, carried-forward sums and other
-            // structural rows are document scaffolding, not materials.
-            if (isStructuralSummaryLine(rawDesc)) continue;
 
             const rawQty  = qtyCol  >= 0 ? row[qtyCol]  : null;
             const rawUnit = unitCol >= 0 ? String(row[unitCol] ?? '').trim() : '';
-            const qty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, '')) || 1;
+            const parsedQty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, ''));
 
+            // Section/bill headings switch the trade context, then drop.
+            const section = detectSectionContext(rawDesc, {
+                hasQty: Number.isFinite(parsedQty) && parsedQty > 0,
+            });
+            if (section) {
+                activeSection = section.category;
+                continue;
+            }
+            // Guard: remaining structural rows (carried-forward sums, totals)
+            // are document scaffolding, not materials.
+            if (isStructuralSummaryLine(rawDesc)) continue;
+
+            const qty = parsedQty || 1;
+
+            // Classification precedence:
+            // 1. A Preliminaries SECTION owns every row in it (P&G sections
+            //    contain allowances/services, never retail materials).
+            // 2. A high-confidence keyword on the row itself (a cement line
+            //    inside "Builders Work" is still Concrete).
+            // 3. The active section's trade.
+            // 4. A medium-confidence row keyword.
+            // 5. Otherwise tenderCategory stays UNSET — the low-confidence
+            //    Preliminaries default must never become an explicit tag,
+            //    or the pricing layer bypasses the row to N/A.
             const tenderGuess = guessTenderCategory(rawDesc);
+            let tenderCategory: BoqCategory | undefined;
+            if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
+            else if (tenderGuess.confidence === 'high') tenderCategory = tenderGuess.category;
+            else if (activeSection) tenderCategory = activeSection;
+            else if (tenderGuess.confidence === 'medium') tenderCategory = tenderGuess.category;
+
             allMaterials.push({
                 id: `boq-direct-${sheetName}-${itemIndex++}`,
                 name: rawDesc,
                 brand: undefined,
-                category: mapTenderToLegacyCategory(tenderGuess.category),
-                tenderCategory: tenderGuess.category,
+                category: mapTenderToLegacyCategory(tenderCategory ?? tenderGuess.category),
+                tenderCategory,
                 quantity: qty,
                 unit: rawUnit || 'unit',
                 search_string: generateSearchString(rawDesc),
@@ -482,8 +519,12 @@ Each line item object:
 2. NEVER output a description that equals or merely restates the item_ref.
 3. Long procedural preambles ("Supply and install … including all necessary
    fixings …") — keep the material specification, trim the verbiage safely.
-4. "category" MUST be one of the 8 listed engineering values. The word "other"
-   is FORBIDDEN. If a row is genuinely unclassifiable, use "Preliminaries".
+4. "category" MUST be one of the 8 listed engineering values, chosen from the
+   row itself AND the section/bill heading context above it — rows under
+   "ELECTRICAL INSTALLATION" are "Electrical", rows under "PLUMBING: DRAINAGE"
+   are "Plumbing", rows under "BUILDERS WORK" are "Masonry". The word "other"
+   is FORBIDDEN. If a row is genuinely unclassifiable even with its section
+   context, set "category": null — do NOT default it to "Preliminaries".
 5. Specs like "30MPa", "42.5N", "CEM II", "Y12" identify grade/type — keep them
    inside the description; NEVER multiply them with quantities.
 6. All numbers are plain floats: no currency symbols, no thousands separators.
@@ -536,15 +577,31 @@ export function materialsFromParsedRows(
     const materials: Material[] = [];
     const dropped: { row: unknown; reason: string }[] = [];
 
+    // Dynamic section context across the parsed rows (order-preserving):
+    // headings the LLM emitted anyway switch the trade for following rows.
+    let activeSection: BoqCategory | null = null;
+
     parsed.forEach((m: any, i: number) => {
         const name = String(m?.description ?? m?.name ?? '').trim();
         const itemRef = m?.item_ref != null ? String(m.item_ref).trim() : undefined;
         const qty = Number(m?.qty ?? m?.quantity) || 1;
         const unit = (String(m?.unit ?? '').trim() || 'unit');
 
+        // Numbered section/bill headings switch context, then drop. (LLM rows
+        // always carry a qty default, so caption-shape detection stays off.)
+        const section = detectSectionContext(name, { hasQty: true });
+        if (section) {
+            activeSection = section.category;
+            dropped.push({
+                row: m,
+                reason: `structural section heading — trade context now ${section.category ?? 'unset'}`,
+            });
+            return;
+        }
+
         // Category junk (including "other") reclassifies from the description
         // instead of dropping an otherwise-valid row.
-        const aiCategory: BoqCategory | undefined = isBoqCategory(m?.category) ? m.category : undefined;
+        let aiCategory: BoqCategory | undefined = isBoqCategory(m?.category) ? m.category : undefined;
 
         const violation = lineItemViolation({
             itemRef,
@@ -558,22 +615,44 @@ export function materialsFromParsedRows(
             return;
         }
 
-        // Structural scaffolding (section/bill headings, carried-forward
-        // sums) is omitted per the boq_regex_structural_parser skill — it is
-        // not a material and must never be priced.
+        // Structural scaffolding (carried-forward sums, totals) is omitted
+        // per the boq_regex_structural_parser skill — it is not a material
+        // and must never be priced.
         if (isStructuralSummaryLine(name)) {
             dropped.push({ row: m, reason: 'structural summary/heading line — not a material' });
             return;
         }
 
-        const tenderCategory: BoqCategory = aiCategory ?? guessTenderCategory(name).category;
-        const labour = estimateLabour({ category: tenderCategory, qty, unit, today });
+        // The LLM historically dumped every unclassifiable row into
+        // "Preliminaries", poisoning whole sheets into the N/A bypass.
+        // Only trust that label inside a P&G section or when the row's own
+        // text reads as P&G with high confidence.
+        const rowGuess = guessTenderCategory(name);
+        if (
+            aiCategory === 'Preliminaries' &&
+            activeSection !== 'Preliminaries' &&
+            !(rowGuess.category === 'Preliminaries' && rowGuess.confidence === 'high')
+        ) {
+            aiCategory = undefined;
+        }
+
+        // Precedence: P&G section owns its rows → trusted LLM category →
+        // row keyword (high/medium) → section trade → UNSET (priced, never
+        // silently bypassed; labour falls back to the Preliminaries grade).
+        let tenderCategory: BoqCategory | undefined;
+        if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
+        else if (aiCategory) tenderCategory = aiCategory;
+        else if (rowGuess.confidence !== 'low') tenderCategory = rowGuess.category;
+        else if (activeSection) tenderCategory = activeSection;
+
+        const labourCategory: BoqCategory = tenderCategory ?? 'Preliminaries';
+        const labour = estimateLabour({ category: labourCategory, qty, unit, today });
 
         materials.push({
             id: `${idPrefix}-${stamp}-${i}`,
             name,
             brand: m?.brand || undefined,
-            category: mapTenderToLegacyCategory(tenderCategory),
+            category: mapTenderToLegacyCategory(labourCategory),
             tenderCategory,
             quantity: qty,
             unit,

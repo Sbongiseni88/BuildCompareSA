@@ -413,3 +413,55 @@ Until the price pipeline warms price_cache, most lines will show ONE
 labelled indicative estimate with N/A store columns instead of a fake
 5-store comparison. That is the intended honest state — run the pipeline
 (Actions → Price Pipeline) to start filling real store prices.
+
+---
+
+## Execution log — 2026-06-11 section-context parser fix ("all rows Preliminaries" bug)
+
+Symptom: a 2,750-row multi-section BoQ classified EVERY row as Preliminaries
+→ whole sheet bypassed to N/A retail prices.
+
+Root cause (forensic — no sticky variable existed): the parser had NO section
+state at all, plus a poisoned default:
+1. guessTenderCategory() returns {Preliminaries, confidence:'low'} for any
+   keyword-less description ("Make good existing…", "Test and commission…").
+2. tryDirectBoQParse / materialsFromParsedRows wrote that low-confidence
+   guess into Material.tenderCategory as if explicit.
+3. shouldBypassRetailPricing() trusts explicit tenderCategory==='Preliminaries'
+   unconditionally → N/A flood. (The LLM prompt also said "unclassifiable →
+   Preliminaries", compounding it.)
+
+Fix (boq_regex_structural_parser + retail_matrix_normalization invariants):
+- **tender-categories.ts:** new `detectSectionContext(line, {hasQty})` —
+  recognises numbered headings ("Section No 2: Builders Work", "BILL NO 4 -
+  ELECTRICAL INSTALLATION") always, and ALL-CAPS trade captions ("PLUMBING:
+  DRAINAGE") only when the row has no qty (real all-caps items always carry
+  one). Maps heading titles → 8 BCCEI trades (Builders Work/brickwork/
+  earthworks→Masonry, concrete/formwork→Concrete, electrical→Electrical,
+  plumbing/drainage/sanitary→Plumbing, joinery/doors→Openings, finishes/
+  paint/roofing→Finishes, steelwork/reinforcement→Structural Steel).
+  Numbered heading with unknown trade (e.g. "Section No 1 Summary") RESETS
+  context; unknown caps caption leaves it untouched.
+- **tryDirectBoQParse:** per-sheet `activeSection` state machine. Precedence:
+  Preliminaries section owns its rows → high-confidence row keyword →
+  active section trade → medium row keyword → UNSET (the low-confidence
+  default never becomes an explicit tag again). 'allow'/'provisional'/'p.c.'
+  removed from IGNORE_TERMS — payable P&G lines now flow to the services
+  module instead of being silently dropped.
+- **materialsFromParsedRows:** same state machine over LLM rows; LLM
+  "Preliminaries" labels are only trusted inside a P&G section or when the
+  row text itself is high-confidence P&G.
+- **BOQ_EXTRACT_PROMPT rule 4:** category must use section heading context;
+  unclassifiable → null (never default to Preliminaries).
+- **scraper/boq_parser.py:** 'section'/'bill'/'preliminar' added to the
+  pandas keyword filter so headings reach the LLM chunks as context.
+- **shouldBypassRetailPricing:** UNCHANGED — explicit Preliminaries is now
+  trustworthy by construction (only set from section context or real P&G
+  keywords), so the N/A bypass fires exactly where it should.
+
+Validation: new integration suite — Section 1 generic row → Preliminaries +
+all-N/A matrix; Section 2 keyword-less row → Masonry; cement row inside
+Builders Work → Concrete (row keyword beats section); "PLUMBING: DRAINAGE"
+caption switches context; Section 4 generic row → Electrical and reaches the
+pricing path; resolver stats.nonRetail counts ONLY the Section-1 row.
+14 suites / 192 tests passing · tsc clean · lint 0 errors · build clean.

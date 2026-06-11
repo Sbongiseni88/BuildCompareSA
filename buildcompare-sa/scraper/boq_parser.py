@@ -45,7 +45,10 @@ def guess_cat(text):
 
 router = APIRouter()
 
-CONSTRUCTION_KEYWORDS = ['brick', 'cement', 'concrete', 'steel', 'timber', 'wood', 'plumb', 'electric', 'paint', 'roof', 'hardware', 'tile', 'door', 'window', 'rebar', 'sand']
+# 'section' / 'bill' keep SECTION/BILL headings in the chunk text — the LLM
+# needs them as trade context for the rows beneath (rule 4 of the prompt);
+# they are still never emitted as items.
+CONSTRUCTION_KEYWORDS = ['brick', 'cement', 'concrete', 'steel', 'timber', 'wood', 'plumb', 'electric', 'paint', 'roof', 'hardware', 'tile', 'door', 'window', 'rebar', 'sand', 'section', 'bill', 'preliminar']
 
 PROMPT = """### ROLE: Chunk-Based BoQ Parser
 ### CONTEXT: 
