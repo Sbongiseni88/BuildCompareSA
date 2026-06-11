@@ -36,6 +36,7 @@ import {
     tryDirectBoQParse,
     guessCategory,
     isStructuralSummaryLine,
+    isNarrativePreambleLine,
     shouldBypassRetailPricing,
     materialsFromParsedRows,
 } from '../boq-engine';
@@ -229,6 +230,88 @@ describe('tryDirectBoQParse — dynamic section context (2,750-row "all Prelimin
         // A knowledge-matched material pulls a valid indicative number.
         expect(results[2].source).toBe('market-knowledge');
         expect(results[2].indicativeEstimateZar).toBeGreaterThan(0);
+    });
+});
+
+describe('narrative preamble rows — Preliminaries, never AI-priced (2,630-row MASONRY regression)', () => {
+    it.each([
+        'Before submitting his tender the contractor shall visit the site',
+        'The contractor shall carry out the works in accordance with the specification',
+        'View site',
+        'SUPPLEMENTARY PREAMBLES',
+        'No explosives whatsoever may be used on the site',
+        'Explosives',
+        'Quantities shall be deemed to include all waste',
+    ])('flags narrative: %s', (line) => {
+        expect(isNarrativePreambleLine(line)).toBe(true);
+        // Regardless of parser path or category tag, narrative never prices.
+        expect(shouldBypassRetailPricing({ name: line })).toBe(true);
+    });
+
+    it.each([
+        'PPC Surebuild Cement 42.5N 50kg',
+        'Water supply pipes and fittings 22mm',
+        '20 A Single pole circuit breaker',
+    ])('keeps real material: %s', (line) => {
+        expect(isNarrativePreambleLine(line)).toBe(false);
+        expect(shouldBypassRetailPricing({ name: line })).toBe(false);
+    });
+
+    it('a row with neither qty nor unit in the sheet is prose, not a line item', () => {
+        expect(isNarrativePreambleLine('General', { hasQty: false, hasUnit: false })).toBe(true);
+        expect(isNarrativePreambleLine('General purpose mortar 25kg', { hasQty: true, hasUnit: true })).toBe(false);
+    });
+
+    it('direct parse: narrative rows under a trade section classify Preliminaries, NOT the trade', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['SECTION NO 2: BUILDERS WORK', '', ''],
+            ['View site', '', ''],
+            ['The contractor shall allow for all necessary plant', '', ''],
+            ['Half brick wall in stretcher bond', 'm2', 200],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        const byName = (n: string) => materials.find((m) => m.name === n)!;
+
+        expect(byName('View site').tenderCategory).toBe('Preliminaries');
+        expect(byName('The contractor shall allow for all necessary plant').tenderCategory).toBe('Preliminaries');
+        expect(shouldBypassRetailPricing(byName('View site'))).toBe(true);
+        // The real material row still classifies into the trade and prices.
+        expect(byName('Half brick wall in stretcher bond').tenderCategory).toBe('Masonry');
+        expect(shouldBypassRetailPricing(byName('Half brick wall in stretcher bond'))).toBe(false);
+    });
+
+    it('a SUPPLEMENTARY PREAMBLES caption switches the whole section to Preliminaries', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['SUPPLEMENTARY PREAMBLES', '', ''],
+            ['Descriptions of work to be read with the standard system', 'sum', 1],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        expect(materials[0].tenderCategory).toBe('Preliminaries');
+        expect(shouldBypassRetailPricing(materials[0])).toBe(true);
+    });
+
+    it('a medium row keyword beats a stale section trade (pipes inside Masonry)', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['SECTION NO 2: BUILDERS WORK', '', ''],
+            ['Water supply pipes and fittings 22mm', 'm', 60],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        expect(materials[0].tenderCategory).toBe('Plumbing');
+        expect(shouldBypassRetailPricing(materials[0])).toBe(false);
+    });
+
+    it('an "Alterations" bill heading no longer locks the document to Masonry', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['BILL NO 1 - ALTERATIONS AND ADDITIONS', '', ''],
+            ['Take down existing ceiling and cart away', 'm2', 80],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        // Unknown-trade bill → context reset; 'ceiling' keyword classifies the row.
+        expect(materials[0].tenderCategory).not.toBe('Masonry');
     });
 });
 

@@ -960,17 +960,21 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
                         {!isSearching && comparisonResults.length > 0 && (
                             <div className="space-y-6 animate-slide-up">
-                                {/* Success Banner */}
-                                <div className="flex flex-wrap items-center justify-between gap-4 p-6 bg-green-500/10 border border-green-500/20 rounded-2xl">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
-                                            <TrendingDown className="w-6 h-6" />
+                                {/* Actions banner — the savings block only renders when real,
+                                    verified savings exist. An estimator working a raw or
+                                    un-priced sheet gets tools, not an empty R0,00 tracker. */}
+                                <div className={`flex flex-wrap items-center ${totalSavings > 0 ? 'justify-between' : 'justify-end'} gap-4 p-6 rounded-2xl border ${totalSavings > 0 ? 'bg-green-500/10 border-green-500/20' : 'bg-slate-900/60 border-slate-800'}`}>
+                                    {totalSavings > 0 && (
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
+                                                <TrendingDown className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-green-400 uppercase tracking-wider">Potential Savings</p>
+                                                <p className="text-3xl font-bold text-white">{formatCurrency(totalSavings)}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-green-400 uppercase tracking-wider">Potential Savings</p>
-                                            <p className="text-3xl font-bold text-white">{formatCurrency(totalSavings)}</p>
-                                        </div>
-                                    </div>
+                                    )}
                                     <div className="flex flex-col gap-3 items-stretch sm:items-end">
                                         <div className="flex flex-col sm:flex-row gap-3 sm:gap-2 items-stretch sm:items-center">
                                             {/* Tender-grade sourcing file (Excel) */}

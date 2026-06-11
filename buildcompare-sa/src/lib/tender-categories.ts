@@ -142,14 +142,22 @@ export function mapLegacyToTenderCategory(legacy: string): BoqCategory {
 // all collapsed into the low-confidence Preliminaries default — which the
 // pricing layer then bypassed, returning N/A for entire documents.
 
-/** Heading-title → trade mapping. Order matters: first match wins. */
+/**
+ * Heading-title → trade mapping. Order matters: first match wins.
+ *
+ * NOTE: deliberately NO rule for "alterations" — a SAPS "Alterations and
+ * Additions" BILL spans every trade, and mapping it to Masonry once locked
+ * 2,630 rows of a whole document to MASONRY. An unknown-trade numbered
+ * heading resets the context instead; subsection captions and row keywords
+ * then drive classification.
+ */
 const SECTION_TRADE_RULES: [RegExp, BoqCategory][] = [
-  [/preliminar|p\s*&\s*g\b|general\s+(?:conditions|requirements)/i, 'Preliminaries'],
-  [/concrete|formwork/i, 'Concrete'],
+  [/preliminar|preambles?\b|p\s*&\s*g\b|general\s+(?:conditions|requirements)|special\s+conditions/i, 'Preliminaries'],
+  [/concrete|formwork|piling/i, 'Concrete'],
   [/structural\s+steel|steel\s*work|metal\s*work|reinforcement/i, 'Structural Steel'],
-  [/electrical|earthing|lightning\s+protection/i, 'Electrical'],
-  [/plumbing|drainage|sanitary|wet\s+services|fire\s+(?:installation|services)|water\s+(?:installation|reticulation)/i, 'Plumbing'],
-  [/builders?\s+work|brick\s*work|masonry|earth\s*works|excavation|alterations/i, 'Masonry'],
+  [/electrical|small\s+power|lighting|cables?\b|distribution\s+boards?|earthing|lightning\s+protection/i, 'Electrical'],
+  [/plumbing|drainage|sanitary|wet\s+services|water\s+supply|pipes?\b|fire\s+(?:installation|services)|water\s+(?:installation|reticulation)/i, 'Plumbing'],
+  [/builders?\s+work|brick\s*work|masonry|facing|earth\s*works|excavation/i, 'Masonry'],
   [/carpentry|joinery|doors?\b|windows?\b|glazing|ironmongery/i, 'Openings'],
   [/finish|paint|tiling|ceilings?|floor\s+cover|plastering|roof(?:ing|\s+cover)|waterproofing/i, 'Finishes'],
 ];

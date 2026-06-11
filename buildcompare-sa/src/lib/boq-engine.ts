@@ -131,6 +131,47 @@ export function isStructuralSummaryLine(description: string): boolean {
     return STRUCTURAL_SUMMARY_RE.test(desc);
 }
 
+// ─── Narrative-Preamble Detection ───────────────────────────────────────────
+
+/**
+ * Tender-condition NARRATIVE rows — site briefs, contractor obligations,
+ * measurement notes ("The contractor shall…", "Before submitting his
+ * tender…", "View site", "Explosives"). These are operational preamble, not
+ * purchasable materials: they classify as Preliminaries (honest N/A matrix,
+ * costed via P&G/labour) and must NEVER receive an AI price estimate —
+ * a R500 "indicative estimate" against the word "Explosives" is fabricated
+ * data wearing a price tag.
+ */
+const NARRATIVE_PREAMBLE_RE = new RegExp(
+    [
+        /\b(?:the\s+)?(?:contractor|tenderer|employer|subcontractor)s?\s+(?:shall|must|is\s+to|will|may)\b/.source,
+        /\bbefore\s+submitting\b/.source,
+        /\bview\s+(?:the\s+)?site\b/.source,
+        /\bsupplementary\s+preambles?\b/.source,
+        /\bmethod\s+of\s+measurement\b/.source,
+        /\bexplosives?\s+whatsoever\b/.source,
+        /^explosives?\s*$/.source,
+        /\brefer\s+to\s+the\s+(?:special|general|standard)\s+conditions\b/.source,
+        /\bshall\s+be\s+deemed\b/.source,
+    ].join('|'),
+    'i',
+);
+
+/**
+ * True when a row reads as tender-condition narrative rather than a
+ * material. `hasQty`/`hasUnit` reflect the row's OWN cells in the source
+ * sheet: a row with neither a quantity nor a unit is prose, not a line item.
+ */
+export function isNarrativePreambleLine(
+    description: string,
+    opts: { hasQty?: boolean; hasUnit?: boolean } = {},
+): boolean {
+    const desc = (description ?? '').trim();
+    if (!desc) return false;
+    if (NARRATIVE_PREAMBLE_RE.test(desc)) return true;
+    return opts.hasQty === false && opts.hasUnit === false;
+}
+
 /**
  * True when a line must NOT receive retail hardware prices:
  * - structural summaries/headings that slipped past parsing, and
@@ -143,6 +184,10 @@ export function isStructuralSummaryLine(description: string): boolean {
  */
 export function shouldBypassRetailPricing(material: Pick<Material, 'name' | 'tenderCategory'>): boolean {
     if (isStructuralSummaryLine(material.name)) return true;
+    // Tender-condition narrative ("the contractor shall…", "View site",
+    // "Explosives") is never a purchasable material — no matter which
+    // parser produced it or what category it carries.
+    if (isNarrativePreambleLine(material.name)) return true;
     // Explicit pipeline classification is trusted as-is.
     if (material.tenderCategory === 'Preliminaries') return true;
     // Description-derived classification only counts when it matched a real
@@ -301,11 +346,11 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             const rawQty  = qtyCol  >= 0 ? row[qtyCol]  : null;
             const rawUnit = unitCol >= 0 ? String(row[unitCol] ?? '').trim() : '';
             const parsedQty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, ''));
+            const hasQty = Number.isFinite(parsedQty) && parsedQty > 0;
+            const hasUnit = rawUnit.length > 0;
 
             // Section/bill headings switch the trade context, then drop.
-            const section = detectSectionContext(rawDesc, {
-                hasQty: Number.isFinite(parsedQty) && parsedQty > 0,
-            });
+            const section = detectSectionContext(rawDesc, { hasQty });
             if (section) {
                 activeSection = section.category;
                 continue;
@@ -317,21 +362,23 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             const qty = parsedQty || 1;
 
             // Classification precedence:
-            // 1. A Preliminaries SECTION owns every row in it (P&G sections
+            // 1. Narrative preamble (site briefs, "the contractor shall…",
+            //    rows with neither qty nor unit) → explicit Preliminaries:
+            //    honest N/A matrix, never an AI price estimate.
+            // 2. A Preliminaries SECTION owns every row in it (P&G sections
             //    contain allowances/services, never retail materials).
-            // 2. A high-confidence keyword on the row itself (a cement line
-            //    inside "Builders Work" is still Concrete).
-            // 3. The active section's trade.
-            // 4. A medium-confidence row keyword.
+            // 3. A keyword on the row itself, high before medium — "water
+            //    supply pipes" is Plumbing even inside a Masonry section.
+            // 4. The active section's trade (keyword-less material rows).
             // 5. Otherwise tenderCategory stays UNSET — the low-confidence
             //    Preliminaries default must never become an explicit tag,
             //    or the pricing layer bypasses the row to N/A.
             const tenderGuess = guessTenderCategory(rawDesc);
             let tenderCategory: BoqCategory | undefined;
-            if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
-            else if (tenderGuess.confidence === 'high') tenderCategory = tenderGuess.category;
+            if (isNarrativePreambleLine(rawDesc, { hasQty, hasUnit })) tenderCategory = 'Preliminaries';
+            else if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
+            else if (tenderGuess.confidence !== 'low') tenderCategory = tenderGuess.category;
             else if (activeSection) tenderCategory = activeSection;
-            else if (tenderGuess.confidence === 'medium') tenderCategory = tenderGuess.category;
 
             allMaterials.push({
                 id: `boq-direct-${sheetName}-${itemIndex++}`,
@@ -636,11 +683,13 @@ export function materialsFromParsedRows(
             aiCategory = undefined;
         }
 
-        // Precedence: P&G section owns its rows → trusted LLM category →
-        // row keyword (high/medium) → section trade → UNSET (priced, never
-        // silently bypassed; labour falls back to the Preliminaries grade).
+        // Precedence: narrative preamble → P&G section owns its rows →
+        // trusted LLM category → row keyword (high/medium) → section trade →
+        // UNSET (priced, never silently bypassed; labour falls back to the
+        // Preliminaries grade).
         let tenderCategory: BoqCategory | undefined;
-        if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
+        if (isNarrativePreambleLine(name)) tenderCategory = 'Preliminaries';
+        else if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
         else if (aiCategory) tenderCategory = aiCategory;
         else if (rowGuess.confidence !== 'low') tenderCategory = rowGuess.category;
         else if (activeSection) tenderCategory = activeSection;

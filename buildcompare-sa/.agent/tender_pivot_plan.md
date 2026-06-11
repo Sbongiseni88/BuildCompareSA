@@ -501,3 +501,47 @@ Scope: `src/components/Dashboard.tsx` only; workflow file untouched.
    for the 40+ demographic.
 
 Validation: 14 suites / 192 tests · tsc clean · ESLint 0 errors · build clean.
+
+---
+
+## Execution log — 2026-06-11 classification repair (narrative preambles + over-broad section lock)
+
+Symptom (screenshot, 2,630-row SAPS upload): every row tagged MASONRY;
+tender-condition narrative ("View site", "Explosives", "The contractor
+shall carry…") emitted as priceable items with fabricated AI indicative
+estimates (R150/R200/R500 against prose).
+
+Root causes:
+1. The previous section fix mapped "alterations" → Masonry. A SAPS
+   "Alterations and Additions" BILL spans every trade — one early heading
+   locked the entire document's context to Masonry.
+2. No narrative-preamble detection existed: prose rows (no qty, no unit)
+   defaulted qty=1 and flowed to the AI estimator.
+3. Section trade outranked medium row keywords, so "Water supply pipes…"
+   inside the stale Masonry context stayed MASONRY.
+
+Fixes (boq_regex_structural_parser + retail_matrix_normalization):
+- **SECTION_TRADE_RULES:** 'alterations' rule REMOVED (unknown-trade bill →
+  context reset; captions/keywords drive). Added: preambles/supplementary/
+  special-conditions → Preliminaries; piling → Concrete; facing → Masonry;
+  water supply/pipes → Plumbing; small power/lighting/cables/distribution
+  board → Electrical.
+- **isNarrativePreambleLine()** (new, exported): regex for tender-condition
+  narrative (contractor/tenderer shall…, before submitting, view site,
+  supplementary preambles, method of measurement, explosives, shall be
+  deemed) PLUS the structural signal "no qty AND no unit in the source
+  row = prose". Narrative rows classify explicit Preliminaries in both
+  parsing loops → honest N/A matrix + P&G handling, never AI-priced.
+- **shouldBypassRetailPricing():** narrative check added as defense in
+  depth — catches prose arriving via the Python path with no category tag.
+- **Precedence repaired (both loops):** narrative → Preliminaries-section
+  ownership → row keyword (high then medium) → section trade → unset.
+  Medium keywords now beat a stale section ("pipes" inside Masonry →
+  Plumbing → priced against price_cache/scrapers).
+- **PriceSearchHub:** "Potential Savings" banner block renders ONLY when
+  verified savings > 0; raw/un-priced sheets get a neutral actions bar.
+- Invariant intact: only Preliminaries/narrative/structural rows bypass;
+  failed store lookups stay single-cell N/A, never mirrored.
+
+Validation: 14 suites / 207 tests (15 new boundary tests incl. the
+"Alterations no longer locks to Masonry" regression) · tsc clean · build clean.
