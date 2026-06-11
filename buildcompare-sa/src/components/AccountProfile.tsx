@@ -84,7 +84,7 @@ export default function AccountProfile() {
                     .select('*')
                     .eq('id', user.id)
                     .abortSignal(abortController.signal)
-                    .single();
+                    .maybeSingle();
 
                 clearTimeout(softAbort);
                 if (supersededByCleanup) return;
@@ -100,6 +100,29 @@ export default function AccountProfile() {
                         setCidbClass(grading.classOfWorks);
                     }
                     setFetchError(null);
+                } else {
+                    // No profile row yet (OAuth sign-ins never run the sign-up
+                    // upsert). Render from the auth user and create the row in
+                    // the background — .single() used to turn this into a
+                    // permanent "Connection Issue" screen.
+                    const fallback: UserProfileData = {
+                        id: user.id,
+                        email: user.email ?? '',
+                        full_name: (user.user_metadata?.full_name as string) || '',
+                        role: (user.user_metadata?.role as string) || 'contractor',
+                        created_at: user.created_at,
+                        cidb_grading: null,
+                    };
+                    setProfile(fallback);
+                    setFullName(fallback.full_name);
+                    setRole(fallback.role);
+                    setFetchError(null);
+                    void supabase.from('profiles').upsert({
+                        id: fallback.id,
+                        email: fallback.email,
+                        full_name: fallback.full_name,
+                        role: fallback.role,
+                    });
                 }
             } catch (error: any) {
                 // An abort from THIS effect's cleanup (tab switch, StrictMode

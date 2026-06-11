@@ -147,21 +147,32 @@ export function useAuth(): UseAuthReturn {
 
         const {
             data: { subscription },
-        } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
+        } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
             if (cancelled) return;
             console.log('🔐 Auth state changed:', _event);
+            // Synchronous state updates ONLY in this callback. auth-js emits
+            // events (TOKEN_REFRESHED on tab refocus, SIGNED_IN, …) while
+            // holding its internal auth lock; any awaited supabase.from()
+            // here re-enters getSession(), which waits on that same lock —
+            // deadlocking the client so EVERY query app-wide hangs until its
+            // abort timeout ("Connection timed out" on the Account page).
             setSession(session);
             setUser(session?.user ?? null);
+            setResolved(true);
+            setLoading(false);
 
             if (session?.user) {
-                const profile = await fetchUserProfile(session.user.id);
-                if (!cancelled) setUserProfile(profile);
+                const uid = session.user.id;
+                // Defer to the next macrotask so the auth lock is released
+                // before the profile query runs (per Supabase guidance).
+                setTimeout(() => {
+                    if (cancelled) return;
+                    fetchUserProfile(uid).then((profile) => {
+                        if (!cancelled) setUserProfile(profile);
+                    });
+                }, 0);
             } else {
                 setUserProfile(null);
-            }
-            if (!cancelled) {
-                setResolved(true);
-                setLoading(false);
             }
         });
 

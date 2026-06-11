@@ -592,3 +592,35 @@ FIXES:
 
 Validation: 14 suites / 213 tests (6 new) · tsc clean · ESLint 0 errors ·
 build clean.
+
+---
+
+## Execution log — 2026-06-11 · Account "Connection Issue" persists (root cause #2: auth-lock deadlock)
+
+Prior cycle (f9b8757) fixed the abort race/reload loop/forced sign-out, but
+live testing still showed the Connection error — meaning the profile query
+itself genuinely hangs to the 6 s timeout. Trace found two real causes:
+
+1. **Supabase auth-lock deadlock (useAuth.ts):** the onAuthStateChange
+   callback was `async` and AWAITED supabase.from('profiles') inside the
+   callback body. auth-js emits events (TOKEN_REFRESHED on tab refocus,
+   SIGNED_IN, INITIAL_SESSION) while holding its internal auth lock; any
+   PostgREST call re-enters getSession(), which waits on that same lock →
+   the client deadlocks and EVERY query app-wide hangs until its abort
+   timeout. Matches the symptom signature exactly: works fresh, breaks
+   after the app sits open / tab refocus, then every retry times out.
+   This is the documented Supabase footgun ("avoid calling other Supabase
+   functions inside the callback"). FIX: callback is now synchronous —
+   state updates only; the profile fetch is deferred via setTimeout(0) so
+   it runs after the lock is released.
+2. **Missing profile row rendered as a connection error (AccountProfile):**
+   `.single()` errors when the profiles row doesn't exist (OAuth sign-ins
+   never run the sign-up upsert) → permanent "Connection Issue" screen.
+   FIX: `.maybeSingle()`; on null, self-heal — render from auth user
+   metadata and upsert the row in the background.
+
+Client factory verified singleton (createBrowserClient memoized) — multi-
+instance lock contention ruled out. Single onAuthStateChange call site
+repo-wide. Workflow file untouched.
+
+Validation: 14 suites / 213 tests · tsc clean · ESLint 0 errors · build clean.
