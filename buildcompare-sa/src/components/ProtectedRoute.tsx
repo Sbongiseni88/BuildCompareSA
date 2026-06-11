@@ -17,15 +17,20 @@ const LOADING_TIMEOUT_MS = 6000;
  * Redirects to login if user is not authenticated.
  */
 export function ProtectedRoute({ children, fallbackUrl = '/login' }: ProtectedRouteProps) {
-    const { user, loading } = useAuthContext();
+    const { user, loading, resolved } = useAuthContext();
     const router = useRouter();
     const [forceReady, setForceReady] = useState(false);
 
     useEffect(() => {
-        if (!loading && !user) {
+        // Redirect ONLY once auth has genuinely resolved to "no user".
+        // The loading-timeout failsafe forces `loading` false without an
+        // answer — redirecting on that state kicked authenticated users to
+        // /login on slow networks, which then bounced them back here: the
+        // app-wide refresh/sign-out loop.
+        if (resolved && !loading && !user) {
             router.push(fallbackUrl);
         }
-    }, [user, loading, router, fallbackUrl]);
+    }, [user, loading, resolved, router, fallbackUrl]);
 
     // Failsafe: don't let a stuck auth state block the whole app
     useEffect(() => {
@@ -39,8 +44,10 @@ export function ProtectedRoute({ children, fallbackUrl = '/login' }: ProtectedRo
         return () => clearTimeout(timer);
     }, [loading]);
 
-    // Spinner while auth resolves (capped by timeout above)
-    if (loading && !forceReady) {
+    // Spinner while auth resolves (capped by timeout above). Also hold the
+    // spinner when the timeout force-rendered but auth hasn't actually
+    // answered yet — flashing null/redirect there was the logout bug.
+    if ((loading && !forceReady) || (!user && !resolved)) {
         return (
             <div className="min-h-screen bg-slate-900 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">

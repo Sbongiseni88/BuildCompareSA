@@ -315,6 +315,81 @@ describe('narrative preamble rows — Preliminaries, never AI-priced (2,630-row 
     });
 });
 
+describe('mixed-case trade captions & dimension strings (live 2,630-row stuck-on-Preliminaries defect)', () => {
+    // Real SAPS docs use Mixed-Case section captions; the all-caps-only rule
+    // never switched context, so one early "PRELIMINARIES" owned the sheet.
+    const buf = sheetBuffer([
+        ['Description', 'Unit', 'Qty'],
+        ['PRELIMINARIES', '', ''],
+        ['Allow for water and electricity for the works', 'sum', 1],
+        ['Concrete, Formwork and Reinforcement', '', ''],
+        ['Cast in situ surface beds poured underfloor', 'm3', 18],
+        ['Masonry', '', ''],
+        ['Half brick wall in stretcher bond', 'm2', 200],
+        ['Joinery and Ironmongery', '', ''],
+        ['44mm Semi-solid hardwood door 813 x 2032mm', 'No', 4],
+        ['Door frame 813\\times2032mm pressed steel', 'No', 4],
+    ]);
+    const materials = tryDirectBoQParse(buf)!;
+    const byName = (n: string) => materials.find((m) => m.name === n)!;
+
+    it('mixed-case trade captions switch the section context', () => {
+        expect(byName('Cast in situ surface beds poured underfloor').tenderCategory).toBe('Concrete');
+        expect(byName('Half brick wall in stretcher bond').tenderCategory).toBe('Masonry');
+        expect(byName('44mm Semi-solid hardwood door 813 x 2032mm').tenderCategory).toBe('Openings');
+    });
+
+    it('captions are consumed as context, never emitted as items', () => {
+        const names = materials.map((m) => m.name);
+        expect(names).not.toContain('Concrete, Formwork and Reinforcement');
+        expect(names).not.toContain('Masonry');
+        expect(names).not.toContain('Joinery and Ironmongery');
+    });
+
+    it('dimension/operator strings ("813 x 2032mm", "813\\times2032mm") never break parsing or pricing', () => {
+        const dims = byName('Door frame 813\\times2032mm pressed steel');
+        expect(dims).toBeDefined();
+        expect(dims.tenderCategory).toBe('Openings');
+        expect(shouldBypassRetailPricing(dims)).toBe(false);
+        expect(shouldBypassRetailPricing(byName('44mm Semi-solid hardwood door 813 x 2032mm'))).toBe(false);
+    });
+
+    it('the Preliminaries section still owns its own allowance rows', () => {
+        const allow = byName('Allow for water and electricity for the works');
+        expect(allow.tenderCategory).toBe('Preliminaries');
+        expect(shouldBypassRetailPricing(allow)).toBe(true);
+    });
+
+    it('escape hatch: a real material escapes a missed boundary after Preliminaries', () => {
+        const escBuf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['PRELIMINARIES', '', ''],
+            ['Allow for site establishment and supervision', 'sum', 1],
+            // A missed trade heading would historically trap this in Section 1:
+            ['PPC Surebuild Cement 42.5N 50kg', 'bags', 50],
+        ]);
+        const mats = tryDirectBoQParse(escBuf)!;
+        const cement = mats.find((m) => m.name.includes('Cement'))!;
+        expect(cement.tenderCategory).toBe('Concrete');
+        expect(shouldBypassRetailPricing(cement)).toBe(false);
+        const allow = mats.find((m) => m.name.startsWith('Allow'))!;
+        expect(allow.tenderCategory).toBe('Preliminaries');
+        expect(shouldBypassRetailPricing(allow)).toBe(true);
+    });
+
+    it('a mixed-case line WITHOUT a trade match is ordinary text, not a context reset', () => {
+        const noResetBuf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['Concrete, Formwork and Reinforcement', '', ''],
+            ['General arrangement as described', '', ''],   // no trade words, no qty/unit
+            ['Cast in situ strip footings', 'm3', 12],
+        ]);
+        const mats = tryDirectBoQParse(noResetBuf)!;
+        const footings = mats.find((m) => m.name.includes('footing'))!;
+        expect(footings.tenderCategory).toBe('Concrete');
+    });
+});
+
 describe('materialsFromParsedRows — dynamic section context for LLM rows', () => {
     const today = new Date('2026-06-11T08:00:00Z');
 

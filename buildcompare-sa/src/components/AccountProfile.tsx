@@ -50,6 +50,11 @@ export default function AccountProfile() {
     // The designation persisted to the profile ("4GB"), or null when unset.
     const cidbDesignation = cidbGrade ? `${cidbGrade}${cidbClass}` : null;
 
+    // Retry counter — bumping it re-runs the fetch effect (NO page reload:
+    // window.location.reload() here re-entered the Account tab from
+    // localStorage and produced an app-wide refresh loop).
+    const [fetchAttempt, setFetchAttempt] = useState(0);
+
     useEffect(() => {
         if (authLoading) return;
         if (!user?.id) {
@@ -59,13 +64,18 @@ export default function AccountProfile() {
         }
 
         const abortController = new AbortController();
+        // Distinguishes "this effect instance was superseded/unmounted"
+        // (stay silent) from a genuine in-flight timeout (show a message).
+        let supersededByCleanup = false;
+        let timedOut = false;
 
         const fetchProfileData = async () => {
             setIsLoading(true);
             setFetchError(null);
 
             const softAbort = setTimeout(() => {
-                abortController.abort(new Error("Connection timed out"));
+                timedOut = true;
+                abortController.abort(new Error('Connection timed out'));
             }, 6000);
 
             try {
@@ -77,6 +87,7 @@ export default function AccountProfile() {
                     .single();
 
                 clearTimeout(softAbort);
+                if (supersededByCleanup) return;
                 if (error) throw error;
 
                 if (data) {
@@ -88,15 +99,19 @@ export default function AccountProfile() {
                         setCidbGrade(String(grading.grade));
                         setCidbClass(grading.classOfWorks);
                     }
+                    setFetchError(null);
                 }
             } catch (error: any) {
-                if (error.name !== 'AbortError') {
-                    console.error('Error fetching profile:', error);
-                }
-                setFetchError(error.message || 'Failed to load profile');
+                // An abort from THIS effect's cleanup (tab switch, StrictMode
+                // re-run) must never surface as an error — the race where the
+                // stale rejection landed after the re-run started is exactly
+                // what froze the page on "AbortError: operation was aborted".
+                if (supersededByCleanup || (error?.name === 'AbortError' && !timedOut)) return;
+                console.error('Error fetching profile:', error);
+                setFetchError(timedOut ? 'Connection timed out. Please retry.' : (error.message || 'Failed to load profile'));
             } finally {
                 clearTimeout(softAbort);
-                setIsLoading(false);
+                if (!supersededByCleanup) setIsLoading(false);
             }
         };
 
@@ -109,10 +124,11 @@ export default function AccountProfile() {
         }, 9000);
 
         return () => {
+            supersededByCleanup = true;
             abortController.abort();
             clearTimeout(hardFailsafe);
         };
-    }, [user?.id, authLoading, supabase]);
+    }, [user?.id, authLoading, supabase, fetchAttempt]);
 
     const handleUpdateProfile = async () => {
         if (!user) return;
@@ -183,11 +199,11 @@ export default function AccountProfile() {
                 <p className="text-slate-400 max-w-sm mx-auto mb-6">
                     {fetchError || "Failed to load profile. This might occur if you've been offline for a while or left the app open."}
                 </p>
-                <button 
-                    onClick={() => window.location.reload()}
+                <button
+                    onClick={() => setFetchAttempt((n) => n + 1)}
                     className="btn-primary"
                 >
-                    Refresh App
+                    Try Again
                 </button>
             </div>
         );

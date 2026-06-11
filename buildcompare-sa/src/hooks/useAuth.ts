@@ -11,6 +11,14 @@ export interface AuthState {
     session: Session | null;
     userProfile: UserProfile | null;
     loading: boolean;
+    /**
+     * True only once auth has GENUINELY resolved (getSession returned or an
+     * auth event fired). The loading-timeout failsafe forces `loading` to
+     * false WITHOUT resolving — route guards must check `resolved` before
+     * treating a null user as "signed out", or a slow network kicks an
+     * authenticated user to /login.
+     */
+    resolved: boolean;
     error: string | null;
 }
 
@@ -35,6 +43,7 @@ export function useAuth(): UseAuthReturn {
     const [session, setSession] = useState<Session | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
+    const [resolved, setResolved] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // Stable ref so hot re-renders don't recreate the client
@@ -107,6 +116,7 @@ export function useAuth(): UseAuthReturn {
                     console.error('Error getting session or session is null:', error);
                     setSession(null);
                     setUser(null);
+                    setResolved(true);
                     setLoading(false);
                     return;
                 }
@@ -126,7 +136,10 @@ export function useAuth(): UseAuthReturn {
             } catch (err) {
                 console.error("Auth initialization failed:", err);
             } finally {
-                if (!cancelled) setLoading(false);
+                if (!cancelled) {
+                    setResolved(true);
+                    setLoading(false);
+                }
             }
         }
 
@@ -146,7 +159,10 @@ export function useAuth(): UseAuthReturn {
             } else {
                 setUserProfile(null);
             }
-            if (!cancelled) setLoading(false);
+            if (!cancelled) {
+                setResolved(true);
+                setLoading(false);
+            }
         });
 
         return () => {
@@ -271,6 +287,7 @@ export function useAuth(): UseAuthReturn {
         session,
         userProfile,
         loading,
+        resolved,
         error,
         signIn,
         signUp,
@@ -282,6 +299,7 @@ export function useAuth(): UseAuthReturn {
         session,
         userProfile,
         loading,
+        resolved,
         error,
         signIn,
         signUp,

@@ -350,7 +350,7 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             const hasUnit = rawUnit.length > 0;
 
             // Section/bill headings switch the trade context, then drop.
-            const section = detectSectionContext(rawDesc, { hasQty });
+            const section = detectSectionContext(rawDesc, { hasQty, hasUnit });
             if (section) {
                 activeSection = section.category;
                 continue;
@@ -374,11 +374,19 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             //    Preliminaries default must never become an explicit tag,
             //    or the pricing layer bypasses the row to N/A.
             const tenderGuess = guessTenderCategory(rawDesc);
+            // Escape hatch on Preliminaries ownership: a row with a real
+            // qty + unit AND a high-confidence NON-P&G keyword is a material
+            // even if a missed trade boundary left us "inside" Section 1 —
+            // without this, one undetected heading un-prices a whole sheet.
+            const escapesPrelimOwnership =
+                hasQty && hasUnit &&
+                tenderGuess.confidence === 'high' &&
+                tenderGuess.category !== 'Preliminaries';
             let tenderCategory: BoqCategory | undefined;
             if (isNarrativePreambleLine(rawDesc, { hasQty, hasUnit })) tenderCategory = 'Preliminaries';
-            else if (activeSection === 'Preliminaries') tenderCategory = 'Preliminaries';
+            else if (activeSection === 'Preliminaries' && !escapesPrelimOwnership) tenderCategory = 'Preliminaries';
             else if (tenderGuess.confidence !== 'low') tenderCategory = tenderGuess.category;
-            else if (activeSection) tenderCategory = activeSection;
+            else if (activeSection && activeSection !== 'Preliminaries') tenderCategory = activeSection;
 
             allMaterials.push({
                 id: `boq-direct-${sheetName}-${itemIndex++}`,

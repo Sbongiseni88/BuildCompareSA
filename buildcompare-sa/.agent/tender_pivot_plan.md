@@ -545,3 +545,50 @@ Fixes (boq_regex_structural_parser + retail_matrix_normalization):
 
 Validation: 14 suites / 207 tests (15 new boundary tests incl. the
 "Alterations no longer locks to Masonry" regression) · tsc clean · build clean.
+
+---
+
+## Execution log — 2026-06-11 live-testing defect repair (auth loop + stuck Preliminaries)
+
+### Defect 1 — Account page refresh loop / forced sign-out
+Trace found a three-part cascade:
+1. **Abort race (AccountProfile):** the profile-fetch effect's cleanup abort
+   rejected AFTER the effect re-ran (tab switch / StrictMode), so the stale
+   `AbortError` overwrote the fresh state and froze the page on the
+   "Connection Issue / AbortError" block. FIX: cleanup-superseded flag —
+   aborts from cleanup are silently ignored; only a genuine in-flight 6s
+   timeout surfaces (as "Connection timed out", not a raw AbortError).
+2. **Reload loop:** the error screen's button ran window.location.reload();
+   the active tab persists in localStorage, so reload re-entered Account →
+   same race → loop. FIX: button now retries the fetch in place
+   (fetchAttempt counter) — no reloads.
+3. **Forced sign-out (useAuth/ProtectedRoute):** the 3s loading-timeout
+   failsafe set loading=false BEFORE auth actually resolved; ProtectedRoute
+   treated `!loading && !user` as signed-out → router.push('/login') for an
+   authenticated user on a slow network → bounce loop. FIX: useAuth now
+   exposes `resolved` (true only when getSession returned or an auth event
+   fired); ProtectedRoute redirects ONLY when `resolved && !user`, and holds
+   the spinner instead of flashing null while unresolved.
+4. **Hardening:** sw.js now caches SAME-ORIGIN GETs only (it was caching
+   Supabase auth/REST responses cross-origin — stale sessions/profiles);
+   CACHE_NAME bumped to v3.
+
+### Defect 2 — all 2,630 rows stuck on Preliminaries
+Cause: real SAPS documents use Mixed-Case trade captions ("Concrete,
+Formwork and Reinforcement"); the caption detector was ALL-CAPS-only, so no
+boundary after the opening "PRELIMINARIES" heading ever fired — Section-1
+ownership swallowed the sheet. Dimension strings ("813 x 2032mm",
+"813\times2032mm") were never the crash cause — covered by tests anyway.
+FIXES:
+- detectSectionContext shape 3: Mixed-Case captions — strictest guards
+  (no qty AND no unit, no digits, ≤7 words, MUST match a trade rule; a
+  non-matching mixed-case line is ordinary text, never a reset).
+- Escape hatch on Preliminaries ownership: a row with real qty + unit AND a
+  high-confidence non-P&G keyword classifies as its trade even "inside"
+  Section 1 — one missed heading can no longer un-price a document.
+- Regression tests: mixed-case caption switching, caption rows never
+  emitted, dimension/operator strings parse + price, allowance rows stay
+  Preliminaries/N-A, escape hatch, non-trade mixed-case lines don't reset.
+
+Validation: 14 suites / 213 tests (6 new) · tsc clean · ESLint 0 errors ·
+build clean.

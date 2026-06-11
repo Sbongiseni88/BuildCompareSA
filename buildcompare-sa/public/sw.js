@@ -4,7 +4,7 @@
 // Version MUST be bumped on every release that changes the app shell —
 // a stale cache under the old name kept serving the pre-pivot bundle
 // (legacy AI concierge UI) long after the code was deleted from the repo.
-const CACHE_NAME = 'buildcompare-v2-tender';
+const CACHE_NAME = 'buildcompare-v3-tender';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to cache immediately on install
@@ -44,6 +44,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     // Skip non-GET requests
     if (event.request.method !== 'GET') return;
+
+    // Same-origin only: NEVER cache cross-origin requests. Caching Supabase
+    // auth/REST GETs served stale sessions and stale profile rows, which
+    // surfaced as spurious sign-outs on the Account page.
+    if (!event.request.url.startsWith(self.location.origin)) return;
 
     // Skip API calls — always go to network
     if (event.request.url.includes('/api/')) return;

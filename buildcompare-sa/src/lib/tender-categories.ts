@@ -172,18 +172,24 @@ export interface SectionContext {
  * Detect whether a BoQ row is a SECTION/BILL heading and, if so, which
  * trade context it switches to.
  *
- * Two heading shapes are recognised:
+ * Three heading shapes are recognised:
  * 1. Numbered headings — "Section No 2: Builders Work", "BILL NO 4 -
  *    ELECTRICAL INSTALLATION". Always headings.
  * 2. ALL-CAPS trade captions — "PLUMBING: DRAINAGE". Only when the row has
  *    no quantity (`hasQty: false`): a real all-caps item row ("PVC SEWER
  *    PIPE") always carries a qty, a caption never does.
+ * 3. Mixed-case trade captions — "Concrete, Formwork and Reinforcement".
+ *    The strictest shape: no qty AND no unit, no digits, ≤ 7 words, and it
+ *    MUST match a trade rule (a non-matching mixed-case line is treated as
+ *    ordinary text, never as a context reset). Documents whose section
+ *    boundaries are not all-caps previously never switched context — one
+ *    early "Preliminaries" heading then owned all 2,630 rows.
  *
  * Returns null when the row is not a heading (context unchanged).
  */
 export function detectSectionContext(
   line: string,
-  opts: { hasQty?: boolean } = {},
+  opts: { hasQty?: boolean; hasUnit?: boolean } = {},
 ): SectionContext | null {
   const text = (line ?? '').trim();
   if (!text) return null;
@@ -200,6 +206,16 @@ export function detectSectionContext(
     text === text.toUpperCase() &&
     /^[A-Z][A-Z\s&:/().'\-]{3,60}$/.test(text)
   ) {
+    title = text;
+  } else if (
+    opts.hasQty === false &&
+    opts.hasUnit === false &&
+    !/\d/.test(text) &&
+    text.split(/\s+/).length <= 7 &&
+    /^[A-Za-z][A-Za-z\s&:,/().'\-]{3,60}$/.test(text)
+  ) {
+    // Mixed-case captions fall through to the trade rules below; a
+    // non-matching one returns null (ordinary text — never a reset).
     title = text;
   }
 
