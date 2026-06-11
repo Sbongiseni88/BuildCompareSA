@@ -77,6 +77,11 @@ You are receiving a segmented portion (a "chunk") of a large South African Const
    ("Bill No. 1"), carried-forward/brought-forward sums, totals, summaries,
    and preamble references are document structure — NOT materials. OMIT them
    entirely; never invent an item for them.
+9. **Preserve Compliance Keywords**: when a row references SABS, SANS, or a
+   standard number (e.g. "SANS 10400", "SANS 920", "SABS approved"), KEEP
+   that reference verbatim inside `specs`. Never strip or paraphrase it —
+   the downstream compliance engine cross-references these keywords to
+   attach "SABS Approved Material Required" badges.
 
 ### OUTPUT RULES:
 - Return ONLY a raw JSON object string.

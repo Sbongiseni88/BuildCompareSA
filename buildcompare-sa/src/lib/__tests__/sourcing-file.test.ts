@@ -173,3 +173,57 @@ describe('buildSourcingWorkbook', () => {
     expect(typeof dataRow[12].v).toBe('number');
   });
 });
+
+describe('buildSourcingWorkbook — Tender Rates markup sheet (M4)', () => {
+  it('appends a "Tender Rates" sheet only when a markup is set', () => {
+    const raw = buildSourcingWorkbook(fullMatrix, { generatedAt: FIXED_DATE });
+    expect(raw.workbook.SheetNames).toEqual(['Sourcing File']);
+
+    const marked = buildSourcingWorkbook(fullMatrix, {
+      generatedAt: FIXED_DATE,
+      markupPercent: 12,
+    });
+    expect(marked.workbook.SheetNames).toEqual(['Sourcing File', 'Tender Rates']);
+  });
+
+  it('sheet 1 raw data is identical with or without markup', () => {
+    const raw = buildSourcingWorkbook(fullMatrix, { generatedAt: FIXED_DATE });
+    const marked = buildSourcingWorkbook(fullMatrix, {
+      generatedAt: FIXED_DATE,
+      markupPercent: 12,
+    });
+    expect(marked.aoa).toEqual(raw.aoa);
+  });
+
+  it('tender unit rate = (material + labour/qty) × (1 + margin)', () => {
+    const { workbook } = buildSourcingWorkbook(fullMatrix, {
+      generatedAt: FIXED_DATE,
+      markupPercent: 10,
+    });
+    const sheet = workbook.Sheets['Tender Rates'];
+    // First data row is row 8 (1-indexed): headers live on row 7.
+    // Columns: A ref, B desc, C qty, D unit, E material, F labour, G cost, H tender, I line total
+    const material = sheet['E8'].v as number;
+    const labour = sheet['F8'].v as number;
+    const cost = sheet['G8'].v as number;
+    const tender = sheet['H8'].v as number;
+    expect(cost).toBeCloseTo(material + labour, 6);
+    expect(tender).toBeCloseTo(cost * 1.1, 6);
+    // m1: cheapest 4.90 + labour 10020/100 = 105.10 → 115.61 at +10%
+    expect(material).toBe(4.90);
+    expect(tender).toBeCloseTo(105.10 * 1.1, 2);
+  });
+
+  it('summary reconciles: tender value − cost basis = gross margin', () => {
+    const { workbook } = buildSourcingWorkbook(fullMatrix, {
+      generatedAt: FIXED_DATE,
+      markupPercent: 12,
+    });
+    const sheet = workbook.Sheets['Tender Rates'];
+    const tenderValue = sheet['B2'].v as number;
+    const costBasis = sheet['B3'].v as number;
+    const margin = sheet['B4'].v as number;
+    expect(margin).toBeCloseTo(tenderValue - costBasis, 6);
+    expect(tenderValue).toBeCloseTo(costBasis * 1.12, 6);
+  });
+});

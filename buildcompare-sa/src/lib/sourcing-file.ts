@@ -28,6 +28,12 @@ export interface SourcingFileOptions {
   wageYear?: 'Y1' | 'Y2' | 'Y3';
   /** Override the filename (default: `BuildCompareSA_Sourcing_<unix>.xlsx`). */
   fileName?: string;
+  /**
+   * CIDB markup margin (%). When set, a second "Tender Rates" sheet is
+   * appended: sheet 1 keeps the RAW sourcing data untouched; sheet 2
+   * carries the marked-up unit rates ready for the bid submission.
+   */
+  markupPercent?: number;
 }
 
 /** Row in the SheetJS array-of-arrays output. Mix of CellObjects and primitives. */
@@ -236,7 +242,91 @@ export function buildSourcingWorkbook(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sourcing File');
 
+  // ── Sheet 2: marked-up tender rates (only when a margin is set) ──────
+  const markup = opts.markupPercent;
+  if (markup != null && Number.isFinite(markup) && markup > 0) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      buildTenderRatesSheet(rows, markup, projectName, dateLabel),
+      'Tender Rates',
+    );
+  }
+
   return { workbook: wb, rows, aoa };
+}
+
+/**
+ * Sheet 2 — "Tender Rates": cost rates from sheet 1 marked up by the CIDB
+ * margin. Cost basis = cheapest material unit rate + per-unit labour;
+ * tender rate = cost basis × (1 + margin). Lines with no retail price
+ * (Preliminaries / N/A) mark up the labour component only.
+ */
+function buildTenderRatesSheet(
+  rows: SourcingRow[],
+  markupPercent: number,
+  projectName: string,
+  dateLabel: string,
+): XLSX.WorkSheet {
+  const factor = 1 + markupPercent / 100;
+  const aoa: SourcingAoaRow[] = [];
+
+  let totalCost = 0;
+  let totalTender = 0;
+
+  const body: SourcingAoaRow[] = rows.map((r) => {
+    const qty = r.qty > 0 ? r.qty : 1;
+    const materialUnit = r.cheapestPriceZar ?? 0;
+    const labourUnit = r.labourEstimateZar / qty;
+    const costUnit = materialUnit + labourUnit;
+    const tenderUnit = costUnit * factor;
+    const lineTotal = tenderUnit * qty;
+
+    totalCost += costUnit * qty;
+    totalTender += lineTotal;
+
+    return [
+      asTextCell(r.itemRef),
+      asTextCell(r.description),
+      asQtyCell(r.qty),
+      asTextCell(r.unit),
+      asMoneyCell(materialUnit > 0 ? materialUnit : null),
+      asMoneyCell(labourUnit > 0 ? labourUnit : null),
+      asMoneyCell(costUnit > 0 ? costUnit : null),
+      asMoneyCell(tenderUnit > 0 ? tenderUnit : null),
+      asMoneyCell(lineTotal > 0 ? lineTotal : null),
+    ];
+  });
+
+  const margin = totalTender - totalCost;
+
+  aoa.push([asTextCell(`${projectName} — Tender Rates (+${markupPercent}% margin)`)]);
+  aoa.push([asTextCell('Tender Value (marked up)'), asMoneyCell(totalTender)]);
+  aoa.push([asTextCell('Cost Basis (raw)'), asMoneyCell(totalCost)]);
+  aoa.push([asTextCell('Gross Margin'), asMoneyCell(margin)]);
+  aoa.push([asTextCell(`Generated ${dateLabel} · raw sourcing data on sheet 1`)]);
+  aoa.push([]);
+  aoa.push(
+    [
+      'Item Ref',
+      'Description',
+      'Qty',
+      'Unit',
+      'Material Rate (Cost)',
+      'Labour Rate (Cost)',
+      'Cost Unit Rate',
+      `Tender Unit Rate (+${markupPercent}%)`,
+      'Line Total (Tender)',
+    ].map(asTextCell),
+  );
+  aoa.push(...body);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [
+    { wch: 10 }, { wch: 42 }, { wch: 8 }, { wch: 10 },
+    { wch: 20 }, { wch: 18 }, { wch: 16 }, { wch: 22 }, { wch: 20 },
+  ];
+  ws['!freeze'] = { xSplit: 0, ySplit: 7 };
+  return ws;
 }
 
 /**

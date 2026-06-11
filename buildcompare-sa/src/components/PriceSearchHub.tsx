@@ -34,10 +34,17 @@ import {
     PaintBucket,
     FolderTree,
     FolderPlus,
-    Waves
+    Waves,
+    ShieldCheck,
+    Percent,
+    Send
 } from 'lucide-react';
 import { Material, ComparisonResult, PriceQuote } from '@/types';
 import { downloadSourcingFile } from '@/lib/sourcing-file';
+import { downloadBulkRfqPdf } from '@/lib/rfq-pdf';
+import { checkSansCompliance, SANS_BADGE_LABEL } from '@/lib/sans-compliance';
+import { checkCidbCompliance } from '@/lib/cidb';
+import { crownCheapestByLandedCost } from '@/lib/landed-cost';
 
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
@@ -92,6 +99,61 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
     const [availableProjects, setAvailableProjects] = useState<Array<{ id: string; name: string; location: string }>>([]);
     const [isFetchingProjects, setIsFetchingProjects] = useState(false);
     const [isSavingToProject, setIsSavingToProject] = useState(false);
+
+    // ── B2B tender controls ───────────────────────────────────────────
+    // CIDB markup margin for the Tender Rates export sheet (0 = raw only).
+    const [markupPercent, setMarkupPercent] = useState<number>(() => {
+        try { return Number(sessionStorage.getItem('bc_markup_percent')) || 0; } catch { return 0; }
+    });
+    // CIDB grading designation from the user's profile (e.g. "4GB").
+    const [cidbGrading, setCidbGrading] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        try { sessionStorage.setItem('bc_markup_percent', String(markupPercent)); } catch { }
+    }, [markupPercent]);
+
+    // Load the CIDB grading preset once per session. Tolerates the column
+    // not existing yet (migration not applied) by simply leaving it unset.
+    React.useEffect(() => {
+        if (!user?.id) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('cidb_grading')
+                    .eq('id', user.id)
+                    .single();
+                if (!cancelled && !error && data?.cidb_grading) {
+                    setCidbGrading(data.cidb_grading);
+                }
+            } catch { /* column may not exist yet — grading check stays off */ }
+        })();
+        return () => { cancelled = true; };
+    }, [user?.id, supabase]);
+
+    /**
+     * Crown the cheapest supplier on Landed Site Cost (shelf + transport
+     * estimate), not shelf price — a marginally cheaper store far from site
+     * loses honestly. Annotates each quote with its landed breakdown.
+     */
+    const crownQuotesByLandedCost = (
+        quotes: PriceQuote[],
+        material: Material,
+    ): { quotes: PriceQuote[]; best: PriceQuote | null } => {
+        if (quotes.length === 0) return { quotes, best: null };
+        const crowned = crownCheapestByLandedCost(
+            quotes.map(q => ({ ref: q, price: q.price, deliveryFeeZar: q.deliveryFee, distanceKm: q.distance })),
+            material,
+        );
+        const annotated = crowned.map(({ quote, landed }) => {
+            quote.ref.landedSiteCostZar = landed.landedTotalZar;
+            quote.ref.landedDeliveryZar = landed.deliveryZar;
+            quote.ref.landedBasis = landed.basis;
+            return quote.ref;
+        });
+        return { quotes: annotated, best: annotated[0] };
+    };
 
     // Save sort pref
     React.useEffect(() => {
@@ -293,8 +355,10 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                     const validQuotes = quotes.filter(q => typeof q.price === 'number' && q.price > 0);
                     if (validQuotes.length === 0) return null;
 
-                    const best = validQuotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
-                    const avg = validQuotes.reduce((acc, curr) => acc + curr.price, 0) / validQuotes.length;
+                    // Cheapest = lowest LANDED site cost (shelf + transport), not shelf price.
+                    const { quotes: landedQuotes, best } = crownQuotesByLandedCost(validQuotes, material);
+                    if (!best) return null;
+                    const avg = landedQuotes.reduce((acc, curr) => acc + curr.price, 0) / landedQuotes.length;
                     const savings = avg - best.price;
 
                     // Update material name if the agent normalized it
@@ -306,11 +370,11 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
                     return {
                         material: updatedMaterial,
-                        quotes: validQuotes,
+                        quotes: landedQuotes,
                         bestPrice: best,
                         averagePrice: avg,
                         potentialSavings: savings > 0 ? savings * material.quantity : 0,
-                        isLive: validQuotes.some(q => !q.isFallback),
+                        isLive: landedQuotes.some(q => !q.isFallback),
                         marketInsight: data.marketInsight,
                         comparisonNote: data.comparisonNote,
                     } as ComparisonResult;
@@ -455,18 +519,18 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                             lastUpdated: new Date(),
                         } as PriceQuote));
 
-                        const best = quotes.length > 0
-                            ? quotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr)
-                            : null;
+                        // Crown the cheapest supplier on landed site cost, not shelf price.
+                        const { quotes: landedQuotes, best } = crownQuotesByLandedCost(quotes, r.material);
 
                         return {
                             material: r.material,
-                            quotes,
+                            quotes: landedQuotes,
                             bestPrice: best,
                             averagePrice: r.averagePrice,
                             potentialSavings: r.potentialSavings,
                             isLive: r.source === 'market-knowledge',
                             tenderCategory: r.tenderCategory,
+                            pgService: r.pgService ?? null,
                         };
                     });
             });
@@ -566,17 +630,52 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
         [comparisonResults]
     );
 
+    // CIDB tender-limit check: flag the BoQ when its priced value exceeds the
+    // user's grading capacity. Materials-only value (cheapest × qty) — the
+    // honest lower bound we can compute client-side.
+    const cidbCheck = useMemo(() => {
+        if (!cidbGrading || comparisonResults.length === 0) return null;
+        const boqValue = comparisonResults.reduce(
+            (acc, r) => acc + (r.bestPrice ? r.bestPrice.price * r.material.quantity : 0),
+            0,
+        );
+        return checkCidbCompliance(cidbGrading, boqValue);
+    }, [cidbGrading, comparisonResults]);
+
     // Tender-grade Excel export — see src/lib/sourcing-file.ts and
     // .agent/rules/team_standards.md for the canonical column contract.
+    // Sheet 1 = raw sourcing data; sheet 2 = marked-up tender rates when a
+    // CIDB margin is set on the slider.
     const handleDownload = () => {
         try {
             const fileName = downloadSourcingFile(comparisonResults, {
                 projectName: 'BuildCompare SA — Sourcing File',
+                markupPercent: markupPercent > 0 ? markupPercent : undefined,
             });
-            showSuccess(`${fileName} downloaded.`);
+            showSuccess(
+                markupPercent > 0
+                    ? `${fileName} downloaded (raw data + Tender Rates at +${markupPercent}%).`
+                    : `${fileName} downloaded.`,
+            );
         } catch (err: any) {
             console.error('Sourcing file generation failed:', err);
             showError(`Could not generate sourcing file: ${err?.message ?? 'unknown error'}`);
+        }
+    };
+
+    // Bulk Supplier RFQ — compiles every line into a formal PDF quotation
+    // request with blank price columns for the supplier's trade desk.
+    const handleBulkRfq = () => {
+        try {
+            const fileName = downloadBulkRfqPdf(comparisonResults, {
+                projectName: 'BuildCompare SA — Materials Schedule',
+                contactEmail: user?.email ?? undefined,
+                deliveryDestination: locationLabel || manualLocation || undefined,
+            });
+            showSuccess(`${fileName} ready — attach it to your supplier emails.`);
+        } catch (err: any) {
+            console.error('RFQ generation failed:', err);
+            showError(`Could not generate RFQ: ${err?.message ?? 'unknown error'}`);
         }
     };
 
@@ -851,29 +950,81 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                             <p className="text-3xl font-bold text-white">{formatCurrency(totalSavings)}</p>
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {/* Tender-grade sourcing file (Excel) */}
-                                        <button
-                                            onClick={handleDownload}
-                                            className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 rounded-lg text-sm font-bold text-black flex items-center gap-2 transition-all shadow-lg shadow-yellow-400/20"
-                                        >
-                                            <Download className="w-4 h-4" /> Download Sourcing File
-                                        </button>
-                                        {/* Save to active project */}
-                                        <button
-                                            onClick={() => setShowSaveToProjectModal(true)}
-                                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-semibold text-white border border-slate-700 flex items-center gap-2 transition-colors"
-                                        >
-                                            <FolderPlus className="w-4 h-4" /> Save to Project
-                                        </button>
-                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-semibold text-slate-300 border border-slate-700">
-                                            {comparisonResults.length} Items
-                                        </span>
-                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-semibold text-yellow-400 border border-slate-700">
-                                            {radius}km Radius
-                                        </span>
+                                    <div className="flex flex-col gap-3 items-stretch sm:items-end">
+                                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-2 items-stretch sm:items-center">
+                                            {/* Tender-grade sourcing file (Excel) */}
+                                            <button
+                                                onClick={handleDownload}
+                                                className="h-11 px-4 bg-yellow-400 hover:bg-yellow-300 rounded-lg text-sm font-bold text-black flex items-center justify-center gap-2 transition-all shadow-lg shadow-yellow-400/20"
+                                            >
+                                                <Download className="w-4 h-4" /> Download Sourcing File
+                                            </button>
+                                            {/* Bulk RFQ PDF for supplier trade desks */}
+                                            <button
+                                                onClick={handleBulkRfq}
+                                                className="h-11 px-4 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-semibold text-white border border-slate-700 flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <Send className="w-4 h-4 text-yellow-400" /> Bulk Supplier RFQ
+                                            </button>
+                                            {/* Save to active project */}
+                                            <button
+                                                onClick={() => setShowSaveToProjectModal(true)}
+                                                className="h-11 px-4 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-semibold text-white border border-slate-700 flex items-center justify-center gap-2 transition-colors"
+                                            >
+                                                <FolderPlus className="w-4 h-4" /> Save to Project
+                                            </button>
+                                        </div>
+                                        {/* CIDB markup margin slider — drives the Tender Rates export sheet */}
+                                        <div className="flex items-center gap-3 px-3 h-11 bg-slate-900/80 border border-slate-700 rounded-lg">
+                                            <Percent className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                                            <span className="text-xs font-bold text-slate-300 whitespace-nowrap">
+                                                CIDB Margin: <span className="text-yellow-400">+{markupPercent}%</span>
+                                            </span>
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={30}
+                                                step={1}
+                                                value={markupPercent}
+                                                onChange={(e) => setMarkupPercent(Number(e.target.value))}
+                                                className="w-28 sm:w-36 accent-yellow-400"
+                                                aria-label="CIDB markup margin percentage"
+                                            />
+                                            <span className="text-[10px] text-slate-500 whitespace-nowrap hidden sm:inline">
+                                                {markupPercent > 0 ? 'Adds "Tender Rates" sheet' : 'Raw export only'}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 justify-end">
+                                            <span className="px-3 py-1.5 bg-slate-900 rounded-lg text-xs font-semibold text-slate-300 border border-slate-700">
+                                                {comparisonResults.length} Items
+                                            </span>
+                                            <span className="px-3 py-1.5 bg-slate-900 rounded-lg text-xs font-semibold text-yellow-400 border border-slate-700">
+                                                {radius}km Radius
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
+
+                                {/* CIDB tender-limit compliance check */}
+                                {cidbCheck && (
+                                    <div className={`p-4 rounded-xl border flex gap-3 ${cidbCheck.withinLimit
+                                        ? 'bg-green-500/5 border-green-500/20'
+                                        : 'bg-red-500/10 border-red-500/30'
+                                        }`}>
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${cidbCheck.withinLimit ? 'bg-green-500/10' : 'bg-red-500/15'}`}>
+                                            <ShieldCheck className={`w-4 h-4 ${cidbCheck.withinLimit ? 'text-green-400' : 'text-red-400'}`} />
+                                        </div>
+                                        <div>
+                                            <p className={`text-xs font-black uppercase tracking-wider ${cidbCheck.withinLimit ? 'text-green-400' : 'text-red-400'}`}>
+                                                CIDB Grade {cidbCheck.grading.designation} · {cidbCheck.withinLimit ? 'Within Tender Limit' : 'Tender Limit Exceeded'}
+                                            </p>
+                                            <p className="text-sm text-slate-300 mt-1">{cidbCheck.message}</p>
+                                            <p className="text-[10px] text-slate-500 mt-1">
+                                                Based on materials-only value (cheapest supplier × quantity). Verify against the latest gazetted cidb ranges.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Market Intelligence Banner */}
                                 {comparisonResults.some(r => r.marketInsight || r.comparisonNote) && (
@@ -951,6 +1102,18 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                             <span>•</span>
                                                             <span>{result.material.quantity} {result.material.unit}</span>
                                                         </div>
+                                                        {/* SANS/SABS compliance badge — deterministic keyword match */}
+                                                        {(() => {
+                                                            const sans = checkSansCompliance(result.material.name);
+                                                            return sans ? (
+                                                                <span
+                                                                    title={`${sans.standard} — ${sans.scope}`}
+                                                                    className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] font-bold rounded-full border border-emerald-500/25"
+                                                                >
+                                                                    <ShieldCheck className="w-2.5 h-2.5" /> {SANS_BADGE_LABEL} · {sans.standard}
+                                                                </span>
+                                                            ) : null;
+                                                        })()}
                                                     </div>
                                                 </div>
                                                 {/* Potential Savings Badge */}
@@ -970,12 +1133,24 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                         <span className="text-[10px] font-black bg-blue-500 text-white px-2 py-0.5 rounded-full uppercase">
                                                             {(result.tenderCategory || '').toLowerCase() === 'preliminaries' ? 'P&G Allowance' : 'No Retail Pricing'}
                                                         </span>
-                                                        <span className="text-xs font-bold text-blue-300">Site Operations / Service Line</span>
+                                                        <span className="text-xs font-bold text-blue-300">Site Operations / Service Fee</span>
                                                     </div>
-                                                    <p className="text-xs text-slate-400">
-                                                        No hardware-retail product applies to this line. Supplier columns export as
-                                                        N/A — cost it via the BCCEI labour estimate in the sourcing file.
-                                                    </p>
+                                                    {result.pgService ? (
+                                                        <div className="space-y-1">
+                                                            <p className="text-sm font-bold text-white">
+                                                                {result.pgService.label}: {formatCurrency(result.pgService.totalZar)}
+                                                            </p>
+                                                            <p className="text-[10px] text-slate-400" title={result.pgService.basis}>
+                                                                {formatCurrency(result.pgService.rateZar)}/{result.pgService.unit} × {result.pgService.qty} — indicative B2B
+                                                                site-services rate, not a retail price.
+                                                            </p>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-slate-400">
+                                                            No hardware-retail product applies to this line. Supplier columns export as
+                                                            N/A — cost it via the BCCEI labour estimate in the sourcing file.
+                                                        </p>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -984,7 +1159,12 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                 <div className="p-4 bg-gradient-to-r from-green-500/10 to-transparent border-b border-white/5">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] font-black bg-green-500 text-black px-2 py-0.5 rounded-full uppercase">Best Deal</span>
+                                                            <span
+                                                                className="text-[10px] font-black bg-green-500 text-black px-2 py-0.5 rounded-full uppercase"
+                                                                title={result.bestPrice.landedBasis || 'Cheapest supplier'}
+                                                            >
+                                                                {result.bestPrice.landedSiteCostZar != null ? 'Best Landed Cost' : 'Best Deal'}
+                                                            </span>
                                                             <div className="flex flex-col">
                                                                 <span className="text-xs font-bold text-green-400">{result.bestPrice.supplierName}</span>
                                                                 <span className="text-[10px] text-slate-500">{result.bestPrice.distance}km away</span>
@@ -994,6 +1174,14 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                     <div className="flex items-end justify-between">
                                                         <div>
                                                             <p className="text-2xl font-black text-white">{formatCurrency(result.bestPrice.price)}</p>
+                                                            {result.bestPrice.landedSiteCostZar != null && (
+                                                                <p className="text-[10px] text-green-300/80 font-semibold" title={result.bestPrice.landedBasis}>
+                                                                    Landed Site Cost: {formatCurrency(result.bestPrice.landedSiteCostZar)}
+                                                                    {(result.bestPrice.landedDeliveryZar ?? 0) > 0 && (
+                                                                        <span className="text-slate-500"> (incl. {formatCurrency(result.bestPrice.landedDeliveryZar!)} transport est.)</span>
+                                                                    )}
+                                                                </p>
+                                                            )}
                                                             <div className="flex items-center gap-2">
                                                                 <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">
                                                                     {(result.tenderCategory || '').toLowerCase() === 'preliminaries' ? 'P&G Allowance' : 'Material Only'}

@@ -82,6 +82,12 @@ export interface PriceQuote {
     laborCostEstimate?: number;
     priceConfidence?: 'high' | 'medium' | 'low';
     lastUpdated: Date;
+    /** Landed Site Cost (shelf total + delivery estimate), ZAR — see src/lib/landed-cost.ts. */
+    landedSiteCostZar?: number;
+    /** Transport estimate component of the landed cost, ZAR. */
+    landedDeliveryZar?: number;
+    /** Audit trace for the landed figure ("Landed estimate: shelf … + transport …"). */
+    landedBasis?: string;
 }
 
 export interface ComparisonResult {
@@ -95,6 +101,20 @@ export interface ComparisonResult {
     comparisonNote?: string;
     /** Industry-standard BoQ category (Masonry, Concrete, Electrical, …) classified from the description. */
     tenderCategory?: string;
+    /**
+     * B2B site-operational service estimate for Preliminaries lines
+     * (mirrors BatchPriceResult.pgService). Indicative service rate with an
+     * audit basis — never a retail price.
+     */
+    pgService?: {
+        serviceId: string;
+        label: string;
+        unit: string;
+        rateZar: number;
+        qty: number;
+        totalZar: number;
+        basis: string;
+    } | null;
 }
 
 // Search Types

@@ -14,8 +14,10 @@ import {
     Edit2,
     Save,
     X,
-    Loader2
+    Loader2,
+    Award
 } from 'lucide-react';
+import { CIDB_CLASSES, CIDB_TENDER_LIMITS, parseCidbGrading, type CidbGrade } from '@/lib/cidb';
 
 interface UserProfileData {
     id: string;
@@ -23,6 +25,8 @@ interface UserProfileData {
     full_name: string;
     role: string;
     created_at: string;
+    /** CIDB grading designation preset, e.g. "4GB", "7CE". */
+    cidb_grading?: string | null;
 }
 
 export default function AccountProfile() {
@@ -39,7 +43,12 @@ export default function AccountProfile() {
 
     const [fullName, setFullName] = useState('');
     const [role, setRole] = useState('');
+    const [cidbGrade, setCidbGrade] = useState('');   // '1'–'9', '' = not set
+    const [cidbClass, setCidbClass] = useState('GB'); // class of works code
     const [isSaving, setIsSaving] = useState(false);
+
+    // The designation persisted to the profile ("4GB"), or null when unset.
+    const cidbDesignation = cidbGrade ? `${cidbGrade}${cidbClass}` : null;
 
     useEffect(() => {
         if (authLoading) return;
@@ -74,6 +83,11 @@ export default function AccountProfile() {
                     setProfile(data);
                     setFullName(data.full_name || '');
                     setRole(data.role || 'contractor');
+                    const grading = parseCidbGrading(data.cidb_grading);
+                    if (grading) {
+                        setCidbGrade(String(grading.grade));
+                        setCidbClass(grading.classOfWorks);
+                    }
                 }
             } catch (error: any) {
                 if (error.name !== 'AbortError') {
@@ -108,16 +122,29 @@ export default function AccountProfile() {
                 id: user.id,
                 full_name: fullName,
                 role: role,
+                cidb_grading: cidbDesignation,
                 updated_at: new Date().toISOString(),
             };
 
-            const { error } = await supabase
-                .from('profiles')
-                .upsert(updates);
+            let { error } = await supabase.from('profiles').upsert(updates);
+
+            // Tolerate the cidb_grading migration not being applied yet:
+            // save the rest of the profile and tell the user what's missing.
+            if (error && /cidb_grading/i.test(error.message || '')) {
+                ({ error } = await supabase.from('profiles').upsert({
+                    id: user.id,
+                    full_name: fullName,
+                    role: role,
+                    updated_at: updates.updated_at,
+                }));
+                if (!error) {
+                    showError('Profile saved, but CIDB grading needs the database migration (supabase/profile_cidb.sql) before it can be stored.');
+                }
+            }
 
             if (error) throw error;
 
-            setProfile(prev => prev ? { ...prev, full_name: fullName, role } : null);
+            setProfile(prev => prev ? { ...prev, full_name: fullName, role, cidb_grading: cidbDesignation } : null);
             setIsEditing(false);
             showSuccess('Profile updated successfully!');
         } catch (error: any) {
@@ -276,6 +303,48 @@ export default function AccountProfile() {
                                 </div>
                             </div>
 
+                            <div>
+                                <label className="block text-sm text-slate-400 mb-2">CIDB Grading (e.g. 4GB, 7CE)</label>
+                                <div className="flex gap-3">
+                                    <div className="relative w-1/3">
+                                        <select
+                                            value={cidbGrade}
+                                            onChange={(e) => setCidbGrade(e.target.value)}
+                                            disabled={!isEditing}
+                                            className={`input-field pl-10 ${!isEditing && 'opacity-60 cursor-not-allowed'}`}
+                                            aria-label="CIDB grade"
+                                        >
+                                            <option value="">Not set</option>
+                                            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => (
+                                                <option key={g} value={g}>Grade {g}</option>
+                                            ))}
+                                        </select>
+                                        <Award className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                    </div>
+                                    <select
+                                        value={cidbClass}
+                                        onChange={(e) => setCidbClass(e.target.value)}
+                                        disabled={!isEditing || !cidbGrade}
+                                        className={`input-field flex-1 ${(!isEditing || !cidbGrade) && 'opacity-60 cursor-not-allowed'}`}
+                                        aria-label="CIDB class of works"
+                                    >
+                                        {Object.entries(CIDB_CLASSES).map(([code, label]) => (
+                                            <option key={code} value={code}>{code} — {label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    {cidbGrade
+                                        ? (() => {
+                                            const limit = CIDB_TENDER_LIMITS[Number(cidbGrade) as CidbGrade];
+                                            return limit == null
+                                                ? `Grade ${cidbGrade}${cidbClass}: unlimited tender value.`
+                                                : `Grade ${cidbGrade}${cidbClass}: tenders up to R${limit.toLocaleString('en-ZA')}. BoQs above this get flagged in Price Search.`;
+                                        })()
+                                        : 'Set your cidb registration so over-limit BoQs are flagged before you bid.'}
+                                </p>
+                            </div>
+
                             {isEditing && (
                                 <div className="flex gap-3 pt-4">
                                     <button
@@ -283,6 +352,9 @@ export default function AccountProfile() {
                                             setIsEditing(false);
                                             setFullName(profile.full_name);
                                             setRole(profile.role);
+                                            const grading = parseCidbGrading(profile.cidb_grading);
+                                            setCidbGrade(grading ? String(grading.grade) : '');
+                                            setCidbClass(grading ? grading.classOfWorks : 'GB');
                                         }}
                                         className="btn-secondary flex-1"
                                     >

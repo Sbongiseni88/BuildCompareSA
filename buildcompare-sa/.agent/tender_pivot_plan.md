@@ -278,3 +278,84 @@ errors), `npx tsc --noEmit` ✅, `npm run build` ✅, `npm test` ✅ (8 suites,
 - Server-side auth on API routes (top June-2026 audit finding).
 - `xlsx` package replacement (unfixed upstream CVEs) + `npm audit fix` for jsPDF.
 - Distributed rate limiting; BUCO/Build it scraper selector tuning.
+---
+
+## Execution log — 2026-06-11 master refactor (B2B Tender Pricing Roadmap)
+
+Save point: `e520b0a` (price_cache pipeline). Work below implements the
+5-milestone master prompt; previously-shipped items were verified, not rebuilt.
+
+### M1 — Intelligent P&G Calculator & bias resolution
+- **`src/lib/pg-services.ts` (new):** virtualized B2B site-operational service
+  rate book (site office, storage, chemical toilets, scaffolding, shoring,
+  H&S officer, fencing, security, temp services, supervision). Each estimate
+  carries a basis string labelling it an indicative service rate — never a
+  retail price, never fed into the 5-store matrix.
+- **`spreadPgBalance()`** — percentage-based P&G spread tool: distributes a
+  total P&G balance across material rows proportional to value, reconciling
+  rounding drift to the cent (largest-row remainder).
+- **`batch-price-resolver.ts`:** `buildNoRetailResult()` now attaches
+  `pgService` for Preliminaries lines. SCRAPER INVARIANT preserved: the
+  retail matrix on these rows stays all-N/A (`not_attempted`); regression
+  test extended in `boq-engine.test.ts`.
+- Verified (pre-existing): Preliminaries/structural bypass, no fabricated
+  spreads, warm price_cache phase.
+
+### M2 — Tender-ready compliance dashboard
+- **`src/lib/cidb.ts` (new):** grading designations (1–9 × GB/CE/EB/EP/ME/SO),
+  Reg-25 tender value limits, `checkCidbCompliance()` flags over-limit BoQs.
+- **`AccountProfile.tsx`:** CIDB Grading preset (grade + class selects) saved
+  to `profiles.cidb_grading`; degrades gracefully when the migration is
+  missing. Migration: **`supabase/profile_cidb.sql`** (idempotent, format check).
+- **`PriceSearchHub.tsx`:** compliance banner after each priced BoQ —
+  red flag when materials-only value exceeds the grade limit.
+- **`src/lib/sans-compliance.ts` (new):** deterministic SANS/SABS keyword
+  cross-reference (SANS 10400 parts, SANS 50197-1, 920, 10142-1, …) → "SABS
+  Approved Material Required" badge on result cards. Deliberately NOT an LLM
+  call (badges must be reproducible). Parser prompt (`scraper/boq_parser.py`)
+  rule 9 now preserves SANS/SABS references verbatim in `specs`.
+- Verified (pre-existing): "Material Only: 0" fix — Preliminaries cards show
+  "P&G Allowance"; panel re-badged "Site Operations / Service Fee" and now
+  renders the pgService estimate.
+
+### M3 — Localized geo-logistics & basket-splitting
+- **`src/lib/landed-cost.ts` (new):** Landed Site Cost = shelf total + base
+  delivery + heavy-mass surcharge (Concrete/Masonry/Structural Steel, capped)
+  + distance leg beyond 10 km. `crownCheapestByLandedCost()` ranks quotes on
+  that total. Both search paths in PriceSearchHub now crown "Best Landed
+  Cost" instead of shelf price; cards show the landed breakdown with basis.
+- **`ProjectsManager.tsx`:** project location field relabelled **Site
+  Delivery Destination** (Springs/Welkom placeholder + helper copy). Honest
+  limitation: store distances are chain-level/geo-radius based — no
+  branch-level geocoding data exists, so nothing pretends otherwise.
+
+### M4 — B2B monetization & spreadsheet exports
+- **`sourcing-file.ts`:** `markupPercent` option → second sheet **"Tender
+  Rates"**: sheet 1 keeps RAW data byte-identical (test-asserted); sheet 2
+  carries cost rates, marked-up unit rates, line totals, and a margin
+  summary that reconciles exactly.
+- **`PriceSearchHub.tsx`:** CIDB Margin slider (0–30 %, session-persisted)
+  drives the export; **Bulk Supplier RFQ** button generates a formal PDF
+  (**`src/lib/rfq-pdf.ts`**, new) with blank price columns for the supplier —
+  our price intel never leaks into the RFQ.
+- Verified (pre-existing): button copy already "Download Sourcing File" /
+  "Save Report"; no "Export Excel"/CSV strings remain.
+
+### M5 — Frontend performance & navigation repair (verified)
+- Dashboard cache (`dashboard-cache.ts`, 5-min staleTime, synchronous hydrate,
+  skip-fetch-when-fresh) — in place.
+- Toolbars: `flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch
+  sm:items-center`, h-11/h-12 (≥44 px) — in place; new banner controls follow
+  the same pattern.
+- No `alert()` calls anywhere in `src`; SANS 10400 / BCCEI guides route to
+  `ComplianceGuideOverlay` slide-overs.
+
+### Validation
+- jest: **14 suites / 184 tests passing** (55 new: cidb, sans-compliance,
+  pg-services, landed-cost, Tender Rates sheet, pgService regression).
+- `tsc --noEmit`: clean. ESLint: 0 errors. `next build`: clean.
+
+### Activation checklist
+1. Run `supabase/profile_cidb.sql` in the Supabase SQL editor.
+2. (Pipeline, from save point) run `supabase/price_cache.sql` + add repo
+   secrets, then dry-run the Price Pipeline workflow.

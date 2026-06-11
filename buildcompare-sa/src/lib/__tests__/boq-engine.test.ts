@@ -212,6 +212,12 @@ describe('resolveBatchPrices — Preliminaries rows get a null retail matrix', (
         expect(r.bccei.totalZar).toBeGreaterThan(0);
         expect(r.bccei.basis).toContain('BCCEI');
 
+        // Site-services P&G lines are costed via the B2B service-rate book —
+        // an explicitly-labelled estimate, never a retail quote.
+        expect(r.pgService).toBeTruthy();
+        expect(r.pgService!.totalZar).toBeGreaterThan(0);
+        expect(r.pgService!.basis).toContain('B2B site-services rate');
+
         expect(stats.nonRetail).toBe(1);
         expect(stats.aiEstimated).toBe(0);
     });

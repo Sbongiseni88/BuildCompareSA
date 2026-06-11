@@ -34,6 +34,7 @@ import {
     type RetailStore,
 } from '@/lib/retail-matrix';
 import { priceCacheKey, readCachedMatrices, type CachedMatrix } from '@/lib/price-cache';
+import { estimatePgService, type PgServiceEstimate } from '@/lib/pg-services';
 import { mapLegacyToTenderCategory, guessTenderCategory } from '@/lib/tender-categories';
 import { estimateLabour } from '@/lib/bccei/labour';
 import { isBoqCategory, type BoqCategory } from '@/lib/bccei/labour-defaults';
@@ -128,6 +129,13 @@ export interface BatchPriceResult {
     matrix: RetailMatrix;
     /** BCCEI tender category resolved for this material. */
     tenderCategory: BoqCategory;
+    /**
+     * Virtualized B2B site-operational service estimate for Preliminaries
+     * lines (site offices, toilets, scaffolding, H&S allowances…). Clearly
+     * labelled an indicative service rate — NEVER a retail price and never
+     * part of the 5-store matrix.
+     */
+    pgService?: PgServiceEstimate | null;
     /** BCCEI-traceable labour estimate (ZAR, total for this material's qty). */
     bccei: {
         totalZar: number;
@@ -202,6 +210,14 @@ function buildMatrixFromQuotes(
  * resolves so the tender line remains costable.
  */
 function buildNoRetailResult(material: Material): BatchPriceResult {
+    const tenderCategory = resolveTenderCategory(material);
+    // Preliminaries lines get costed against the B2B site-services rate book
+    // (site offices, chemical toilets, scaffolding, H&S allowances…) instead
+    // of fabricated retail columns. The 5-store matrix stays all-N/A.
+    const pgService =
+        tenderCategory === 'Preliminaries'
+            ? estimatePgService(material.name, material.quantity)
+            : null;
     return {
         material,
         quotes: [],
@@ -211,8 +227,9 @@ function buildNoRetailResult(material: Material): BatchPriceResult {
         source: 'no-retail-pricing',
         laborEstimate: 0,
         matrix: blankMatrix('not_attempted'),
-        tenderCategory: resolveTenderCategory(material),
+        tenderCategory,
         bccei: bcceiForMaterial(material),
+        pgService,
     };
 }
 

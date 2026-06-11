@@ -675,14 +675,18 @@ export default function ProjectsManager({
                             </div>
 
                             <div>
-                                <label className="block text-sm text-slate-400 mb-2">Location *</label>
+                                <label className="block text-sm text-slate-400 mb-2">Site Delivery Destination *</label>
                                 <input
                                     type="text"
                                     value={newProjectLocation}
                                     onChange={(e) => setNewProjectLocation(e.target.value)}
-                                    placeholder="e.g., Sandton, Gauteng"
+                                    placeholder="e.g., Springs, Welkom, Sandton"
                                     className="input-field"
                                 />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    The town/suburb materials must be delivered to — used to prioritise
+                                    nearby stores and estimate the landed site cost.
+                                </p>
                             </div>
 
                             <div>
