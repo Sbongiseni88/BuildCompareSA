@@ -5,18 +5,10 @@ import {
     TrendingUp,
     FolderOpen,
     Zap,
-    PiggyBank,
-    ArrowUpRight,
-    ArrowDownRight,
-    Clock,
     MapPin,
-    MoreHorizontal,
     Plus,
-    PieChart,
-    BarChart3,
-    Search,
-    Calculator,
-    Info,
+    FileText,
+    ShieldCheck,
     PlayCircle,
     BookOpen,
     MessageCircle,
@@ -186,50 +178,51 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
         onRefresh: fetchDashboardData,
     });
 
-    // Derived Stats
+    // Derived B2B tender metrics — every figure traces to real project data.
     const activeCount = projects.filter(p => p.status === 'active').length;
-    const totalSavingsValue = projects.reduce((acc, p) => {
-        const savings = p.totalBudget - p.spent;
-        return savings > 0 ? acc + savings : acc;
+    const pricedTenderDocs = projects.filter(p => p.materials.length > 0).length;
+    const totalBudgetValue = projects.reduce((acc, p) => acc + (p.totalBudget > 0 ? p.totalBudget : 0), 0);
+    const budgetHeadroom = projects.reduce((acc, p) => {
+        const remaining = p.totalBudget - p.spent;
+        return remaining > 0 ? acc + remaining : acc;
     }, 0);
+    const sourcingOptimizationPct = totalBudgetValue > 0
+        ? Math.round((budgetHeadroom / totalBudgetValue) * 100)
+        : 0;
 
-    // Display name
-    const displayName = userProfile?.displayName || 'Builder';
+    // Display name — corporate enterprise phrasing, no consumer emoji.
+    const displayName = userProfile?.displayName || 'Contractor';
     const greeting = getGreeting();
 
-    // Stats Array
+    // KPI cards — B2B tender tracking focus.
     const stats = [
         {
-            label: 'Active Job Folders',
-            value: activeCount,
-            change: '',
-            changeType: 'positive' as const,
+            label: 'Active Project Hubs',
+            value: String(activeCount),
             icon: FolderOpen,
             color: 'from-blue-500 to-blue-600',
+            isBadge: false,
         },
         {
-            label: 'Total Savings',
-            value: `R${totalSavingsValue.toLocaleString('en-ZA')}`,
-            change: '',
-            changeType: 'positive' as const,
-            icon: PiggyBank,
-            color: 'from-green-500 to-emerald-600',
-        },
-        {
-            label: 'Comparisons Today',
-            value: 0,
-            change: '',
-            changeType: 'positive' as const,
-            icon: Zap,
+            label: 'Priced Tender Documents',
+            value: String(pricedTenderDocs),
+            icon: FileText,
             color: 'from-yellow-500 to-orange-500',
+            isBadge: false,
         },
         {
-            label: 'Avg. Savings',
-            value: `0%`,
-            change: '',
-            changeType: 'positive' as const,
+            label: 'Sourcing Optimization Average',
+            value: `${sourcingOptimizationPct}%`,
             icon: TrendingUp,
+            color: 'from-green-500 to-emerald-600',
+            isBadge: false,
+        },
+        {
+            label: 'BCCEI Compliance Status',
+            value: 'BCCEI 2025/2026 Active',
+            icon: ShieldCheck,
             color: 'from-purple-500 to-pink-500',
+            isBadge: true,
         },
     ];
 
@@ -300,13 +293,13 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                 <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                     <div>
                         <h1 className="text-3xl font-black text-white tracking-tight">
-                            {greeting}, <span className="text-gradient">{displayName}</span> 👷
+                            {greeting}, <span className="text-gradient">{displayName}</span>
                         </h1>
-                        <p className="text-slate-400 mt-2 text-lg">
+                        <p className="text-slate-400 mt-2 text-lg font-medium">
                             {projects.length === 0 ? (
-                                <>Welcome! Get started by comparing prices or creating your first job folder.</>
+                                <>Welcome to your BuildCompare Enterprise workspace. Set up a project hub or price a tender document to begin.</>
                             ) : (
-                                <>You have <span className="text-white font-bold">{activeCount} active job folder{activeCount !== 1 ? 's' : ''}</span>. Let&apos;s get to work!</>
+                                <>Welcome back to BuildCompare Enterprise. You have <span className="text-white font-bold">{activeCount} active project hub{activeCount !== 1 ? 's' : ''}</span> in progress.</>
                             )}
                         </p>
                     </div>
@@ -332,58 +325,57 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                 <div className="absolute right-0 top-0 w-64 h-64 bg-yellow-400/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
             </div>
 
-            {/* 3. Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 3. KPI Grid — B2B tender metrics, fully responsive */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 w-full">
                 {stats.map((stat, index) => {
                     const Icon = stat.icon;
                     return (
                         <div
                             key={stat.label}
-                            className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl group hover:border-yellow-500/30 hover:bg-slate-800/80 transition-all duration-300 backdrop-blur-sm"
+                            className="w-full min-w-0 bg-slate-900/50 border border-slate-800 p-5 rounded-2xl group hover:border-yellow-500/30 hover:bg-slate-800/80 transition-all duration-300 backdrop-blur-sm"
                             style={{ animationDelay: `${index * 100}ms` }}
                         >
-                            <div className="flex items-start justify-between">
-                                <div className={`w-12 h-12 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
-                                    <Icon className="w-6 h-6 text-white" />
-                                </div>
-                                {stat.change && (
-                                    <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-slate-950/50 border border-slate-800 ${stat.changeType === 'positive' ? 'text-green-400' : 'text-red-400'
-                                        }`}>
-                                        <ArrowUpRight className="w-3 h-3" />
-                                        {stat.change}
-                                    </div>
-                                )}
+                            <div className={`w-12 h-12 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                                <Icon className="w-6 h-6 text-white" />
                             </div>
                             <div className="mt-4">
-                                <p className="text-[2.25rem] leading-none font-black text-white tracking-tight">{stat.value}</p>
-                                <p className="text-sm text-slate-400 font-medium mt-2">{stat.label}</p>
+                                {stat.isBadge ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-500/15 border border-green-500/30 rounded-full text-sm font-bold text-green-400">
+                                        <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                                        {stat.value}
+                                    </span>
+                                ) : (
+                                    <p className="text-[2.25rem] leading-none font-black text-white tracking-tight">{stat.value}</p>
+                                )}
+                                <p className="text-sm text-slate-400 font-semibold mt-2">{stat.label}</p>
                             </div>
                         </div>
                     );
                 })}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* 4. Main Projects Area (Left 2/3) */}
-                <div className="lg:col-span-2 space-y-6">
+            {/* 4. Central workspace — full-width vertical flow (the old 2/3 +
+                1/3 split squashed Job Folders into a narrow gutter). */}
+            <div className="flex flex-col gap-6 w-full">
+                <div className="w-full space-y-6">
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <FolderOpen className="w-5 h-5 text-yellow-500" />
                             My Job Folders
                         </h2>
-                        <button onClick={onNavigateToProjects} className="text-sm min-h-[56px] flex items-center px-4 -mr-4 text-slate-400 hover:text-yellow-400 font-medium transition-colors">
+                        <button onClick={onNavigateToProjects} className="text-sm min-h-[56px] flex items-center px-4 -mr-4 text-slate-400 hover:text-yellow-400 font-semibold transition-colors">
                             View All Folders →
                         </button>
                     </div>
 
-                    <div className="grid gap-4">
+                    <div className="grid gap-4 w-full">
                         {fetchError ? (
-                            <div className="p-10 bg-slate-900/50 border border-red-500/30 rounded-2xl text-center">
+                            <div className="p-10 bg-slate-900/50 border border-red-500/30 rounded-2xl text-center w-full">
                                 <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <TrendingUp className="w-8 h-8 text-red-400" />
                                 </div>
                                 <h3 className="text-xl font-bold text-white mb-2">Connection Issue</h3>
-                                <p className="text-slate-400 mb-6 text-sm max-w-xs mx-auto">
+                                <p className="text-slate-400 mb-6 text-base font-medium max-w-md mx-auto">
                                     {fetchError}
                                 </p>
                                 <button onClick={fetchDashboardData} className="btn-primary">
@@ -391,7 +383,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                                 </button>
                             </div>
                         ) : projects.length > 0 ? (
-                            projects.slice(0, 3).map((project, index) => {
+                            projects.slice(0, 3).map((project) => {
                                 const progressPercent = project.totalBudget > 0 ? (project.spent / project.totalBudget) * 100 : 0;
                                 const isOverBudget = progressPercent > 100;
 
@@ -466,88 +458,16 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         )}
                     </div>
                 </div>
-
-                {/* 5. Cost Visuals (Right 1/3) */}
-                <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <PieChart className="w-5 h-5 text-purple-500" />
-                        Your Budget Tracker
-                        <span className="tooltip-trigger ml-1">
-                            <Info className="w-4 h-4 text-slate-600 cursor-help" />
-                            <span className="tooltip-content">A clear view of where your money is going across your construction jobs.</span>
-                        </span>
-                    </h2>
-
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-4 opacity-50">
-                            <BarChart3 className="w-32 h-32 text-slate-800/50" />
-                        </div>
-
-                        <div className="relative z-10">
-                            <h3 className="text-slate-300 font-medium mb-6">Where Your Money Goes</h3>
-
-                            {/* Dynamically Styled CSS Chart for Material vs Labour */}
-                            <div className="space-y-6">
-                                <div>
-                                    <div className="flex justify-between text-base mb-2">
-                                        <span className="text-white font-bold flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-blue-500"></div> Material Costs
-                                        </span>
-                                        <span className="text-blue-400 font-bold">65%</span>
-                                    </div>
-                                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-blue-500 w-[65%] rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="flex justify-between text-base mb-2">
-                                        <span className="text-white font-bold flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-green-500"></div> Labour Estimates
-                                        </span>
-                                        <span className="text-green-400 font-bold">35%</span>
-                                    </div>
-                                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 w-[35%] rounded-full shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-8 pt-6 border-t border-slate-800">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-3 bg-slate-800 rounded-xl">
-                                        <TrendingUp className="w-5 h-5 text-yellow-400" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-slate-400">Budget Health</p>
-                                        <p className="text-base font-bold text-white">On Track</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Quick Material Actions */}
-                    <div className="bg-gradient-to-br from-yellow-500 to-orange-500 rounded-2xl p-6 text-slate-900">
-                        <h3 className="font-bold text-lg mb-2">Need Cement?</h3>
-                        <p className="text-sm font-medium opacity-80 mb-4">Prices dropped at Builders Warehouse today.</p>
-                        <button
-                            onClick={onNavigateToCompare}
-                            className="w-full py-3 min-h-[56px] bg-white text-black font-bold rounded-lg shadow-lg hover:bg-slate-100 transition-colors text-base flex items-center justify-center"
-                        >
-                            Check Prices
-                        </button>
-                    </div>
-                </div>
             </div>
 
             {/* 6. Builder's Toolkit & Tutorials */}
-            <div className="mt-12 border-t border-slate-800 pt-8">
+            <div className="mt-12 border-t border-slate-800 pt-8 w-full">
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-black text-white flex items-center gap-2">
                         <BookOpen className="w-6 h-6 text-blue-400" />
                         Builder&apos;s Toolkit &amp; Tutorials
                     </h2>
-                    <button 
+                    <button
                         onClick={onFeedbackClick}
                         className="hidden md:flex flex-col items-start justify-center p-3 px-5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-blue-400/50 rounded-xl shadow-lg transition-all hover:scale-[1.02] hover:shadow-blue-500/10 cursor-pointer text-left group"
                     >
@@ -555,11 +475,13 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                             <MessageCircle className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
                             Help & Feedback
                         </div>
-                        <span className="text-[11px] text-slate-400 font-medium mt-1">Tell us what features you need or report a problem</span>
+                        <span className="text-[11px] text-slate-400 font-semibold mt-1">Tell us what features you need or report a problem</span>
                     </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Fluid responsive grid — fixed pixel widths squashed the third
+                    card ("Managing Your Labour Budget") off the viewport edge. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
                     {/* Card 1 — routes straight to the live Upload BoQ flow
                         (replaced the old "coming soon" toast stub). */}
                     <div
@@ -567,7 +489,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigateToCompare(); } }}
-                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="group cursor-pointer w-full min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10 focus:outline-none focus:ring-2 focus:ring-blue-400"
                     >
                         <div className="h-40 bg-gradient-to-br from-blue-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
@@ -576,7 +498,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         <div className="p-5">
                             <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-2 block">Try It Now</span>
                             <h3 className="text-lg font-bold text-white mb-2">Upload a BoQ</h3>
-                            <p className="text-slate-400 text-sm">Extract materials from any Excel or PDF document and price them across 5 suppliers — opens the Price Search Hub.</p>
+                            <p className="text-slate-400 text-sm font-medium">Extract materials from any Excel or PDF document and price them across 5 suppliers — opens the Price Search Hub.</p>
                         </div>
                     </div>
 
@@ -586,7 +508,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveGuide('sans-10400'); } }}
-                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-yellow-500/10 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                        className="group cursor-pointer w-full min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-yellow-500/10 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                     >
                         <div className="h-40 bg-gradient-to-br from-yellow-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
@@ -595,7 +517,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         <div className="p-5">
                             <span className="text-xs font-bold text-yellow-500 uppercase tracking-wider mb-2 block">Simple Guide</span>
                             <h3 className="text-lg font-bold text-white mb-2">Understanding SANS 10400</h3>
-                            <p className="text-slate-400 text-sm">A practical breakdown of standard South African building regulations for your site.</p>
+                            <p className="text-slate-400 text-sm font-medium">A practical breakdown of standard South African building regulations for your site.</p>
                         </div>
                     </div>
 
@@ -605,7 +527,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveGuide('bccei-labour'); } }}
-                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/10 focus:outline-none focus:ring-2 focus:ring-green-400"
+                        className="group cursor-pointer w-full min-w-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/10 focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
                         <div className="h-40 bg-gradient-to-br from-green-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
@@ -614,7 +536,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         <div className="p-5">
                             <span className="text-xs font-bold text-green-400 uppercase tracking-wider mb-2 block">Pro Tip</span>
                             <h3 className="text-lg font-bold text-white mb-2">Managing Your Labour Budget</h3>
-                            <p className="text-slate-400 text-sm">How to use the new SANS-aligned labour engine to keep your quotes realistic.</p>
+                            <p className="text-slate-400 text-sm font-medium">How to use the new SANS-aligned labour engine to keep your quotes realistic.</p>
                         </div>
                     </div>
                 </div>

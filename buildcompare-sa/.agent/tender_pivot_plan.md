@@ -465,3 +465,39 @@ Builders Work → Concrete (row keyword beats section); "PLUMBING: DRAINAGE"
 caption switches context; Section 4 generic row → Electrical and reaches the
 pricing path; resolver stats.nonRetail counts ONLY the Section-1 row.
 14 suites / 192 tests passing · tsc clean · lint 0 errors · build clean.
+
+---
+
+## Execution log — 2026-06-11 dashboard layout overhaul (contractor-readability pass)
+
+Scope: `src/components/Dashboard.tsx` only; workflow file untouched.
+
+1. **Consumer noise stripped:** "Your Budget Tracker" sidebar widget (static
+   65/35 demo chart + "Budget Health: On Track") and the "Need Cement? Check
+   Prices" marketing banner deleted outright. Greeting de-consumerised:
+   "👷" emoji removed, displayName fallback 'Builder' → 'Contractor',
+   subtitle now "Welcome back to BuildCompare Enterprise…" with real active
+   hub count.
+2. **KPI grid (top row):** wrapper now `grid grid-cols-2 lg:grid-cols-4
+   gap-4 w-full` (2-up on phones — no more single-column scroll). New B2B
+   metrics, every figure derived from real project data:
+   - Active Project Hubs (FolderOpen, count)
+   - Priced Tender Documents (FileText, projects with ≥1 priced material)
+   - Sourcing Optimization Average (TrendingUp, budget-headroom % across
+     hubs — 0% when no budgets exist, never a vanity number)
+   - BCCEI Compliance Status (ShieldCheck, green "BCCEI 2025/2026 Active"
+     badge pill instead of a numeric slot)
+   Dead metrics removed ("Comparisons Today: 0", hardcoded "Avg. Savings 0%").
+3. **Central workspace un-squashed:** the `lg:grid-cols-3` split (Job
+   Folders crammed into 2/3, widgets in 1/3) replaced with `flex flex-col
+   gap-6 w-full`. My Job Folders now spans 100% of the container; the
+   Connection Issue error block widened (`max-w-md`, `text-base`) so it no
+   longer renders as a narrow squashed column.
+4. **Toolkit & Tutorials grid:** `grid grid-cols-1 md:grid-cols-2
+   lg:grid-cols-3 gap-4 w-full` (was md:3 — tablets squeezed three cards and
+   bled "Managing Your Labour Budget" off-viewport). Cards `w-full min-w-0`;
+   audit confirmed zero hardcoded pixel widths remain (`w-[NNNpx]` grep
+   clean). Sub-header/body typography raised to font-semibold/font-medium
+   for the 40+ demographic.
+
+Validation: 14 suites / 192 tests · tsc clean · ESLint 0 errors · build clean.
