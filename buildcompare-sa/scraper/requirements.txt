@@ -8,3 +8,6 @@ httpx==0.27.0
 python-multipart==0.0.9
 
 openpyxl==3.1.2
+
+# Pipeline-only: writing real scraped prices into the Supabase price_cache table.
+supabase==2.5.0

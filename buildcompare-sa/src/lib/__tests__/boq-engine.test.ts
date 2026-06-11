@@ -23,6 +23,13 @@ jest.mock('../deepseek', () => ({
     checkDeepseekConfigured: () => false,
     getDeepseekClient: () => { throw new Error('unexpected DeepSeek call in test'); },
 }));
+// Warm price_cache returns nothing here, so the resolver exercises the
+// knowledge/estimate fallback deterministically (no network in the test env).
+jest.mock('@supabase/supabase-js', () => ({
+    createClient: () => ({
+        from: () => ({ select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }),
+    }),
+}));
 
 import * as XLSX from 'xlsx';
 import {

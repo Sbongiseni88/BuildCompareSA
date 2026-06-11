@@ -36,7 +36,7 @@ export interface RetailQuote {
   status: RetailQuoteStatus;
   reason?: RetailNaReason;
   /** Whether the underlying source attempted (for telemetry / debugging). */
-  source?: 'live-scrape' | 'ai-batch-estimate' | 'market-knowledge';
+  source?: 'live-scrape' | 'cached-scrape' | 'ai-batch-estimate' | 'market-knowledge';
 }
 
 export type RetailMatrix = Record<RetailStore, RetailQuote>;

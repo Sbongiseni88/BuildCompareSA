@@ -33,6 +33,7 @@ import {
     type RetailMatrix,
     type RetailStore,
 } from '@/lib/retail-matrix';
+import { priceCacheKey, readCachedMatrices, type CachedMatrix } from '@/lib/price-cache';
 import { mapLegacyToTenderCategory, guessTenderCategory } from '@/lib/tender-categories';
 import { estimateLabour } from '@/lib/bccei/labour';
 import { isBoqCategory, type BoqCategory } from '@/lib/bccei/labour-defaults';
@@ -117,7 +118,7 @@ export interface BatchPriceResult {
     bestPrice: BatchQuote | null;
     averagePrice: number;
     potentialSavings: number;
-    source: 'market-knowledge' | 'ai-batch-estimate' | 'no-retail-pricing';
+    source: 'cached-scrape' | 'market-knowledge' | 'ai-batch-estimate' | 'no-retail-pricing';
     laborEstimate: number;
     /**
      * Canonical 5-supplier matrix — same data as `quotes` but keyed by
@@ -161,6 +162,8 @@ export interface BatchResolveResult {
         failed: number;
         /** Preliminaries / structural lines deliberately not retail-priced. */
         nonRetail: number;
+        /** Lines served real prices from the warm price_cache (pipeline-scraped). */
+        cached: number;
     };
 }
 
@@ -208,6 +211,54 @@ function buildNoRetailResult(material: Material): BatchPriceResult {
         source: 'no-retail-pricing',
         laborEstimate: 0,
         matrix: blankMatrix('not_attempted'),
+        tenderCategory: resolveTenderCategory(material),
+        bccei: bcceiForMaterial(material),
+    };
+}
+
+/**
+ * Build a result from REAL warm-cache prices (pipeline-scraped, independent
+ * per store). Because these are genuine per-store quotes, crowning a cheapest
+ * supplier here is honest — unlike the market-knowledge estimate path, which
+ * fabricates a deterministic spread.
+ */
+function resultFromCachedMatrix(material: Material, cached: CachedMatrix): BatchPriceResult {
+    const searchTerm = material.search_string || generateSearchString(material.name);
+    const quotes: BatchQuote[] = [];
+
+    for (const store of RETAIL_STORES) {
+        const q = cached.matrix[store];
+        if (q.status !== 'ok' || q.priceZar == null || q.priceZar <= 0) continue;
+        const sp = SA_STORES.find(s => s.id === store);
+        quotes.push({
+            store,
+            storeName: q.storeName,
+            storeType: sp?.type || 'chain',
+            price: q.priceZar,
+            priceConfidence: 'high',
+            inStock: true,
+            url: sp
+                ? sp.searchUrl.replace('{query}', encodeURIComponent(searchTerm))
+                : `https://www.google.com/search?q=${encodeURIComponent(searchTerm)}`,
+            distance: Math.round(Math.random() * 12 + 3),
+            deliveryCost: sp?.deliveryCostRange[0] || 0,
+            laborEstimate: 0,
+        });
+    }
+    quotes.sort((a, b) => a.price - b.price);
+
+    const best = quotes[0] ?? null;
+    const avg = quotes.length ? quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length : 0;
+
+    return {
+        material,
+        quotes,
+        bestPrice: best,
+        averagePrice: Math.round(avg * 100) / 100,
+        potentialSavings: best ? Math.round((avg - best.price) * material.quantity * 100) / 100 : 0,
+        source: 'cached-scrape',
+        laborEstimate: 0,
+        matrix: cached.matrix,
         tenderCategory: resolveTenderCategory(material),
         bccei: bcceiForMaterial(material),
     };
@@ -466,16 +517,41 @@ export async function resolveBatchPrices(
 ): Promise<BatchResolveResult> {
     const knowledgeResults: BatchPriceResult[] = [];
     const nonRetailResults = new Map<string, BatchPriceResult>();
+    const cachedResults = new Map<string, BatchPriceResult>();
     const unknowns: Material[] = [];
 
-    // Phase 0+1: Intercept non-retail lines, then try market knowledge / cache
+    // Phase 0: Split non-retail (Preliminaries / structural) lines off — they
+    // get an all-N/A matrix and are NEVER priced or sent to the estimator.
+    const priceable: Material[] = [];
     for (const material of materials) {
-        // Preliminaries / structural summary lines have no retail product —
-        // they get an all-N/A matrix and are NEVER sent to the AI estimator.
         if (shouldBypassRetailPricing(material)) {
             nonRetailResults.set(material.id, buildNoRetailResult(material));
-            continue;
+        } else {
+            priceable.push(material);
         }
+    }
+
+    // Phase 1: Warm price_cache (real pipeline-scraped prices) — highest
+    // priority. A hit yields genuine independent per-store quotes, so the
+    // cheapest supplier is real (not a fabricated spread). Degrades to the
+    // estimate path on any miss or read failure.
+    try {
+        const keyOf = (m: Material) => priceCacheKey(m.search_string || m.name);
+        const cacheHits = await readCachedMatrices(priceable.map(keyOf));
+        for (const material of priceable) {
+            const hit = cacheHits.get(keyOf(material));
+            if (hit) cachedResults.set(material.id, resultFromCachedMatrix(material, hit));
+        }
+        if (cachedResults.size > 0) {
+            console.log(`💾 price_cache served ${cachedResults.size}/${priceable.length} lines with real prices.`);
+        }
+    } catch (err) {
+        console.warn('price_cache lookup failed — falling back to knowledge/AI:', err);
+    }
+
+    // Phase 2: Market knowledge / in-memory AI cache for the cache-misses.
+    for (const material of priceable) {
+        if (cachedResults.has(material.id)) continue;
 
         const searchTerm = material.search_string || material.name;
         const knowledge = findProductKnowledge(searchTerm) || findProductKnowledge(material.name);
@@ -510,7 +586,7 @@ export async function resolveBatchPrices(
         }
     }
 
-    // Phase 2: Batch AI estimate for unknowns (max 1 API call)
+    // Phase 3: Batch AI estimate for unknowns (max 1 API call)
     // Limit batch size to 30 items to stay within token limits
     const aiResults = new Map<string, BatchPriceResult>();
     if (unknowns.length > 0) {
@@ -536,6 +612,12 @@ export async function resolveBatchPrices(
         const nonRetail = nonRetailResults.get(material.id);
         if (nonRetail) {
             allResults.push(nonRetail);
+            continue;
+        }
+
+        const cachedResult = cachedResults.get(material.id);
+        if (cachedResult) {
+            allResults.push(cachedResult);
             continue;
         }
 
@@ -580,6 +662,7 @@ export async function resolveBatchPrices(
             aiEstimated: aiEstimatedCount,
             failed,
             nonRetail: nonRetailResults.size,
+            cached: cachedResults.size,
         },
     };
 }

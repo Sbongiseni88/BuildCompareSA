@@ -1,0 +1,62 @@
+name: Price Pipeline
+
+# Background scraper that refreshes the Supabase price_cache so the app serves
+# real per-store prices instead of fabricated estimates. Runs daily; can also
+# be triggered manually (optionally as a dry run) from the Actions tab.
+on:
+  schedule:
+    - cron: '0 2 * * *' # 02:00 UTC daily (≈04:00 SAST)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Scrape and log only (do not write to Supabase)'
+        type: boolean
+        default: false
+      limit:
+        description: 'Only process the first N catalogue items (blank = all)'
+        type: string
+        default: ''
+
+jobs:
+  scrape-prices:
+    name: Refresh price_cache
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./buildcompare-sa
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ./buildcompare-sa/scraper/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scraper/requirements.txt
+
+      # Only needed when BROWSERBASE_API_KEY is NOT set (local Chromium path).
+      # Harmless to always install; Browserbase ignores it.
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run price pipeline
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
+          BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
+          PIPELINE_CONCURRENCY: '4'
+        run: |
+          python -m scraper.pipeline \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }} \
+            ${{ inputs.limit != '' && format('--limit {0}', inputs.limit) || '' }}
