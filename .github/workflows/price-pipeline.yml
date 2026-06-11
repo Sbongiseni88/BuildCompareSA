@@ -40,7 +40,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scraper/requirements.txt
 
-      # Fixed conditional statement to cleanly check secret existence without syntax evaluation crashes
+      # Fixed conditional check environment mapping syntax
       - name: Install Playwright Chromium (Fallback Only)
         if: ${{ env.BROWSERBASE_API_KEY == '' }}
         env:
@@ -48,6 +48,7 @@ jobs:
         run: |
           python -m playwright install chromium
 
+      # Fixed module lookup crash by adding explicit path context management
       - name: Run price pipeline
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -56,6 +57,7 @@ jobs:
           BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
           BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
           PIPELINE_CONCURRENCY: '4'
+          PYTHONPATH: ${{ github.workspace }}/buildcompare-sa
         run: |
           python -m scraper.pipeline \
             ${{ inputs.dry_run == true && '--dry-run' || '' }} \
