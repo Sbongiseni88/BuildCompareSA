@@ -2,16 +2,19 @@
 
 ## 1. Executive Summary
 
-**BuildCompare SA** is a web-based price comparison platform designed for professional South African contractors. The platform enables contractors to compare building material prices across major suppliers (Builders Warehouse, Leroy Merlin, Cashbuild, and local independent yards), manage project budgets, and leverage AI-powered assistance for quantity calculations and recommendations.
+**BuildCompare SA** is a B2B SaaS platform for South African contractors bidding on government tenders. Contractors upload a Bill of Quantities and receive a symmetric five-store supplier price matrix (Builders Warehouse, Cashbuild, Leroy Merlin, BUCO, Build it), BCCEI-gazette-compliant labour estimates, project budget tracking, and a tender-grade sourcing-file export.
 
 ---
 
 ## 2. Technology Stack
 
 ### Core Framework
-- **Next.js 15** (App Router) - React framework with server-side rendering capabilities
+- **Next.js 16** (App Router) - React framework; all server logic lives in its API routes
 - **TypeScript** - Type-safe JavaScript for improved developer experience
-- **React 18** - UI component library with hooks
+- **React 19** - UI component library with hooks
+- **Supabase** - Authentication + RLS-protected Postgres
+- **DeepSeek (canonical) / Groq (fallback)** - AI extraction & pricing chain
+- **Python scraper microservice** (`scraper/`) - Playwright over Browserbase CDP, port 8001
 
 ### Styling
 - **Tailwind CSS** - Utility-first CSS framework
@@ -373,15 +376,18 @@ export const metadata: Metadata = {
 
 ## 10. Future Enhancements
 
-### Phase 2 - Backend Integration
-- Real API connections to supplier systems
-- User authentication (NextAuth.js)
-- Database (PostgreSQL/Supabase)
-- Real-time price updates (WebSockets)
+> Historical note: the original Phase 2/3 items (Supabase auth + database,
+> live supplier scraping, LLM integration) shipped during the tender-pivot
+> refactor — implemented with Supabase, Playwright/Browserbase, and the
+> DeepSeek → Groq provider chain rather than the tools listed back then.
+
+### Phase 2 - Hardening (current)
+- Server-side Supabase session checks on every API route
+- Distributed rate limiting (Upstash/Redis) to replace the in-memory limiter
+- Replace the `xlsx` npm package (unfixed upstream CVEs) with `exceljs`/SheetJS CDN
+- BUCO and Build it scraper selector tuning against the live sites
 
 ### Phase 3 - Advanced Features
-- Real OCR integration (Google Cloud Vision / AWS Textract)
-- LLM integration (OpenAI GPT-4 / Claude)
 - Order placement through platform
 - Delivery tracking
 - Supplier reviews and ratings
@@ -416,10 +422,13 @@ Build command:
 npm run build
 ```
 
-Environment variables required for production:
+Environment variables required for production (see `.env.example`):
 ```env
-NEXT_PUBLIC_API_URL=<backend-api>
-NEXT_PUBLIC_MAPS_API_KEY=<google-maps-key>
+DEEPSEEK_API_KEY=<canonical AI provider — required>
+GROQ_API_KEY=<fallback AI provider — optional>
+NEXT_PUBLIC_SUPABASE_URL=<supabase project url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase anon key>
+SCRAPER_URL=<deployed scraper microservice url>
 ```
 
 ---

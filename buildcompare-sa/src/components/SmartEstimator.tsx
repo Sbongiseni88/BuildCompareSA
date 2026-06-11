@@ -180,11 +180,43 @@ export default function SmartEstimator() {
 
         } catch (error) {
             console.error("Estimation failed:", error);
-            // Let the user know if the backend can't be reached
-            showError("AI Service is offline. Check backend connection.");
+            showError("DeepSeek estimator is unavailable right now. Try again in a moment, or fall back to a manual BoQ in Price Search.");
         } finally {
             setIsGenerating(false);
         }
+    };
+
+    /** One-click structural templates that prefill all four spec fields. */
+    const QUICK_TEMPLATES: Record<string, SpecForm> = {
+        'Boundary wall (220 brick, 1.8 m)': {
+            foundation: '25MPa Concrete Strip Footing 600×230mm',
+            structure: 'Double Skin Clay Brick boundary wall, 1.8m high, Y10 rebar tie-bars',
+            roofing: '',
+            finishing: 'Cement Plaster & PVA Paint (boundary face)',
+        },
+        'Suspended concrete slab (rib & block)': {
+            foundation: 'Rib & Block suspended slab 170mm overall, 25MPa screed',
+            structure: 'Y12 reinforcement to engineer detail, polystyrene voids',
+            roofing: '',
+            finishing: '',
+        },
+        'Pitched roof framing (gable end)': {
+            foundation: '',
+            structure: 'SA Pine timber trusses @ 760mm c/c, SANS 10082',
+            roofing: 'Corrugated Iron (IBR) 0.5mm Chromadek on Y-purlins',
+            finishing: 'Fascia & barge board, gutters & downpipes',
+        },
+        'Single-storey 60m² house shell': {
+            foundation: '25MPa Concrete Strip Footing 600×230mm',
+            structure: 'Double Skin Clay Brick walls, Y12 rebar lintels',
+            roofing: 'Concrete Roof Tiles on SA Pine trusses',
+            finishing: 'Cement Plaster & PVA Paint, porcelain tiles to floor',
+        },
+    };
+
+    const applyTemplate = (name: string) => {
+        const tpl = QUICK_TEMPLATES[name];
+        if (tpl) setSpecs(tpl);
     };
 
     const reset = () => {
@@ -269,10 +301,35 @@ export default function SmartEstimator() {
                 {/* LEFT: Input Form */}
                 <div className="lg:col-span-1 space-y-6">
                     <div className="glass-card p-6 md:p-8 border-l-4 border-l-yellow-500">
-                        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
                             <Layers className="w-6 h-6 text-yellow-400" />
                             Technical Specs
                         </h3>
+
+                        {/* Quick template selector — one tap to prefill all four fields */}
+                        <div className="mb-6">
+                            <label className="block text-xs font-bold text-slate-300 mb-2 uppercase tracking-wider">
+                                Start from a Template
+                            </label>
+                            <select
+                                className="input-field font-semibold text-base"
+                                defaultValue=""
+                                onChange={(e) => {
+                                    if (e.target.value) {
+                                        applyTemplate(e.target.value);
+                                        e.target.value = '';
+                                    }
+                                }}
+                            >
+                                <option value="">Choose a structural template…</option>
+                                {Object.keys(QUICK_TEMPLATES).map((name) => (
+                                    <option key={name} value={name}>{name}</option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-slate-400 mt-1.5 font-medium">
+                                Templates prefill every field below — edit afterwards as needed.
+                            </p>
+                        </div>
 
                         <div className="space-y-6">
                             {(Object.keys(FIELD_META) as (keyof SpecForm)[]).map((field) => (
@@ -500,7 +557,7 @@ export default function SmartEstimator() {
                                     <AlertCircle className="w-14 h-14 text-slate-500 mb-4" />
                                     <h3 className="text-2xl font-bold text-white mb-3">No results found</h3>
                                     <p className="text-slate-400 text-lg mb-6 max-w-sm leading-relaxed">
-                                        The AI couldn't generate a material list from the provided specifications. Try adding more detail or use the quick-select presets.
+                                        The AI couldn&apos;t generate a material list from the provided specifications. Try adding more detail or use the quick-select presets.
                                     </p>
                                     <button onClick={generateBoQ} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white text-lg font-bold rounded-lg flex items-center gap-2 transition-colors border-2 border-slate-700 min-h-[48px]">
                                         <RefreshCw className="w-5 h-5" />

@@ -106,7 +106,7 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
                             <CheckCircle className="w-8 h-8" />
                         </div>
                         <h3 className="text-xl font-bold text-white mb-2">Thank You!</h3>
-                        <p className="text-slate-400">Your feedback helps BuildCompare grow. We've received it safely.</p>
+                        <p className="text-slate-400">Your feedback helps BuildCompare grow. We&apos;ve received it safely.</p>
                     </div>
                 ) : (
                     <form onSubmit={handleSubmit} className="space-y-5">

@@ -59,8 +59,9 @@ Under POPIA, users have the following rights:
 | Processor | Purpose | Data Shared |
 |-----------|---------|-------------|
 | Supabase | Authentication & Database | Email, role |
-| Google Gemini | AI Chat | Chat messages (not stored) |
-| Groq | AI Processing | Queries (not stored) |
+| DeepSeek | AI processing (BoQ extraction, price parsing) | Uploaded document text & search queries (not stored) |
+| Groq | AI processing (fallback only) | Queries (not stored) |
+| Browserbase | Headless browser infrastructure for retailer scraping | Retailer URLs only — no personal data |
 
 ---
 

@@ -19,6 +19,8 @@ export default function NotificationCenter() {
     const { user } = useAuthContext();
     const supabase = createClient();
     const [isOpen, setIsOpen] = useState(false);
+    // Reference timestamp for relative time labels; set at interaction time.
+    const [openedAt, setOpenedAt] = useState(0);
     const [notifications, setNotifications] = useState<NotificationItem[]>([]);
     const panelRef = useRef<HTMLDivElement>(null);
 
@@ -117,7 +119,7 @@ export default function NotificationCenter() {
 
     const formatTime = (dateStr: string) => {
         const date = new Date(dateStr);
-        const diff = Date.now() - date.getTime();
+        const diff = openedAt - date.getTime();
         const mins = Math.floor(diff / 60000);
         if (mins < 1) return 'Just now';
         if (mins < 60) return `${mins}m ago`;
@@ -131,7 +133,12 @@ export default function NotificationCenter() {
         <div className="relative" ref={panelRef}>
             {/* Bell Trigger */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => {
+                    // Capture "now" at interaction time so relative labels are
+                    // fresh per open without impure calls during render.
+                    setOpenedAt(Date.now());
+                    setIsOpen(!isOpen);
+                }}
                 className="relative p-2 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
                 aria-label="Notifications"
             >

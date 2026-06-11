@@ -1,5 +1,11 @@
 # BuildCompare SA — Bottleneck Fixes Tracker
 
+> **⚠️ HISTORICAL DOCUMENT — tender-pivot refactor (June 2026):** the standalone
+> Python FastAPI `backend/` described below has been **deleted**. Calculators now
+> live in `src/lib/calculations.ts`; AI orchestration lives in Next.js API routes
+> (DeepSeek canonical, Groq fallback); the only surviving Python service is
+> `scraper/`. This file is kept as a record of past work only.
+
 > Created: 2026-04-10  
 > Status: IN PROGRESS
 

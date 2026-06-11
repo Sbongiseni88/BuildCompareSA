@@ -29,6 +29,8 @@ import { Project } from '@/types';
 import usePullToRefresh from '@/hooks/usePullToRefresh';
 import PullToRefreshIndicator from '@/components/PullToRefreshIndicator';
 import { useToast } from '@/contexts/ToastContext';
+import { readDashboardCache, writeDashboardCache } from '@/lib/dashboard-cache';
+import ComplianceGuideOverlay, { type ComplianceGuideId } from './ComplianceGuide';
 
 interface DashboardProps {
     onNavigateToProjects: () => void;
@@ -41,10 +43,17 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
     const { showInfo } = useToast();
     const supabaseRef = React.useRef(createClient());
     const supabase = supabaseRef.current;
-    const [projects, setProjects] = React.useState<Project[]>([]);
+
+    // Synchronous cache read on first render: a fresh snapshot hydrates state
+    // immediately (no skeleton flash on back-navigation); a stale snapshot
+    // still renders instantly and is revalidated in the background below.
+    const initialCache = React.useMemo(() => readDashboardCache(user?.id), [user?.id]);
+
+    const [projects, setProjects] = React.useState<Project[]>(initialCache.projects ?? []);
     const [dataLoading, setDataLoading] = React.useState(false);
-    const [dataReady, setDataReady] = React.useState(false);
+    const [dataReady, setDataReady] = React.useState(initialCache.projects !== null);
     const [fetchError, setFetchError] = React.useState<string | null>(null);
+    const [activeGuide, setActiveGuide] = React.useState<ComplianceGuideId | null>(null);
     const abortControllerRef = React.useRef<AbortController | null>(null);
 
     const fetchDashboardData = React.useCallback(async () => {
@@ -94,6 +103,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                     }))
                 }));
                 setProjects(mappedProjects);
+                writeDashboardCache(user.id, mappedProjects);
 
                 // Check for budget alerts
                 mappedProjects.forEach(async (p) => {
@@ -151,7 +161,11 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
             setDataLoading(false);
             return;
         }
-        fetchDashboardData();
+        // Fresh cache (< staleTime) was hydrated synchronously — skip the
+        // network round-trip entirely. Stale/missing cache: fetch (in the
+        // stale case the cached shell already renders, so no skeleton flash).
+        const { fresh } = readDashboardCache(user.id);
+        if (!fresh) fetchDashboardData();
         return () => {
             if (abortControllerRef.current) abortControllerRef.current.abort();
         };
@@ -533,7 +547,7 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-black text-white flex items-center gap-2">
                         <BookOpen className="w-6 h-6 text-blue-400" />
-                        Builder's Toolkit & Tutorials
+                        Builder&apos;s Toolkit &amp; Tutorials
                     </h2>
                     <button 
                         onClick={onFeedbackClick}
@@ -565,9 +579,12 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                     </div>
 
                     {/* Card 2 */}
-                    <div 
-                        onClick={() => showInfo("This tutorial is being updated for 2026 standards—coming soon!")}
-                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-yellow-500/10"
+                    <div
+                        onClick={() => setActiveGuide('sans-10400')}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveGuide('sans-10400'); } }}
+                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-yellow-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-yellow-500/10 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                     >
                         <div className="h-40 bg-gradient-to-br from-yellow-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
@@ -581,9 +598,12 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                     </div>
 
                     {/* Card 3 */}
-                    <div 
-                        onClick={() => showInfo("This tutorial is being updated for 2026 standards—coming soon!")}
-                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/10"
+                    <div
+                        onClick={() => setActiveGuide('bccei-labour')}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveGuide('bccei-labour'); } }}
+                        className="group cursor-pointer bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-green-500/50 transition-all hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/10 focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
                         <div className="h-40 bg-gradient-to-br from-green-900/40 to-slate-900 relative flex items-center justify-center overflow-hidden">
                             <div className="absolute inset-0 bg-[url('/images/pattern.svg')] opacity-10"></div>
@@ -609,6 +629,9 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                     <span className="text-xs text-slate-400 font-medium text-center">Tell us what features you need or report a problem</span>
                 </button>
             </div>
+
+            {/* Regulatory compliance guides (SANS 10400 / BCCEI labour) */}
+            <ComplianceGuideOverlay guideId={activeGuide} onClose={() => setActiveGuide(null)} />
         </div>
     );
 }

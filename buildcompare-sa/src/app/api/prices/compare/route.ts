@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
-import { groqClient, isGroqConfigured } from '@/lib/groq';
+import { runAIChain } from '@/lib/ai-chain';
 import {
     SA_STORES,
     findProductKnowledge,
@@ -87,6 +86,8 @@ interface CompareResponse {
     cheapest: StoreQuote | null;
     results: StoreQuote[];
     marketInsight: string;
+    /** Mean of the returned store prices — used by the price-drop notifier. */
+    averagePrice: number | null;
     comparisonNote: string;
     priceRange: { min: number; max: number };
     region: string;
@@ -103,25 +104,11 @@ function toTitleCase(s: string): string {
 }
 
 // ── AI Helper ────────────────────────────────────────────────────────────
+// Canonical chain (team_standards.md): DeepSeek → Groq → throw, via the
+// shared helper in src/lib/ai-chain.ts.
 
 async function callAI(systemPrompt: string): Promise<string> {
-    if (checkDeepseekConfigured()) {
-        try {
-            const client = getDeepseekClient();
-            const res = await client.chat.completions.create({
-                messages: [{ role: 'system', content: systemPrompt }],
-                model: 'deepseek-chat',
-                temperature: 0.1,
-                response_format: { type: 'json_object' },
-            });
-            const content = res.choices[0]?.message?.content;
-            if (content) return content;
-        } catch (err: any) {
-            console.error('DeepSeek generation failed:', err.message);
-            throw err;
-        }
-    }
-    throw new Error('DeepSeek API not configured');
+    return runAIChain([{ role: 'system', content: systemPrompt }]);
 }
 
 // ── STEP 1: Parse the Query ──────────────────────────────────────────────
@@ -187,7 +174,9 @@ async function tryLiveScrape(
     store: StoreProfile,
     searchTerms: string[],
     query: ParsedQuery,
-    region: string
+    region: string,
+    userLat?: number,
+    userLng?: number
 ): Promise<StoreQuote[]> {
     // Fully localized architecture, disconnect from AWS ECS remote proxy.
     const scraperUrl = process.env.SCRAPER_URL || process.env.LOCAL_SCRAPER_URL || 'http://127.0.0.1:8001';
@@ -247,6 +236,13 @@ ${data.raw_text.slice(0, 15000)}
         const parsed = JSON.parse(aiResponse);
         const items = Array.isArray(parsed.results) ? parsed.results : [];
 
+        // Real geo distance when the caller supplied (or resolved) coordinates;
+        // a rough placeholder otherwise.
+        const storeCoord = STORE_COORDS[store.id];
+        const distance = (userLat != null && userLng != null && storeCoord)
+            ? Math.round(haversine(userLat, userLng, storeCoord.lat, storeCoord.lng) * 10) / 10
+            : Math.round(Math.random() * 15 + 2);
+
         return items
             .filter((item: any) => typeof item.price === 'number' && item.price > 0)
             .map((item: any): StoreQuote => ({
@@ -261,7 +257,7 @@ ${data.raw_text.slice(0, 15000)}
                 priceConfidence: 'high',
                 inStock: item.inStock ?? true,
                 url: store.searchUrl.replace('{query}', encodeURIComponent(searchTerms[0])),
-                distance: Math.round(Math.random() * 15 + 2), // Will be replaced by real geo later
+                distance,
                 deliveryCost: store.deliveryCostRange[0],
                 totalCost: item.price + store.deliveryCostRange[0],
                 laborEstimate: 0, // Calculated separately
@@ -434,31 +430,40 @@ CRITICAL:
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const rawQuery = searchParams.get('q');
-    const lat = searchParams.get('lat') ? parseFloat(searchParams.get('lat')!) : undefined;
-    const lng = searchParams.get('lng') ? parseFloat(searchParams.get('lng')!) : undefined;
+    const latParam = searchParams.get('lat') ? parseFloat(searchParams.get('lat')!) : undefined;
+    const lngParam = searchParams.get('lng') ? parseFloat(searchParams.get('lng')!) : undefined;
     const locationName = searchParams.get('location')?.toLowerCase().replace(/\s+/g, '_');
+    const radiusParam = searchParams.get('radius') ? parseFloat(searchParams.get('radius')!) : undefined;
+    // Clamp the search radius to a sane band; 50 km default when absent/garbage.
+    const radiusKm = radiusParam != null && Number.isFinite(radiusParam)
+        ? Math.min(300, Math.max(5, radiusParam))
+        : 50;
 
-    // Resolve named locations to coordinates
-    let resolvedLat = lat;
-    let resolvedLng = lng;
-    if (!resolvedLat && !resolvedLng && locationName && LOCATION_PRESETS[locationName]) {
+    // Resolve coordinates: explicit lat/lng wins, then named location presets.
+    let resolvedLat = latParam != null && Number.isFinite(latParam) ? latParam : undefined;
+    let resolvedLng = lngParam != null && Number.isFinite(lngParam) ? lngParam : undefined;
+    if (resolvedLat == null && resolvedLng == null && locationName && LOCATION_PRESETS[locationName]) {
         resolvedLat = LOCATION_PRESETS[locationName].lat;
         resolvedLng = LOCATION_PRESETS[locationName].lng;
     }
+    const hasCoords = resolvedLat != null && resolvedLng != null;
+    const regionLabel = locationName
+        || (hasCoords ? `${resolvedLat!.toFixed(4)},${resolvedLng!.toFixed(4)}` : 'za');
 
     if (!rawQuery) {
         return NextResponse.json({ error: 'Missing query parameter "q"' }, { status: 400 });
     }
 
-    // Cache check (include coords in key for location-specific caching)
-    const coordKey = lat && lng ? `${lat.toFixed(2)}_${lng.toFixed(2)}` : 'nocoords';
+    // Cache check — keyed on RESOLVED coords (so named locations are
+    // location-specific too) and on the radius, which filters the result set.
+    const coordKey = hasCoords ? `${resolvedLat!.toFixed(2)}_${resolvedLng!.toFixed(2)}_r${radiusKm}` : 'nocoords';
     const cacheKey = `compare_${rawQuery.toLowerCase().replace(/[^a-z0-9]/g, '')}_${coordKey}`;
     const cached = COMPARE_CACHE[cacheKey];
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
         return NextResponse.json({ ...cached.data, cached: true });
     }
 
-    console.log(`\n🔍 PRICE COMPARE AGENT: "${rawQuery}" coords=${lat},${lng}`);
+    console.log(`\n🔍 PRICE COMPARE AGENT: "${rawQuery}" region=${regionLabel} coords=${resolvedLat},${resolvedLng} radius=${radiusKm}km`);
 
     // ── STEP 1: Parse Query ──
     const query = await parseQuery(rawQuery);
@@ -471,10 +476,15 @@ export async function GET(request: Request) {
     let allQuotes: StoreQuote[] = [];
     let marketInsight = '';
 
-    // ── STEP 3: Try live scraping (parallel across stores) ──
-    const scrapeStores = SA_STORES.slice(0, 3); // Builders, Cashbuild, Build it
+    // ── STEP 3: Try live scraping (parallel across ALL 5 stores) ──
+    // Per .agent/skills/retail_matrix_normalization — every store must
+    // be queried independently. A failed store later resolves to N/A in
+    // the matrix — never mirror another store's value into a missing slot.
+    const scrapeStores = SA_STORES; // builders, cashbuild, buildit, leroy_merlin, buco
     const scrapeResults = await Promise.allSettled(
-        scrapeStores.map(store => tryLiveScrape(store, query.normalizedSearchTerms, query, 'za'))
+        scrapeStores.map(store =>
+            tryLiveScrape(store, query.normalizedSearchTerms, query, regionLabel, resolvedLat, resolvedLng)
+        )
     );
 
     for (const result of scrapeResults) {
@@ -491,7 +501,7 @@ export async function GET(request: Request) {
     // ── STEP 4: Fallback to full AI estimate if no scrape results ──
     if (allQuotes.length === 0) {
         console.log('⚠️ No results from scraping. Using AI estimate...');
-        allQuotes = await generateAIEstimate(query, lat, lng);
+        allQuotes = await generateAIEstimate(query, resolvedLat, resolvedLng);
         marketInsight = 'Prices are AI estimates based on typical SA market patterns. Confirm at store before purchasing.';
     }
 
@@ -525,33 +535,52 @@ export async function GET(request: Request) {
         }
     }
 
-    // Mark best value (cheapest totalCost)
-    if (deduped.length > 0) {
-        const bestIdx = deduped.reduce((best, q, i) => q.totalCost < deduped[best].totalCost ? i : best, 0);
-        deduped.forEach((q, i) => { q.bestValue = i === bestIdx; });
+    // ── Radius filter ──
+    // Only meaningful when coordinates were resolved (distances are then
+    // deterministic store-coordinate estimates). Never empty the result set
+    // because of the filter — fall back to the full set with a note.
+    let inRange = deduped;
+    if (hasCoords && deduped.length > 0) {
+        const within = deduped.filter(q => q.distance <= radiusKm);
+        if (within.length > 0 && within.length < deduped.length) {
+            inRange = within;
+            marketInsight = `${marketInsight} Showing ${within.length} of ${deduped.length} stores within ${radiusKm} km.`.trim();
+        } else if (within.length === 0) {
+            marketInsight = `${marketInsight} No stores within ${radiusKm} km — showing nearest available pricing.`.trim();
+        }
     }
 
-    const cheapest = deduped[0] || null;
-    const prices = deduped.map(q => q.price);
+    // Mark best value (cheapest totalCost)
+    if (inRange.length > 0) {
+        const bestIdx = inRange.reduce((best, q, i) => q.totalCost < inRange[best].totalCost ? i : best, 0);
+        inRange.forEach((q, i) => { q.bestValue = i === bestIdx; });
+    }
+
+    const cheapest = inRange[0] || null;
+    const prices = inRange.map(q => q.price);
+    const averagePrice = prices.length > 0
+        ? Math.round((prices.reduce((sum, p) => sum + p, 0) / prices.length) * 100) / 100
+        : null;
 
     const response: CompareResponse = {
         success: true,
         query,
         cheapest,
-        results: deduped,
+        results: inRange,
         marketInsight,
+        averagePrice,
         comparisonNote: knowledge?.comparisonNote || 'Compare like-for-like products only.',
         priceRange: {
             min: Math.min(...prices, Infinity),
             max: Math.max(...prices, 0),
         },
-        region: lat && lng ? `${lat.toFixed(4)},${lng.toFixed(4)}` : 'za',
+        region: regionLabel,
         timestamp: new Date().toISOString(),
     };
 
     // Cache
     COMPARE_CACHE[cacheKey] = { timestamp: Date.now(), data: response };
 
-    console.log(`✅ Returning ${deduped.length} quotes. Cheapest: ${cheapest?.storeName} @ R${cheapest?.price}`);
+    console.log(`✅ Returning ${inRange.length} quotes. Cheapest: ${cheapest?.storeName} @ R${cheapest?.price}`);
     return NextResponse.json(response);
 }

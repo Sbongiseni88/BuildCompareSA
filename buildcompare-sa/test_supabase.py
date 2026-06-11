@@ -1,8 +1,14 @@
 import os
+import sys
+
 from supabase import create_client, Client
 
-url: str = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "https://mdmrpcjkcuuybxpshgsi.supabase.co")
-key: str = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kbXJwY2prY3V1eWJ4cHNoZ3NpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MTcwNzksImV4cCI6MjA4NDM5MzA3OX0.aiOrB-KXGIIzFPyvpVjNd_2YcW65kj9LAXccsWvbzAM")
+# Credentials come from the environment only — never hardcode keys in the repo.
+url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
+key = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+if not url or not key:
+    sys.exit("Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY first.")
+
 supabase: Client = create_client(url, key)
 
 response = supabase.table("materials_cache").select("*").limit(1).execute()

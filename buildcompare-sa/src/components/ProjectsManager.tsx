@@ -161,9 +161,16 @@ export default function ProjectsManager({
             setProjects([]);
             setIsLoading(false);
         }
-        
+
+        // Hard failsafe — release the spinner no matter what after 9 s so the
+        // Projects Hub can never appear permanently stalled.
+        const hardFailsafe = setTimeout(() => {
+            setIsLoading(false);
+        }, 9000);
+
         return () => {
             if (abortControllerRef.current) abortControllerRef.current.abort();
+            clearTimeout(hardFailsafe);
         };
     }, [user?.id, authLoading]);
 
@@ -382,7 +389,7 @@ export default function ProjectsManager({
 
             {/* Filters */}
             <div className="glass-card p-4">
-                <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch sm:items-center">
                     {/* Search */}
                     <div className="flex-1 relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -391,17 +398,18 @@ export default function ProjectsManager({
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search projects..."
-                            className="input-field pl-12"
+                            className="input-field pl-12 h-12"
                         />
                     </div>
 
-                    {/* Status Filter */}
-                    <div className="flex gap-2">
+                    {/* Status Filter — full-width grid on mobile so each pill is an
+                        easy ≥44px tap target, inline row from sm: up. */}
+                    <div className="grid grid-cols-2 sm:flex gap-3 sm:gap-2">
                         {(['all', 'active', 'completed', 'on-hold'] as const).map((status) => (
                             <button
                                 key={status}
                                 onClick={() => setFilterStatus(status)}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filterStatus === status
+                                className={`flex items-center justify-center h-11 px-4 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${filterStatus === status
                                     ? 'bg-yellow-500 text-slate-900'
                                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                                     }`}
@@ -502,7 +510,7 @@ export default function ProjectsManager({
                                                     className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:text-white hover:bg-slate-800/50 transition-colors text-sm text-left min-h-[48px]"
                                                 >
                                                     <Download className="w-4 h-4" />
-                                                    Export PDF
+                                                    Save Report
                                                 </button>
                                                 <button
                                                     onClick={(e) => {

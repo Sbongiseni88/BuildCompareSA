@@ -1,169 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
-import { Material } from '@/types';
 
 import { checkRateLimit, getRateLimitHeaders, getClientIP } from '@/lib/rate-limit';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
-import { generateSearchString, tryDirectBoQParse, guessCategory } from '@/lib/boq-engine';
+import { groqClient, isGroqConfigured } from '@/lib/groq';
+import {
+    BOQ_EXTRACT_PROMPT,
+    extractPdfText,
+    extractSpreadsheetText,
+    isPdfFile,
+    isSpreadsheetFile,
+    materialsFromParsedRows,
+    normaliseParsed,
+    tryDirectBoQParse,
+} from '@/lib/boq-engine';
 
-// Vision-capable models for image analysis.
-// NOTE: As of April 2026, llama-3.2-vision-preview models are DECOMMISSIONED.
-// llama-4-scout is the only vision-capable model currently available on Groq.
-const VISION_MODELS = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-];
+// Groq fallback model — production-stable per team_standards.md.
+const GROQ_FALLBACK_MODEL = 'llama-3.3-70b-versatile';
 
-// Text-only models for document/spreadsheet/PDF analysis.
-// These are Groq PRODUCTION models — stable and won't be removed without notice.
-const TEXT_MODELS = [
-    "llama-3.3-70b-versatile",                     // Primary: production, highly capable
-    "llama-3.1-8b-instant",                        // Fast fallback: production, always available
-    "meta-llama/llama-4-scout-17b-16e-instruct",  // Last resort: preview model
-];
+// Largest realistic BoQ workbook. Anything bigger is a mis-upload (or abuse)
+// and would stall the xlsx parser.
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
-// ─── File type helpers ────────────────────────────────────────────────────────
-
-function isSpreadsheetFile(mimeType: string, fileName: string, buffer?: ArrayBuffer): boolean {
-    const name = fileName.toLowerCase();
-    if (['.xlsx', '.xls', '.csv'].some(ext => name.endsWith(ext))) return true;
-    const mimes = [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
-        'text/csv',
-        'application/csv',
-    ];
-    if (mimes.includes(mimeType)) return true;
-    // ZIP magic bytes → likely xlsx
-    if (buffer && buffer.byteLength >= 4) {
-        const h = new Uint8Array(buffer.slice(0, 4));
-        if (h[0] === 0x50 && h[1] === 0x4B && h[2] === 0x03 && h[3] === 0x04) return true;
-    }
-    return false;
-}
-
-function isPdfFile(mimeType: string, fileName: string): boolean {
-    return mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
-}
-
-// ─── Text extractors ──────────────────────────────────────────────────────────
+// ─── Provider chain ───────────────────────────────────────────────────────────
 
 /**
- * Zero-dependency PDF text extractor.
- * Pulls text from PDF content streams via Tj / TJ operators.
- * Works for text-based PDFs (Word, LibreOffice, Google Docs exports).
- * Returns empty string for fully scanned / image-only PDFs.
+ * Canonical chain (team_standards.md): DeepSeek → Groq → throw.
+ * Never invoke Groq in front of DeepSeek; never silently swallow a failure.
  */
-function extractPdfText(buffer: ArrayBuffer): string {
-    const raw = Buffer.from(buffer).toString('binary');
-    const texts: string[] = [];
+async function runBoqCompletion(prompt: string): Promise<string> {
+    const messages = [{ role: 'user' as const, content: prompt }];
 
-    // (string) Tj – single text show
-    const tjRe = /\(([^)\\]|\\.)*\)\s*Tj/g;
-    let m: RegExpExecArray | null;
-
-    const unescape = (s: string) =>
-        s.replace(/\\n/g, ' ').replace(/\\r/g, ' ').replace(/\\t/g, ' ')
-         .replace(/\\\\/g, '').replace(/\\\(/g, '(').replace(/\\\)/g, ')')
-         .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
-
-    while ((m = tjRe.exec(raw)) !== null) {
-        const inner = unescape(m[0].replace(/\)\s*Tj$/, '').slice(1));
-        if (inner.trim()) texts.push(inner.trim());
-    }
-
-    // [(string) kern (string)] TJ – kerned text show
-    const tjArrRe = /\[([^\]]*)\]\s*TJ/g;
-    while ((m = tjArrRe.exec(raw)) !== null) {
-        const strs = m[1].match(/\(([^)\\]|\\.)*\)/g);
-        if (strs) {
-            const combined = strs.map(s => unescape(s.slice(1, -1))).join('');
-            if (combined.trim()) texts.push(combined.trim());
+    if (checkDeepseekConfigured()) {
+        try {
+            console.log('BoQ extraction via DeepSeek (canonical): deepseek-chat');
+            const completion = await getDeepseekClient().chat.completions.create({
+                messages,
+                model: 'deepseek-chat',
+                temperature: 0.1,
+                response_format: { type: 'json_object' },
+            });
+            const content = completion.choices[0]?.message?.content;
+            if (content) return content;
+            console.warn('DeepSeek returned an empty response — falling back to Groq.');
+        } catch (err: any) {
+            console.warn('DeepSeek BoQ extraction failed, falling back to Groq:', err?.message);
         }
+    } else {
+        console.warn('DEEPSEEK_API_KEY not configured — attempting Groq fallback.');
     }
 
-    const result = texts.join(' ').replace(/\s+/g, ' ').trim();
-    return result.length > 12000 ? result.slice(0, 12000) + ' [...TRUNCATED]' : result;
-}
-
-/** Convert an Excel/CSV file to a CSV string for the LLM. */
-function extractSpreadsheetText(buffer: ArrayBuffer): string {
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const parts: string[] = [];
-    for (const name of workbook.SheetNames) {
-        const sheet = workbook.Sheets[name];
-        if (!sheet) continue;
-        parts.push(`--- Sheet: ${name} ---`);
-        parts.push(XLSX.utils.sheet_to_csv(sheet, { blankrows: false }));
-    }
-    const result = parts.join('\n');
-    return result.length > 30000 ? result.slice(0, 30000) + '\n\n[...TRUNCATED]' : result;
-}
-
-
-
-// ─── DeepSeek helpers ─────────────────────────────────────────────────────────────
-
-async function runDeepSeekCompletion(messages: any[]): Promise<string> {
-    if (!checkDeepseekConfigured()) throw new Error('DeepSeek API not configured');
-    
-    try {
-        console.log('Attempting DeepSeek model: deepseek-chat');
-        const client = getDeepseekClient();
-        const completion = await client.chat.completions.create({
-            messages: messages as any,
-            model: 'deepseek-chat',
+    if (isGroqConfigured) {
+        console.log(`BoQ extraction via Groq (fallback): ${GROQ_FALLBACK_MODEL}`);
+        const res = await groqClient.chat.completions.create({
+            messages,
+            model: GROQ_FALLBACK_MODEL,
             temperature: 0.1,
             response_format: { type: 'json_object' },
         });
-        const content = completion.choices[0]?.message?.content;
+        const content = res.choices[0]?.message?.content;
         if (content) return content;
-    } catch (err: any) {
-        console.error('DeepSeek generation failed:', err.message);
-        throw err;
+        throw new Error('Groq fallback returned an empty response.');
     }
-    throw new Error('DeepSeek generation returned empty response');
-}
 
-const BOQ_PROMPT_SUFFIX = `
-You MUST return a valid JSON array. Every construction item, material, or product found must appear as a separate object.
-
-Format:
-[
-  {
-    "id": "item-1",
-    "name": "Full descriptive name (e.g. 50kg PPC Cement Bag)",
-    "brand": "Brand name if visible, otherwise null",
-    "category": "One of: cement, bricks, steel, timber, paint, roofing, plumbing, electrical, hardware, other",
-    "quantity": 10.0,
-    "unit": "One of: bag, m2, m3, kg, length, unit, each, lot, litre, roll, sheet",
-    "laborCostEstimate": 150.0
-  },
-  { "...next item..." }
-]
-
-CRITICAL RULES:
-- "laborCostEstimate": Estimate the installation/labor cost for ONE unit of this item in ZAR based on 2026 South African market rates. If it's a bulk material (like sand/bricks), ignore transport and focus on the labor to install it.
-- Format ALL numeric values as standard Floats (e.g., 100.00). Do NOT write "R 100,00" or add currency symbols. Output pure numbers.
-- Your entire response MUST be valid JSON.
-- Extract EVERY line item. Do NOT stop after the first item.
-- If a document has 20 items, your array must have 20 objects.
-- Return ONLY the raw JSON array. No markdown. No extra text.`;
-
-/** Normalise whatever the LLM returned into a plain array. */
-function normaliseParsed(parsed: any): any[] {
-    if (Array.isArray(parsed)) return parsed;
-    if (parsed && typeof parsed === 'object') {
-        for (const key of ['materials', 'items', 'results', 'data']) {
-            if (Array.isArray(parsed[key])) return parsed[key];
-        }
-        // Numeric-keyed object  e.g. {"0":{...},"1":{...}}
-        const values = Object.values(parsed);
-        if (values.length > 0 && values.every(v => typeof v === 'object' && v !== null && !Array.isArray(v))) {
-            return values as any[];
-        }
-        return [parsed]; // single item
-    }
-    return [];
+    throw new Error(
+        'No AI provider available — set DEEPSEEK_API_KEY (canonical) or GROQ_API_KEY (fallback).',
+    );
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -192,6 +93,13 @@ export async function POST(req: NextRequest) {
         const mimeType = file.type || 'application/octet-stream';
         const safeName = fileName || file.name || 'unknown';
 
+        if (arrayBuffer.byteLength > MAX_UPLOAD_BYTES) {
+            return NextResponse.json(
+                { error: 'File is too large. BoQ uploads are capped at 15 MB — please split the workbook.' },
+                { status: 413 }
+            );
+        }
+
         console.log(`📋 File: "${safeName}" | MIME: "${mimeType}" | ${arrayBuffer.byteLength} bytes`);
 
         try {
@@ -215,14 +123,14 @@ export async function POST(req: NextRequest) {
                     return NextResponse.json({ error: 'The uploaded document appears to be empty.' }, { status: 400 });
                 }
                 const prompt = `You are an expert South African Quantity Surveyor.
-Extract ALL construction materials from the spreadsheet below.
+Extract ALL construction materials from the spreadsheet below into JSON.
 
 --- DOCUMENT ---
 ${docText}
 --- END ---
 
-${BOQ_PROMPT_SUFFIX}`;
-                rawContent = await runDeepSeekCompletion([{ role: 'user', content: prompt }]);
+${BOQ_EXTRACT_PROMPT}`;
+                rawContent = await runBoqCompletion(prompt);
 
             // ── PDF ──────────────────────────────────────────────────────────
             } else if (isPdfFile(mimeType, safeName)) {
@@ -230,20 +138,17 @@ ${BOQ_PROMPT_SUFFIX}`;
                 console.log(`📑 PDF: extracted ${pdfText.length} chars`);
 
                 if (pdfText.length > 50) {
-                    // Text-based PDF → stable text models
                     const prompt = `You are an expert South African Quantity Surveyor.
-Extract ALL construction materials from this Bill of Quantities PDF.
+Extract ALL construction materials from this Bill of Quantities PDF into JSON.
 
 --- PDF CONTENT ---
 ${pdfText}
 --- END ---
 
-${BOQ_PROMPT_SUFFIX}`;
-                    rawContent = await runDeepSeekCompletion([{ role: 'user', content: prompt }]);
+${BOQ_EXTRACT_PROMPT}`;
+                    rawContent = await runBoqCompletion(prompt);
                 } else {
                     // PDF content streams are compressed — our extractor can't read them.
-                    // Sending a PDF as an image to a vision model is invalid and always fails.
-                    // Ask the user to re-export as Excel instead.
                     return NextResponse.json(
                         {
                             error:
@@ -254,20 +159,14 @@ ${BOQ_PROMPT_SUFFIX}`;
                     );
                 }
 
-
             // ── Photo / image ─────────────────────────────────────────────────
             } else {
-                console.log(`📸 Image detected (${mimeType}). Using vision model...`);
-                const base64 = Buffer.from(arrayBuffer).toString('base64');
-                const dataUrl = `data:${mimeType};base64,${base64}`;
-                const prompt = `You are an expert Quantity Surveyor.
-Identify all visible construction materials in this image.
-
-${BOQ_PROMPT_SUFFIX}`;
-                throw new Error("DeepSeek does not natively support direct image uploads yet. Please provide a PDF or CSV file.");
+                console.log(`📸 Image detected (${mimeType}).`);
+                return NextResponse.json(
+                    { error: 'Image uploads are not supported for BoQ extraction. Please provide an Excel (.xlsx), CSV, or text-based PDF file.' },
+                    { status: 400 }
+                );
             }
-
-            console.log('DeepSeek raw response:', rawContent);
 
             // Strip markdown fences if present
             const cleanJson = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -277,18 +176,25 @@ ${BOQ_PROMPT_SUFFIX}`;
                 throw new Error('AI returned an empty or unrecognised response. Please try again.');
             }
 
-            const materials: Material[] = parsed.map((m: any, i: number) => ({
-                id: `ai-deepseek-${Date.now()}-${i}`,
-                name: m.name || 'Unknown Item',
-                brand: m.brand || undefined,
-                category: m.category || 'other',
-                quantity: Number(m.quantity) || 1,
-                unit: m.unit || 'unit',
-                laborCostEstimate: Number(m.laborCostEstimate) || undefined,
-                search_string: generateSearchString(m.name || 'Unknown Item'),
-            }));
+            // Tender-grade integrity contract: drop ref-mirroring/junk rows,
+            // never emit "other", labour resolves through BCCEI.
+            const { materials, dropped } = materialsFromParsedRows(parsed);
+            if (dropped.length > 0) {
+                console.warn(
+                    `BoQ integrity filter dropped ${dropped.length}/${parsed.length} rows:`,
+                    dropped.map((d) => d.reason)
+                );
+            }
+            if (materials.length === 0) {
+                throw new Error('No valid BoQ line items survived integrity validation. Please check the document format.');
+            }
 
-            return NextResponse.json({ success: true, mode: 'live-deepseek', materials });
+            return NextResponse.json({
+                success: true,
+                mode: 'live-deepseek',
+                materials,
+                droppedRows: dropped.length,
+            });
 
         } catch (aiError: any) {
             console.error('⚠️ AI Error:', aiError);

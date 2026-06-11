@@ -13,7 +13,7 @@
 |---------|--------|-------|
 | **Smart Estimator (Mansion Architect)** | ✅ Active | "Technical Specs" input converts to BoQ items successfully. |
 | **Real-Time Price Intelligence** | ✅ Active | Mock engine refined with deep-link "Order Now" integration for Builders/Leroy/Cashbuild. |
-| **Visual Search (OCR)** | ✅ Active | Robust Google Gemini integration with seamless mock fallback. |
+| **BoQ Upload & Extraction** | ✅ Active | Direct structural Excel parse with DeepSeek AI fallback (Groq secondary). Image OCR retired in the tender-pivot refactor. |
 | **Project Management** | ✅ Active | Budget tracking, "Spent vs Cap" bars, and Shake alerts implemented. |
 | **Deep Linking** | ✅ Active | "Order Now" button correctly routes to retailer search pages. |
 
@@ -25,10 +25,10 @@
 ### 4. Pro Features (Market Leader Updates)
 - **Market Pulse Analytics**: Dedicated dashboard tracking real-time material price trends.
 - **Labor Estimation**: Smart Estimator includes labor cost calculations.
-- **Data Export**: Export CSV functionality added to Price Search.
+- **Data Export**: "Download Sourcing File" produces the tender-grade 13-column Excel report (5-store matrix + BCCEI labour).
 
 ### 5. Next Steps for Production
-- **Environment Variables**: Ensure `GEMINI_API_KEY` is set in the production environment (Vercel/Netlify).
+- **Environment Variables**: Ensure `DEEPSEEK_API_KEY` (canonical) and optionally `GROQ_API_KEY` (fallback) are set in the production environment (Vercel/Netlify).
 - **SEO/Metadata**: accurate `metadata` export in `layout.tsx` (already present).
 - **Analytics**: Connect Google Analytics or similar if required (currently mocked).
 

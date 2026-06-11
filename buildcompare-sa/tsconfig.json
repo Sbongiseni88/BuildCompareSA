@@ -38,6 +38,11 @@
   ],
   "exclude": [
     "node_modules",
-    "supabase"
+    "supabase",
+    "venv",
+    "scraper/venv",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ]
 }

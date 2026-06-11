@@ -29,8 +29,11 @@ This happens because your code is inside a subfolder (`buildcompare-sa`) inside 
     *   Click **"Add New..."** -> **"Project"**.
     *   Select your repository.
     *   **Check "Root Directory"**: If it asks, ensure you select `buildcompare-sa`.
-    *   **Environment Variables**:
-        *   Add `GEMINI_API_KEY` and paste your Google Gemini key.
+    *   **Environment Variables** (see `.env.example` for the full list):
+        *   Add `DEEPSEEK_API_KEY` (required — canonical AI provider).
+        *   Add `GROQ_API_KEY` (optional — fallback provider).
+        *   Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+        *   Add `SCRAPER_URL` if a hosted scraper microservice exists.
     *   Click **Deploy**.
 
 ## Option 2: The "Fast" Way (Vercel CLI)
@@ -66,7 +69,8 @@ vercel --prod
 ## ⚠️ Pre-Deployment Checklist
 - [x] **Theme**: Dark Mode is set to 'Slate 950' (Premium Look).
 - [x] **Features**: Smart Estimator, Price Search, and Dashboard are active.
-- [ ] **API Keys**: Ensure `GEMINI_API_KEY` is added to the deployment settings.
+- [ ] **API Keys**: Ensure `DEEPSEEK_API_KEY` (and optionally `GROQ_API_KEY`) are added to the deployment settings.
+- [ ] **Supabase**: `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set.
 
-**Note for Investor Demo:**
-The "Upload/Scan" feature uses the Google Gemini API. If the API key is not set in Vercel, the app will use the "Mock Fallback" mode, which is still perfectly fine for a demo!
+**Note on AI providers:**
+BoQ extraction and price parsing use the DeepSeek API (canonical), with Groq as an automatic fallback. If neither key is set, AI-dependent features return a clear configuration error rather than mock data.

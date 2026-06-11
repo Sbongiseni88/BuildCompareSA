@@ -1,96 +1,116 @@
 # BuildCompare SA — Project Handoff & State Document
 
-> **To the next Antigravity Assistant reading this:** 
-> Hello! The USER has moved to a new device. This file contains the exact state of the project, setup instructions, and the context of what we were working on. Please review this carefully to pick up precisely where we left off.
+> **To the next assistant/developer reading this:**
+> This file contains the exact state of the project, setup instructions, and the
+> context of what we were working on. Review it together with
+> `.agent/tender_pivot_plan.md` and `.agent/rules/team_standards.md` before
+> changing anything.
 
 ---
 
 ## 🏗️ Architecture Overview
 
-**BuildCompare SA** is a hybrid web application that allows South African contractors and homeowners to compare building material prices, generate Bills of Quantities (BoQs), and interact with an AI Concierge.
+**BuildCompare SA** is a B2B SaaS platform for South African contractors bidding
+on government tenders: upload a Bill of Quantities, get a 5-store supplier price
+matrix, BCCEI-compliant labour estimates, and a tender-grade sourcing file.
 
-- **Frontend:** Next.js 16 (App Router), React 19, TailwindCSS, TypeScript.
-- **Backend:** FastAPI (Python), serving headless scrapers, Groq LLM pipelines (RAG, Vision), and technical calculators.
-- **Root Directory:** `c:\Users\sbosh\BuildCompareSA\buildcompare-sa`
+- **Frontend + API:** Next.js 16 (App Router), React 19, TailwindCSS, TypeScript.
+  All server-side business logic lives in Next.js API routes (`src/app/api/`).
+- **Scraper microservice:** `scraper/` — FastAPI + Playwright (Browserbase CDP in
+  production), port **8001**. The ONLY surviving Python service. Treated as a
+  black-box HTML fetcher; no business logic belongs in it.
+- **Database/Auth:** Supabase (RLS-protected; schema in `supabase/`).
+- **AI providers:** DeepSeek (`deepseek-chat`) is canonical; Groq is the only
+  fallback. Chain at every call site: `DeepSeek → Groq → throw`. Gemini and
+  direct OpenAI usage are forbidden (the `openai` npm package exists solely as
+  DeepSeek's transport).
+
+> The standalone Python FastAPI `backend/` (RAG/ChromaDB, OCR, chat concierge,
+> port 8000) was **deleted** in the tender-pivot refactor (June 2026). Its
+> calculators were ported to `src/lib/calculations.ts`. Do not reintroduce it.
 
 ---
 
 ## 🛠️ Environment & Setup Instructions
 
 ### 1. Prerequisites
-- **Node.js**: v20+ (developed with modern Next.js 16 features)
-- **Python**: v3.10+ (type hinting and async features heavily used)
+
+- **Node.js**: v20+
+- **Python**: v3.9+ (scraper microservice only)
 
 ### 2. Required Environment Variables
-You will need a `.env` in the `buildcompare-sa` root (or `backend/.env`) with at least the following:
+Copy `.env.example` → `.env.local` and fill in:
+
 ```env
-# Required for AI Features (RAG, Chat, OCR)
-GROQ_API_KEY="<YOUR_GROQ_API_KEY_HERE>"
-
-
-
-
-# Optional but recommended
-SUPABASE_URL="..."
-SUPABASE_ANON_KEY="..."
+DEEPSEEK_API_KEY="..."        # REQUIRED — canonical AI provider
+GROQ_API_KEY="..."            # optional — fallback provider
+NEXT_PUBLIC_SUPABASE_URL="..."
+NEXT_PUBLIC_SUPABASE_ANON_KEY="..."
+SCRAPER_URL="http://127.0.0.1:8001"
+BROWSERBASE_API_KEY="..."     # optional — cloud Chromium for the scraper
+BROWSERBASE_PROJECT_ID="..."
 ```
 
-### 3. Setup & Running the Frontend
-The frontend uses npm.
-```powershell
-cd c:\Users\sbosh\BuildCompareSA\buildcompare-sa
+### 3. Run the frontend (port 3000)
+
+```bash
+cd buildcompare-sa
 npm install
 npm run dev
 ```
-*Note: The frontend will run on `http://localhost:3000`.*
 
-### 4. Setup & Running the Backend
-The backend uses Python. Dependencies are listed in `backend/requirements.txt`.
-```powershell
-cd c:\Users\sbosh\BuildCompareSA\buildcompare-sa\backend
-# Create a virtual environment recommended
-python -m venv venv
-.\venv\Scripts\activate
+### 4. Run the scraper microservice (port 8001)
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the backend server
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-# OR (from the buildcompare-sa root):
-python -m backend.main
+```bash
+cd buildcompare-sa
+python3 -m venv scraper/venv && source scraper/venv/bin/activate
+pip install fastapi uvicorn playwright beautifulsoup4 pandas httpx python-multipart openpyxl
+playwright install chromium
+uvicorn scraper.main:app --port 8001
 ```
-*Note: The backend will run on `http://localhost:8000`. The frontend specifically looks for it there during development.*
 
 ---
 
-## 🚀 Current State & Recent Fixes
+## 🚀 Current State (tender-pivot refactor)
 
-We just completed a massive overhaul of the app to move it from a "prototype" to a "production-ready" architecture. We implemented 8 Performance Fixes and 5 Deep Architectural Fixes.
-
-### What works right now:
-1. **Real Retailer Scraping:** `backend/services/scraper.py` now uses `httpx` and `BeautifulSoup` to actually scrape Builders Warehouse, Cashbuild, and Leroy Merlin concurrently. It has retry logic and graceful fallback to deterministic data.
-2. **AI Concierge:** `api/chat/route.ts` streams native Groq responses (`llama-3.3-70b-versatile`). It now includes a highly specific SA-construction system prompt and **conversation memory** (history is passed to the API).
-3. **OCR Uploads:** `backend/routers/ocr.py` uses the Groq Vision API (`llama-4-scout`) to analyze images of BoQs and returns structured JSON (Material, Quantity, Unit). Previously it was a broken Tesseract implementation.
-4. **Production Hardening:** `backend/main.py` has a robust `/health` endpoint and environment variable validation at startup.
-5. **Observability:** All backend `print()` calls were replaced with `structlog` for structured JSON logging.
-6. **Performance:** Heavy frontend components are lazy-loaded (`next/dynamic`), expensive calculations are memoized (`useMemo`/`useCallback`), and `firebase` was entirely purged from the repo to save bundle size since we use Supabase.
+1. **BoQ engine** (`src/lib/boq-engine.ts` + `/api/analyze`): direct structural
+   Excel parse first, DeepSeek extraction fallback. Tender-grade integrity
+   contract enforced — descriptions must be literal material specs (never item
+   refs), the category `"other"` is banned, every row classifies into one of the
+   8 BCCEI categories, and labour resolves through the BCCEI estimator.
+2. **5-store retail matrix** (`src/lib/retail-matrix.ts`, `scraper/main.py`):
+   Builders Warehouse, Cashbuild, Leroy Merlin, BUCO, Build it — each column is
+   fetched independently; failures report `N/A`, never mirror another store.
+3. **BCCEI labour compliance** (`src/lib/bccei/`): gazetted 2025/2026 wage
+   matrix (Y1/Y2/Y3 with automatic 1-Sep switchovers), task-grade mapping per
+   BoQ category, audit-traceable `basis` string on every estimate.
+4. **Sourcing file export** (`src/lib/sourcing-file.ts`): fixed 13-column
+   tender-grade Excel layout, ⭐-prefixed cheapest supplier, executive summary in
+   rows 1–5. Buttons read "Download Sourcing File" / "Save Report".
+5. **UI**: Save-to-Project bridge from PriceSearchHub into ProjectsManager;
+   single-panel Smart Estimator; skeleton loaders + an 8s failsafe on Dashboard;
+   no `font-light`/`font-thin` anywhere (contractor-age-friendly typography).
+6. **Tests**: Jest suites cover boq-engine, calculations, retail-matrix,
+   sourcing-file, tender-categories, BCCEI labour, and rate-limit.
 
 ### 📝 Key Reference Files
-- `devs/bottleneck_fixes.md` — Log of the first 8 performance & security fixes.
-- `devs/deep_fixes.md` — Log of the last 5 architectural fixes (Scrapers, OCR, AI, Logging).
-- `src/lib/groq.ts` — The shared Groq client instance.
-- `backend/requirements.txt` — Python dependencies (recently updated with `structlog`, `psutil`, `httpx`, `beautifulsoup4`).
+
+- `.agent/tender_pivot_plan.md` — the master plan + execution log.
+- `.agent/rules/team_standards.md` — AI provider chain, export format, BCCEI and
+  retail-matrix invariants. **Read before writing code.**
+- `.agent/skills/` — deterministic project skills (BoQ parsing contract, BCCEI
+  gazette mapper, retail matrix normalization).
 
 ---
 
 ## 🎯 Next Steps / Where to pick up
 
-Everything is currently fully implemented, error-free, and building successfully. 
-
-**Immediate next tasks to consider upon resumption:**
-1. **Testing the Scrapers:** Run the Next.js app and do a real search in the Data & Prices tab to verify the `httpx` scraping logic isn't being blocked by Cloudflare/retailer anti-bot measures.
-2. **Supabase Integration:** The database is mostly setup but the scrapers should ideally cache their live results to Supabase (or Redis) instead of just an in-memory python dictionary.
-3. **Frontend UI Polish:** The AI Concierge UI might need CSS polishing to look better when displaying long Groq text streams.
-
-> **Agent Instruction:** When you read this, confirm to the USER that you have digested the architecture, dependencies, and recent fixes, then ask what they would like to verify or build first!
+1. **Server-side auth on API routes** — routes under `src/app/api/` currently
+   trust the client; add Supabase session checks (top finding of the June 2026
+   audit).
+2. **BUCO / Build it scraper tuning** — URL shapes are best-effort; verify
+   against the live sites and adjust selectors.
+3. **Replace the `xlsx` npm package** — known unfixed CVEs upstream; migrate to
+   `exceljs` or the SheetJS CDN build.
+4. **Distributed rate limiting** — the in-memory limiter resets per serverless
+   instance; move to Upstash/Redis before scale.

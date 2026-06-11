@@ -7,6 +7,13 @@
 
 import * as XLSX from 'xlsx';
 import { Material } from '@/types';
+import {
+    guessTenderCategory,
+    mapTenderToLegacyCategory,
+    lineItemViolation,
+} from './tender-categories';
+import { isBoqCategory, type BoqCategory } from './bccei/labour-defaults';
+import { estimateLabour } from './bccei/labour';
 
 // ─── File Type Detection ────────────────────────────────────────────────────
 
@@ -78,24 +85,69 @@ export function extractSpreadsheetText(buffer: ArrayBuffer): string {
 
 // ─── Category Detection ────────────────────────────────────────────────────
 
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-    cement:      ['cement', 'concrete', 'mortar', 'screed', 'plaster'],
-    bricks:      ['brick', 'block', 'masonry', 'paver'],
-    steel:       ['steel', 'rebar', 'reinforcement', 'iron', 'metal', 'frame'],
-    timber:      ['timber', 'wood', 'door', 'window', 'frame', 'sill', 'board', 'plank', 'plywood'],
-    roofing:     ['roof', 'tile', 'sheet', 'cladding', 'IBR', 'corrugated'],
-    plumbing:    ['pipe', 'plumb', 'tap', 'fitting', 'valve', 'drain', 'sewer', 'water'],
-    electrical:  ['electric', 'cable', 'wire', 'conduit', 'switch', 'plug', 'light', 'panel'],
-    paint:       ['paint', 'primer', 'sealer', 'coat', 'varnish'],
-    hardware:    ['bolt', 'screw', 'nail', 'hinge', 'lock', 'anchor', 'fix'],
-};
-
+/**
+ * Legacy-shaped category guess, now backed by the 8-category tender
+ * classifier in `tender-categories.ts`. Returns the closest legacy retail
+ * value and NEVER "other" — unclassifiable descriptions resolve through
+ * Preliminaries → 'hardware'.
+ */
 export function guessCategory(description: string): string {
-    const lower = description.toLowerCase();
-    for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
-        if (kws.some(kw => lower.includes(kw))) return cat;
-    }
-    return 'other';
+    return mapTenderToLegacyCategory(guessTenderCategory(description).category);
+}
+
+// ─── Structural-Line Detection ──────────────────────────────────────────────
+
+/**
+ * BoQ rows that are document STRUCTURE, not purchasable materials:
+ * section/bill headings, carried/brought-forward sums, totals, summaries,
+ * preamble references. Per `.agent/skills/boq_regex_structural_parser` these
+ * must be omitted at parse time ("If a row is a heading or sub-total, omit
+ * it") — and they must never reach the retail pricing matrix.
+ *
+ * Word-boundary anchored so real products survive: "Sectional garage door"
+ * and "Bills of quantities binder" do NOT match.
+ */
+const STRUCTURAL_SUMMARY_RE = new RegExp(
+    [
+        // "Bill No. 1", "SECTION BILL NO.1 …" — a bill reference with a number.
+        /^(?:section\s+)?bill\s*(?:no\.?)?\s*\d+\b/.source,
+        // "Section 2", "Section 2: Alterations" — a numbered section heading.
+        // (NOT "Section steel angle 40mm" — a number must follow directly.)
+        /^section\s*(?:no\.?)?\s*\d+\s*(?:[:\-–—].*)?$/.source,
+        /\b(carried|brought)\s+(forward|to\s+(summary|collection))\b/.source,
+        /^(sub-?total|total|summary|collection|grand\s+total)\b/.source,
+        /^preliminaries(\s+and\s+general(\s+items)?)?\s*$/.source,        // bare P&G heading (payable P&G items keep their text)
+        /^preambles?\b/.source,
+        /\bfor\s+preambles?\s+refer\b/.source,
+        /^alterations?\s*$/.source,                                       // bare section heading only
+    ].join('|'),
+    'i',
+);
+
+export function isStructuralSummaryLine(description: string): boolean {
+    const desc = (description ?? '').trim();
+    if (!desc) return true;
+    return STRUCTURAL_SUMMARY_RE.test(desc);
+}
+
+/**
+ * True when a line must NOT receive retail hardware prices:
+ * - structural summaries/headings that slipped past parsing, and
+ * - Preliminaries lines (P&G allowances, site establishment, supervision…)
+ *   — payable via BCCEI labour/allowances, but no hardware store sells them.
+ *
+ * Per `.agent/skills/retail_matrix_normalization`, these lines carry an
+ * all-N/A 5-store matrix. Fabricating a price spread for them is the
+ * "Cashbuild always wins" bias this guard exists to prevent.
+ */
+export function shouldBypassRetailPricing(material: Pick<Material, 'name' | 'tenderCategory'>): boolean {
+    if (isStructuralSummaryLine(material.name)) return true;
+    // Explicit pipeline classification is trusted as-is.
+    if (material.tenderCategory === 'Preliminaries') return true;
+    // Description-derived classification only counts when it matched a real
+    // P&G keyword with high confidence — never the low-confidence default.
+    const guess = guessTenderCategory(material.name || '');
+    return guess.category === 'Preliminaries' && guess.confidence === 'high';
 }
 
 // ─── Direct BoQ Parse (Excel) ────────────────────────────────────────────────
@@ -104,9 +156,13 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const allMaterials: Material[] = [];
 
+    // NOTE: 'item'/'items' are deliberately excluded. SA BoQs almost always have
+    // an "Item No" / "Item Ref" column holding bare reference numbers (100, 101…).
+    // Treating "item" as a description alias made the parser grab that column and
+    // emit the ref numbers as descriptions (→ everything classified "other").
     const DESC_ALIASES  = [
         'description', 'desc', 'material', 'work item', 'activity', 'trade', 'element', 'section', 'particulars',
-        'item', 'items', 'detail', 'details', 'name', 'product', 'products', 'specification', 'specifications', 'scope', 'work'
+        'detail', 'details', 'name', 'product', 'products', 'specification', 'specifications', 'scope', 'work'
     ];
     const QTY_ALIASES   = [
         'quantity', 'qty', 'amount', 'no', 'number', 'count', 'nos', 'no.', 'qnty', 'vol', 'volume', 'qty.', 'qnty.'
@@ -228,16 +284,24 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
             const rawDesc = String(row[descCol] ?? '').trim();
             if (!rawDesc || IGNORE_TERMS.some(t => t && rawDesc.toLowerCase().startsWith(t))) continue;
             if (rawDesc.length < 3) continue;
+            // Guard: a bare number (or "item 12") is an item-ref that leaked into the
+            // description column — never a real material. Skip it rather than emit junk.
+            if (/^\d+(\.\d+)?$/.test(rawDesc) || /^item\s*\d+$/i.test(rawDesc)) continue;
+            // Guard: section/bill headings, carried-forward sums and other
+            // structural rows are document scaffolding, not materials.
+            if (isStructuralSummaryLine(rawDesc)) continue;
 
             const rawQty  = qtyCol  >= 0 ? row[qtyCol]  : null;
             const rawUnit = unitCol >= 0 ? String(row[unitCol] ?? '').trim() : '';
             const qty = parseFloat(String(rawQty ?? '').replace(/[^0-9.]/g, '')) || 1;
 
+            const tenderGuess = guessTenderCategory(rawDesc);
             allMaterials.push({
                 id: `boq-direct-${sheetName}-${itemIndex++}`,
                 name: rawDesc,
                 brand: undefined,
-                category: guessCategory(rawDesc) as any,
+                category: mapTenderToLegacyCategory(tenderGuess.category),
+                tenderCategory: tenderGuess.category,
                 quantity: qty,
                 unit: rawUnit || 'unit',
                 search_string: generateSearchString(rawDesc),
@@ -372,25 +436,21 @@ export function generateSearchString(rawDescription: string): string {
         s = s.replace(re, ' ');
     }
 
-    // 2. Extract brand names, sizes, and grades before we lose them
-    const sizeMatch = s.match(/\b(\d+(?:\.\d+)?)\s*(kg|mm|m[23²³]?|l|litre|ml|cm)\b/gi);
-    const gradeMatch = s.match(/\b(CEM\s*I{1,3}|42\.5N|32\.5N|52\.5N|0\.4[37]mm|0\.5[03]mm)\b/gi);
-
-    // 3. Remove section/clause numbers (e.g. "5.3.1", "A.02")
+    // 2. Remove section/clause numbers (e.g. "5.3.1", "A.02")
     s = s.replace(/^[A-Z]?\d+(\.\d+)+\s*/g, '');
 
-    // 4. Remove remaining noise words
+    // 3. Remove remaining noise words
     s = s.replace(/\b(the|a|an|to|of|for|with|and|in|on|at|by|per|from|into)\b/gi, ' ');
 
-    // 5. Collapse whitespace
+    // 4. Collapse whitespace
     s = s.replace(/\s+/g, ' ').trim();
 
-    // 6. If the cleaned string is too short/empty, fall back to original
+    // 5. If the cleaned string is too short/empty, fall back to original
     if (s.length < 4) {
         s = rawDescription.replace(/\s+/g, ' ').trim();
     }
 
-    // 7. Truncate to reasonable search length (max ~80 chars)
+    // 6. Truncate to reasonable search length (max ~80 chars)
     if (s.length > 80) {
         s = s.slice(0, 80).replace(/\s\S*$/, ''); // break at word boundary
     }
@@ -400,31 +460,35 @@ export function generateSearchString(rawDescription: string): string {
 
 // ─── AI Prompt ────────────────────────────────────────────────────────────────
 
-export const BOQ_EXTRACT_PROMPT = `### ROLE: Chunk-Based BoQ Parser
-### CONTEXT: 
-You are receiving a segmented portion (a "chunk") of a large South African Construction Bill of Quantities. Your task is to extract material data from THIS CHUNK ONLY.
+export const BOQ_EXTRACT_PROMPT = `### ROLE: Tender-grade South African BoQ parser
+### OUTPUT CONTRACT (non-negotiable)
+Respond with ONLY a JSON object: {"materials": [ one object per BoQ line item ]}
 
-### INSTRUCTIONS:
-1. **Analyze Data**: Scan the provided CSV text for construction materials, quantities, and units.
-2. **Handle Incomplete Rows**: If a row is cut off at the start or end of the chunk and lacks a description or quantity, IGNORE it (it will be captured in the next chunk).
-3. **Ignore Metadata**: Discard headers, page numbers, and preamble text found within the chunk.
-4. **Localization**: Formulate \`search_query\` values optimized for South African retailers (Builders, Cashbuild, Leroy Merlin) based on the user's {{location}}.
+Each line item object:
+{
+  "item_ref": "the row's billing reference exactly as printed (e.g. '3.2.1', 'A14'), or null",
+  "description": "the literal material specification string from the row",
+  "qty": 25.0,
+  "unit": "m2",
+  "category": "exactly one of: Preliminaries, Concrete, Masonry, Structural Steel, Openings, Plumbing, Electrical, Finishes",
+  "brand": "brand name if stated, else null"
+}
 
-### OUTPUT RULES:
-- Return a raw JSON array of objects. 
-- Do not include any introductory or concluding text.
-- If no materials are found in this specific chunk, return an empty array \`[]\`.
-
-### JSON SCHEMA:
-[
-  {
-    "material": "Standardized Name",
-    "specs": "Dimensions/Grade",
-    "qty": 0,
-    "unit": "Unit",
-    "search_query": "Optimized Store Query"
-  }
-]`;
+### DATA-INTEGRITY RULES:
+1. "description" MUST be the linguistic material/work specification from the row
+   (e.g. "20 A Single pole circuit breaker", "Cemcrete Portland Cement 50kg").
+   NEVER an item number, row index, or bare section heading. If a row's only
+   content is its reference number, SKIP that row entirely.
+2. NEVER output a description that equals or merely restates the item_ref.
+3. Long procedural preambles ("Supply and install … including all necessary
+   fixings …") — keep the material specification, trim the verbiage safely.
+4. "category" MUST be one of the 8 listed engineering values. The word "other"
+   is FORBIDDEN. If a row is genuinely unclassifiable, use "Preliminaries".
+5. Specs like "30MPa", "42.5N", "CEM II", "Y12" identify grade/type — keep them
+   inside the description; NEVER multiply them with quantities.
+6. All numbers are plain floats: no currency symbols, no thousands separators.
+7. Extract EVERY line item — a 20-item document yields 20 objects. Ignore
+   headers, footers, page numbers, totals, and summary rows.`;
 
 /** Normalise whatever the LLM returned into a plain array. */
 export function normaliseParsed(parsed: any): any[] {
@@ -440,4 +504,83 @@ export function normaliseParsed(parsed: any): any[] {
         return [parsed];
     }
     return [];
+}
+
+// ─── Parsed Row → Material Mapping ───────────────────────────────────────────
+
+export interface ParsedRowMapping {
+    materials: Material[];
+    /** Rows rejected by the tender-grade integrity contract, with reasons. */
+    dropped: { row: unknown; reason: string }[];
+}
+
+/**
+ * Convert raw LLM-extracted rows into validated `Material`s.
+ *
+ * Enforces the tender-grade contract from `tender-categories.ts`:
+ * - drops rows whose description is empty, a bare number, or mirrors the
+ *   item reference (the "lazy parse" failure mode);
+ * - never emits the category "other" — AI junk reclassifies from the
+ *   description, unclassifiable rows resolve to Preliminaries;
+ * - labour resolves through the BCCEI estimator so every figure is
+ *   audit-traceable (never trusted from the LLM).
+ */
+export function materialsFromParsedRows(
+    parsed: any[],
+    opts: { idPrefix?: string; today?: Date } = {},
+): ParsedRowMapping {
+    const idPrefix = opts.idPrefix ?? 'ai-deepseek';
+    const today = opts.today ?? new Date();
+    const stamp = today.getTime();
+
+    const materials: Material[] = [];
+    const dropped: { row: unknown; reason: string }[] = [];
+
+    parsed.forEach((m: any, i: number) => {
+        const name = String(m?.description ?? m?.name ?? '').trim();
+        const itemRef = m?.item_ref != null ? String(m.item_ref).trim() : undefined;
+        const qty = Number(m?.qty ?? m?.quantity) || 1;
+        const unit = (String(m?.unit ?? '').trim() || 'unit');
+
+        // Category junk (including "other") reclassifies from the description
+        // instead of dropping an otherwise-valid row.
+        const aiCategory: BoqCategory | undefined = isBoqCategory(m?.category) ? m.category : undefined;
+
+        const violation = lineItemViolation({
+            itemRef,
+            description: name,
+            qty,
+            unit,
+            category: aiCategory,
+        });
+        if (violation) {
+            dropped.push({ row: m, reason: violation });
+            return;
+        }
+
+        // Structural scaffolding (section/bill headings, carried-forward
+        // sums) is omitted per the boq_regex_structural_parser skill — it is
+        // not a material and must never be priced.
+        if (isStructuralSummaryLine(name)) {
+            dropped.push({ row: m, reason: 'structural summary/heading line — not a material' });
+            return;
+        }
+
+        const tenderCategory: BoqCategory = aiCategory ?? guessTenderCategory(name).category;
+        const labour = estimateLabour({ category: tenderCategory, qty, unit, today });
+
+        materials.push({
+            id: `${idPrefix}-${stamp}-${i}`,
+            name,
+            brand: m?.brand || undefined,
+            category: mapTenderToLegacyCategory(tenderCategory),
+            tenderCategory,
+            quantity: qty,
+            unit,
+            laborCostEstimate: labour.totalZar,
+            search_string: generateSearchString(name),
+        });
+    });
+
+    return { materials, dropped };
 }

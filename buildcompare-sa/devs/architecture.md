@@ -36,18 +36,18 @@
 
 | Endpoint | Called by? | Status |
 |----------|-----------|--------|
-| `GET /scrape` | `/api/chat`, `/api/prices/compare` | **ACTIVE** (via proxy) |
+| `GET /scrape` | `/api/prices/compare`, `/api/prices/live` | **ACTIVE** (via proxy) |
 
 ## Final Architecture Decisions
 
 ### Layer 1 — Next.js API Routes (Authoritative for UI)
-All UI-facing business logic runs in Next.js API routes. These are the **authoritative** endpoints for chat, BoQ analysis, generation, and price comparisons.
+All UI-facing business logic runs in Next.js API routes. These are the **authoritative** endpoints for BoQ analysis, estimation, and price comparisons. AI calls follow the canonical chain: DeepSeek → Groq fallback → throw (see `.agent/rules/team_standards.md`).
 
 ### Layer 2 — Python Scraper Microservice (Tool Service)
-The `scraper/main.py` provides Playwright-based web scraping as a tool for Next.js routes. It is NOT called directly by the frontend.
+The `scraper/main.py` provides Playwright-based web scraping (Browserbase CDP in production) as a tool for Next.js routes. It is NOT called directly by the frontend.
 
-### Layer 3 — Python Backend (`backend/`) — Deprecated/Utility
-The FastAPI backend at `backend/main.py` previously duplicated capabilities already handled by Next.js routes. The UI never calls it directly. Its RAG, estimator, OCR, prices, and calc endpoints are treated as dead code or internal-only utilities. The active endpoints are strictly for health/readiness monitoring.
+### Layer 3 — Python Backend (`backend/`) — DELETED
+The standalone FastAPI backend was removed in the tender-pivot refactor (June 2026). Its calculators were ported to `src/lib/calculations.ts`; ChromaDB RAG, OCR, and the chat concierge were retired. Do not reintroduce a parallel backend — new server logic belongs in Next.js API routes.
 
 ## Scraping Strategy
 

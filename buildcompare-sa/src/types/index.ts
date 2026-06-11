@@ -1,3 +1,5 @@
+import type { BoqCategory } from '@/lib/bccei/labour-defaults';
+
 // Project Types
 export interface Project {
     id: string;
@@ -16,6 +18,12 @@ export interface Material {
     name: string;
     brand?: string;
     category: MaterialCategory;
+    /**
+     * Canonical BCCEI tender category (one of the 8 engineering categories).
+     * Populated by the BoQ pipeline; preferred over the legacy `category`
+     * by the sourcing-file exporter and the BCCEI labour estimator.
+     */
+    tenderCategory?: BoqCategory;
     quantity: number;
     unit: string;
     imageUrl?: string;
@@ -85,6 +93,8 @@ export interface ComparisonResult {
     isLive?: boolean;
     marketInsight?: string;
     comparisonNote?: string;
+    /** Industry-standard BoQ category (Masonry, Concrete, Electrical, …) classified from the description. */
+    tenderCategory?: string;
 }
 
 // Search Types
@@ -108,24 +118,6 @@ export interface UploadedFile {
     url: string;
     processedAt?: Date;
     extractedMaterials?: Material[];
-    aiSuggestions?: AISuggestion[];
-}
-
-// AI Concierge Types
-export interface AISuggestion {
-    id: string;
-    type: 'quantity' | 'alternative' | 'tip' | 'warning';
-    message: string;
-    confidence: number;
-    relatedMaterial?: Material;
-}
-
-export interface ChatMessage {
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: Date;
-    suggestions?: AISuggestion[];
 }
 
 // Dashboard Stats Types

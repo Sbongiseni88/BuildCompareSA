@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import {
     Search,
     MapPin,
@@ -26,8 +25,6 @@ import {
     Download,
     LayoutGrid,
     FileText,
-    MessageCircle,
-    Share2,
     ExternalLink,
     CheckCircle2,
     Hammer,
@@ -36,9 +33,11 @@ import {
     BrickWall,
     PaintBucket,
     FolderTree,
+    FolderPlus,
     Waves
 } from 'lucide-react';
 import { Material, ComparisonResult, PriceQuote } from '@/types';
+import { downloadSourcingFile } from '@/lib/sourcing-file';
 
 import { constructionCategories } from '@/data/categories';
 import VisualSearch from './VisualSearch';
@@ -65,7 +64,7 @@ const popularSearchItems: Material[] = [
 export default function PriceSearchHub({ initialMaterials = [], onClearInitial }: PriceSearchHubProps) {
     const { user } = useAuthContext();
     const supabase = createClient();
-    const { showWarning, showSuccess, showInfo } = useToast();
+    const { showWarning, showSuccess, showInfo, showError } = useToast();
     const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
@@ -87,6 +86,12 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
     const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [searchSuggestions, setSearchSuggestions] = useState<Material[]>([]);
+
+    // ── Save-to-Project modal state ───────────────────────────────────
+    const [showSaveToProjectModal, setShowSaveToProjectModal] = useState(false);
+    const [availableProjects, setAvailableProjects] = useState<Array<{ id: string; name: string; location: string }>>([]);
+    const [isFetchingProjects, setIsFetchingProjects] = useState(false);
+    const [isSavingToProject, setIsSavingToProject] = useState(false);
 
     // Save sort pref
     React.useEffect(() => {
@@ -255,9 +260,11 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                         lastUpdated: new Date(),
                     } as PriceQuote));
 
-                    // Trigger Price Drop Notification if discount > 5%
-                    if (user && data.cheapest && data.marketInsight?.averagePrice) {
-                        const avgVal = data.marketInsight.averagePrice;
+                    // Trigger Price Drop Notification if discount > 5%.
+                    // The compare API reports the market mean as a top-level
+                    // `averagePrice` number (marketInsight is a display string).
+                    if (user && data.cheapest && typeof data.averagePrice === 'number' && data.averagePrice > 0) {
+                        const avgVal = data.averagePrice;
                         const currentVal = data.cheapest.price;
                         const discountVal = (avgVal - currentVal) / avgVal;
 
@@ -426,11 +433,12 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                 totalKnowledge += data.stats?.knowledgeMatched || 0;
                 totalAi += data.stats?.aiEstimated || 0;
 
-                // Map batch results into ComparisonResult format
+                // Map batch results into ComparisonResult format. Zero-quote
+                // lines (Preliminaries / structural — source 'no-retail-pricing')
+                // are KEPT: they render with an allowance badge instead of prices.
                 return data.results
-                    .filter((r: any) => r.quotes && r.quotes.length > 0)
                     .map((r: any): ComparisonResult => {
-                        const quotes: PriceQuote[] = r.quotes.map((q: any) => ({
+                        const quotes: PriceQuote[] = (r.quotes || []).map((q: any) => ({
                             supplierId: q.store,
                             supplierName: q.storeName,
                             supplierLogo: '',
@@ -447,8 +455,9 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                             lastUpdated: new Date(),
                         } as PriceQuote));
 
-                        const best = quotes.reduce((prev, curr) =>
-                            prev.price < curr.price ? prev : curr, quotes[0]);
+                        const best = quotes.length > 0
+                            ? quotes.reduce((prev, curr) => prev.price < curr.price ? prev : curr)
+                            : null;
 
                         return {
                             material: r.material,
@@ -457,6 +466,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                             averagePrice: r.averagePrice,
                             potentialSavings: r.potentialSavings,
                             isLive: r.source === 'market-knowledge',
+                            tenderCategory: r.tenderCategory,
                         };
                     });
             });
@@ -540,11 +550,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
     };
 
     const handleRequestQuote = (supplierName: string, productName: string) => {
-        showSuccess(`Quote request for ${productName} sent to ${supplierName}`);
-        setTimeout(() => {
-             const message = `Hi ${supplierName}, I'd like to request a quote for ${productName}.`;
-             window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-        }, 1500);
+        showSuccess(`Quote request logged for ${productName} (${supplierName}).`);
     };
 
     const formatCurrency = useCallback((value: number) => {
@@ -560,166 +566,66 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
         [comparisonResults]
     );
 
+    // Tender-grade Excel export — see src/lib/sourcing-file.ts and
+    // .agent/rules/team_standards.md for the canonical column contract.
     const handleDownload = () => {
-        const aoa: any[][] = [];
-
-        // Calculating total values first
-        const totalMaterialCost = comparisonResults.reduce((acc, r) => acc + (r.bestPrice ? r.bestPrice.price * r.material.quantity : 0), 0);
-        const totalLaborCost = comparisonResults.reduce((acc, r) => acc + ((r.bestPrice?.laborCostEstimate || 0) * r.material.quantity), 0);
-        const grandTotal = totalMaterialCost + totalLaborCost;
-        const totalSavingsVal = comparisonResults.reduce((acc, r) => acc + r.potentialSavings, 0);
-
-        // Standard Excel accounting format for Rands
-        const RAND_ACCOUNTING_FORMAT = `_("R"* #,##0.00_);_("R"* (#,##0.00);_("R"* "-"_);_(@_)`;
-
-        // 1. Summary Header Block (Rows 1-5)
-        aoa.push(["BUILDCOMPARE SA - PROJECT QUOTATION ESTIMATE"]);
-        aoa.push(["Grand Total Project Cost", { v: grandTotal, t: 'n', z: RAND_ACCOUNTING_FORMAT }]);
-        aoa.push(["Total Sourcing Savings", { v: totalSavingsVal, t: 'n', z: RAND_ACCOUNTING_FORMAT }]);
-        aoa.push(["Total Labor Estimate", { v: totalLaborCost, t: 'n', z: RAND_ACCOUNTING_FORMAT }]);
-        aoa.push([]); // Row 5: blank
-
-        // 2. Comparison Matrix Table Header (Row 6)
-        const headers = [
-            "Item Ref",
-            "Material Description",
-            "Category",
-            "Qty",
-            "Unit",
-            "Builders Warehouse",
-            "Cashbuild",
-            "Leroy Merlin",
-            "BUCO",
-            "Build it",
-            "Cheapest Supplier",
-            "Cheapest Price (ZAR)",
-            "Labour Estimate (ZAR)",
-            "Total Cost (ZAR)",
-            "Potential Savings (ZAR)",
-            "Detailed Technical Specification"
-        ];
-        aoa.push(headers);
-
-        // Helper to format currency values safely in SheetJS
-        const makeCell = (val: number | null) => {
-            if (val === null || val === undefined || val <= 0) return { v: '', t: 'z' };
-            return { v: val, t: 'n', z: RAND_ACCOUNTING_FORMAT };
-        };
-
-        // 3. Comparison Matrix Rows
-        comparisonResults.forEach((res, idx) => {
-            const material = res.material;
-            const quantity = material.quantity;
-            const unit = material.unit || 'unit';
-            const category = material.category || 'other';
-
-            const getPrice = (storeId: string) => {
-                const quote = res.quotes.find(q => q.supplierId === storeId);
-                return quote && quote.price > 0 ? quote.price : null;
-            };
-
-            const buildersPrice = getPrice('builders');
-            const cashbuildPrice = getPrice('cashbuild');
-            const leroyPrice = getPrice('leroy_merlin');
-            const bucoPrice = getPrice('buco') || getPrice('buco-gauteng') || getPrice('buco-national');
-            const builditPrice = getPrice('buildit') || getPrice('build-it');
-
-            const cheapestQuote = res.bestPrice;
-            const cheapestSupplier = cheapestQuote ? `⭐ ${cheapestQuote.supplierName}` : 'N/A';
-            const cheapestPrice = cheapestQuote ? cheapestQuote.price : 0;
-            const laborUnit = cheapestQuote ? (cheapestQuote.laborCostEstimate || 0) : 0;
-
-            const totalCost = (cheapestPrice * quantity) + (laborUnit * quantity);
-            const savings = res.potentialSavings;
-
-            const shortName = material.name.length > 50 ? material.name.substring(0, 47) + '...' : material.name;
-
-            aoa.push([
-                `Item ${100 + idx}`,
-                shortName,
-                category,
-                quantity,
-                unit,
-                makeCell(buildersPrice),
-                makeCell(cashbuildPrice),
-                makeCell(leroyPrice),
-                makeCell(bucoPrice),
-                makeCell(builditPrice),
-                cheapestSupplier,
-                makeCell(cheapestPrice),
-                makeCell(laborUnit * quantity),
-                makeCell(totalCost),
-                makeCell(savings > 0 ? savings : 0),
-                material.name // original full spec
-            ]);
-        });
-
-        // Create worksheet
-        const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-        // Apply merges for title row
-        ws['!merges'] = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: 15 } }
-        ];
-
-        // Configure custom column widths so cells do not truncate visually
-        const colWidths = [
-            { wch: 12 },  // A: Item Ref
-            { wch: 35 },  // B: Material Description
-            { wch: 15 },  // C: Category
-            { wch: 8 },   // D: Qty
-            { wch: 10 },  // E: Unit
-            { wch: 18 },  // F: Builders Warehouse
-            { wch: 18 },  // G: Cashbuild
-            { wch: 18 },  // H: Leroy Merlin
-            { wch: 18 },  // I: BUCO
-            { wch: 18 },  // J: Build it
-            { wch: 22 },  // K: Cheapest Supplier
-            { wch: 20 },  // L: Cheapest Price (ZAR)
-            { wch: 20 },  // M: Labour Estimate (ZAR)
-            { wch: 20 },  // N: Total Cost (ZAR)
-            { wch: 20 },  // O: Potential Savings (ZAR)
-            { wch: 60 },  // P: Detailed Technical Specification
-        ];
-        ws['!cols'] = colWidths;
-
-        // Create workbook and write binary spreadsheet file
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Estimation Report");
-        XLSX.writeFile(wb, `BuildCompare_Estimation_Report_${Date.now()}.xlsx`);
+        try {
+            const fileName = downloadSourcingFile(comparisonResults, {
+                projectName: 'BuildCompare SA — Sourcing File',
+            });
+            showSuccess(`${fileName} downloaded.`);
+        } catch (err: any) {
+            console.error('Sourcing file generation failed:', err);
+            showError(`Could not generate sourcing file: ${err?.message ?? 'unknown error'}`);
+        }
     };
 
-    // Build a WhatsApp-friendly message with the best deals and send via wa.me
-    const handleShareWhatsApp = () => {
-        const lines = comparisonResults
-            .filter(r => r.bestPrice)
-            .map(r => `• ${r.material.name}: ${formatCurrency(r.bestPrice!.price)} at ${r.bestPrice!.supplierName} (${r.bestPrice!.distance}km away)`)
-            .join('\n');
-
-        const message = `🏗️ *BuildCompare SA — Price Alert*\n\nI found these deals:\n${lines}\n\n💰 Total potential savings: ${formatCurrency(totalSavings)}\n\nCompare prices yourself 👉 https://buildcompare-sa.vercel.app`;
-
-        const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    };
-
-    // Uses Web Share API on mobile, falls back to clipboard on desktop
-    const handleShareGeneral = async () => {
-        const lines = comparisonResults
-            .filter(r => r.bestPrice)
-            .map(r => `${r.material.name}: ${formatCurrency(r.bestPrice!.price)} at ${r.bestPrice!.supplierName}`)
-            .join('\n');
-
-        const text = `BuildCompare SA — Price Comparison\n\n${lines}\n\nSavings: ${formatCurrency(totalSavings)}\n\nhttps://buildcompare-sa.vercel.app`;
-
-        if (navigator.share) {
+    // ── Save-to-Project: fetch active projects when modal opens ───────
+    React.useEffect(() => {
+        if (!showSaveToProjectModal || !user?.id) return;
+        let cancelled = false;
+        setIsFetchingProjects(true);
+        (async () => {
             try {
-                await navigator.share({ title: 'BuildCompare SA Quote', text });
-            } catch (e) {
-                // User cancelled the share dialog — nothing to handle
+                const { data, error } = await supabase
+                    .from('projects')
+                    .select('id, name, location, status')
+                    .eq('status', 'active')
+                    .order('created_at', { ascending: false });
+                if (error) throw error;
+                if (!cancelled) setAvailableProjects((data || []).map((p: any) => ({ id: p.id, name: p.name, location: p.location || '' })));
+            } catch (err: any) {
+                console.error('Failed to fetch projects for save dialog:', err);
+                if (!cancelled) showError(`Could not load projects: ${err?.message ?? 'unknown error'}`);
+            } finally {
+                if (!cancelled) setIsFetchingProjects(false);
             }
-        } else {
-            await navigator.clipboard.writeText(text);
-            showSuccess('Quote copied to clipboard!');
+        })();
+        return () => { cancelled = true; };
+    }, [showSaveToProjectModal, user?.id, supabase, showError]);
+
+    const handleSaveToProject = async (projectId: string) => {
+        if (!user?.id || comparisonResults.length === 0) return;
+        setIsSavingToProject(true);
+        try {
+            const payload = comparisonResults.map(res => ({
+                project_id: projectId,
+                name: res.material.name,
+                brand: res.material.brand || null,
+                category: res.material.category || 'other',
+                quantity: res.material.quantity,
+                unit: res.material.unit || 'unit',
+                estimated_price: res.bestPrice?.price ?? 0,
+            }));
+            const { error } = await supabase.from('project_materials').insert(payload);
+            if (error) throw error;
+            showSuccess(`Saved ${payload.length} priced items to project.`);
+            setShowSaveToProjectModal(false);
+        } catch (err: any) {
+            console.error('Save to project failed:', err);
+            showError(`Could not save to project: ${err?.message ?? 'unknown error'}`);
+        } finally {
+            setIsSavingToProject(false);
         }
     };
 
@@ -946,31 +852,24 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                        {/* WhatsApp Share */}
-                                        <button
-                                            onClick={handleShareWhatsApp}
-                                            className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-bold text-white flex items-center gap-2 transition-all hover:scale-105 shadow-lg shadow-green-600/20"
-                                        >
-                                            <MessageCircle className="w-4 h-4" /> Share via WhatsApp
-                                        </button>
-                                        {/* Generic Share */}
-                                        <button
-                                            onClick={handleShareGeneral}
-                                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-medium text-white border border-slate-700 flex items-center gap-2 transition-colors"
-                                        >
-                                            <Share2 className="w-4 h-4" /> Share
-                                        </button>
-                                        {/* Excel Export */}
+                                        {/* Tender-grade sourcing file (Excel) */}
                                         <button
                                             onClick={handleDownload}
-                                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-medium text-white border border-slate-700 flex items-center gap-2 transition-colors"
+                                            className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 rounded-lg text-sm font-bold text-black flex items-center gap-2 transition-all shadow-lg shadow-yellow-400/20"
                                         >
-                                            <Download className="w-4 h-4" /> Export Excel
+                                            <Download className="w-4 h-4" /> Download Sourcing File
                                         </button>
-                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-medium text-slate-300 border border-slate-700">
-                                            {comparisonResults.length} Items Found
+                                        {/* Save to active project */}
+                                        <button
+                                            onClick={() => setShowSaveToProjectModal(true)}
+                                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 rounded-lg text-sm font-semibold text-white border border-slate-700 flex items-center gap-2 transition-colors"
+                                        >
+                                            <FolderPlus className="w-4 h-4" /> Save to Project
+                                        </button>
+                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-semibold text-slate-300 border border-slate-700">
+                                            {comparisonResults.length} Items
                                         </span>
-                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-medium text-yellow-400 border border-slate-700">
+                                        <span className="px-4 py-2 bg-slate-900 rounded-lg text-sm font-semibold text-yellow-400 border border-slate-700">
                                             {radius}km Radius
                                         </span>
                                     </div>
@@ -1024,14 +923,14 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                 <div className="flex items-center gap-3">
                                                     <div className="p-2 bg-slate-800 rounded-lg">
                                                         {(() => {
-                                                            const cat = result.material.category.toLowerCase();
-                                                            if (cat.includes('cement')) return <Waves className="w-5 h-5 text-blue-400" />;
-                                                            if (cat.includes('brick')) return <BrickWall className="w-5 h-5 text-orange-400" />;
+                                                            const cat = `${result.tenderCategory || ''} ${result.material.category || ''} ${result.material.name || ''}`.toLowerCase();
+                                                            if (cat.includes('concret') || cat.includes('cement')) return <Waves className="w-5 h-5 text-blue-400" />;
+                                                            if (cat.includes('mason') || cat.includes('brick')) return <BrickWall className="w-5 h-5 text-orange-400" />;
                                                             if (cat.includes('plumb')) return <Droplets className="w-5 h-5 text-cyan-400" />;
-                                                            if (cat.includes('elec')) return <Zap className="w-5 h-5 text-yellow-400" />;
-                                                            if (cat.includes('paint')) return <PaintBucket className="w-5 h-5 text-purple-400" />;
-                                                            if (cat.includes('timber') || cat.includes('wood')) return <FolderTree className="w-5 h-5 text-emerald-400" />;
-                                                            if (cat.includes('hard') || cat.includes('tool')) return <Hammer className="w-5 h-5 text-slate-300" />;
+                                                            if (cat.includes('electr') || cat.includes('elec ')) return <Zap className="w-5 h-5 text-yellow-400" />;
+                                                            if (cat.includes('finish') || cat.includes('paint')) return <PaintBucket className="w-5 h-5 text-purple-400" />;
+                                                            if (cat.includes('opening') || cat.includes('timber') || cat.includes('wood')) return <FolderTree className="w-5 h-5 text-emerald-400" />;
+                                                            if (cat.includes('steel') || cat.includes('hard') || cat.includes('tool')) return <Hammer className="w-5 h-5 text-slate-300" />;
                                                             return <Package className="w-5 h-5 text-yellow-400" />;
                                                         })()}
                                                     </div>
@@ -1048,7 +947,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                             {result.material.name}
                                                         </h3>
                                                         <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
-                                                            <span className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-white uppercase tracking-wider">{result.material.category}</span>
+                                                            <span className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-white uppercase tracking-wider">{result.tenderCategory || result.material.category}</span>
                                                             <span>•</span>
                                                             <span>{result.material.quantity} {result.material.unit}</span>
                                                         </div>
@@ -1063,8 +962,25 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                 )}
                                             </div>
 
+                                            {/* No-retail lines (Preliminaries / P&G / structural):
+                                                an allowance panel instead of fabricated store prices. */}
+                                            {!result.bestPrice && (
+                                                <div className="p-4 bg-gradient-to-r from-blue-500/10 to-transparent border-b border-white/5">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="text-[10px] font-black bg-blue-500 text-white px-2 py-0.5 rounded-full uppercase">
+                                                            {(result.tenderCategory || '').toLowerCase() === 'preliminaries' ? 'P&G Allowance' : 'No Retail Pricing'}
+                                                        </span>
+                                                        <span className="text-xs font-bold text-blue-300">Site Operations / Service Line</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-400">
+                                                        No hardware-retail product applies to this line. Supplier columns export as
+                                                        N/A — cost it via the BCCEI labour estimate in the sourcing file.
+                                                    </p>
+                                                </div>
+                                            )}
+
                                             {/* Best Price Highlight */}
-                                            {result.bestPrice && (
+                                            {result.bestPrice && result.bestPrice.price > 0 && (
                                                 <div className="p-4 bg-gradient-to-r from-green-500/10 to-transparent border-b border-white/5">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div className="flex items-center gap-2">
@@ -1079,10 +995,12 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                                         <div>
                                                             <p className="text-2xl font-black text-white">{formatCurrency(result.bestPrice.price)}</p>
                                                             <div className="flex items-center gap-2">
-                                                                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">Material Only</p>
-                                                                {result.bestPrice.laborCostEstimate && (
+                                                                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">
+                                                                    {(result.tenderCategory || '').toLowerCase() === 'preliminaries' ? 'P&G Allowance' : 'Material Only'}
+                                                                </p>
+                                                                {(result.bestPrice.laborCostEstimate ?? 0) > 0 && (
                                                                     <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[9px] text-orange-400 font-bold">
-                                                                        + {formatCurrency(result.bestPrice.laborCostEstimate)} Labor
+                                                                        + {formatCurrency(result.bestPrice.laborCostEstimate!)} Labor
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -1108,6 +1026,11 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
 
                                             {/* Other Quotes List */}
                                             <div className="flex-1 overflow-y-auto max-h-[200px] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                                                {result.quotes.length === 0 && (
+                                                    <div className="p-3 text-xs text-slate-500 font-medium">
+                                                        Retail matrix: N/A across all 5 suppliers (nothing to buy for this line).
+                                                    </div>
+                                                )}
                                                 {result.quotes
                                                     .filter(q => q.distance <= radius && q !== result.bestPrice)
                                                     .sort((a, b) => a.price - b.price)
@@ -1177,7 +1100,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                 {/* Price Disclaimer */}
                                 <div className="mt-8 p-4 bg-slate-900/50 border border-slate-800 rounded-xl text-center">
                                     <p className="text-xs text-slate-500 max-w-2xl mx-auto italic">
-                                        Note: Material prices fluctuate daily based on retailer updates and regional stock levels. {comparisonResults.some(r => !r.isLive) ? 'Some results are currently shown as "Market Estimates". ' : ''}Always confirm final pricing on the supplier's checkout page before completing your order.
+                                        Note: Material prices fluctuate daily based on retailer updates and regional stock levels. {comparisonResults.some(r => !r.isLive) ? 'Some results are currently shown as "Market Estimates". ' : ''}Always confirm final pricing on the supplier&apos;s checkout page before completing your order.
                                     </p>
                                 </div>
                             </div>
@@ -1192,6 +1115,65 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                     </div>
                 )}
             </div>
+
+            {/* Save-to-Project Modal */}
+            {showSaveToProjectModal && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                        onClick={() => !isSavingToProject && setShowSaveToProjectModal(false)}
+                    />
+                    <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
+                        <div className="flex items-center justify-between p-5 border-b border-slate-800">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <FolderPlus className="w-5 h-5 text-yellow-400" />
+                                Save Priced Basket to Project
+                            </h3>
+                            <button
+                                onClick={() => !isSavingToProject && setShowSaveToProjectModal(false)}
+                                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                disabled={isSavingToProject}
+                                aria-label="Close"
+                            >
+                                <Check className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+                            <p className="text-sm text-slate-400 font-medium">
+                                {comparisonResults.length} priced item{comparisonResults.length === 1 ? '' : 's'} will be added to the project you select.
+                            </p>
+                            {isFetchingProjects ? (
+                                <div className="flex items-center gap-2 p-4 text-slate-400">
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Loading active projects…
+                                </div>
+                            ) : availableProjects.length === 0 ? (
+                                <div className="p-4 text-sm text-slate-400 bg-slate-800/50 rounded-lg">
+                                    No active projects. Create one from the Projects Hub first.
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {availableProjects.map(p => (
+                                        <button
+                                            key={p.id}
+                                            disabled={isSavingToProject}
+                                            onClick={() => handleSaveToProject(p.id)}
+                                            className="w-full text-left p-3 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700 hover:border-yellow-500/40 transition-colors flex items-center justify-between gap-3 disabled:opacity-50"
+                                        >
+                                            <div>
+                                                <div className="font-bold text-white text-sm">{p.name}</div>
+                                                {p.location && (
+                                                    <div className="text-xs text-slate-400 mt-0.5">{p.location}</div>
+                                                )}
+                                            </div>
+                                            <ArrowRight className="w-4 h-4 text-yellow-400" />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

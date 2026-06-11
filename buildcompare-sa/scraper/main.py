@@ -15,7 +15,11 @@ app.include_router(boq_router)
 STORE_URLS = {
     "builders": "https://www.builders.co.za/search/?text={query}",
     "cashbuild": "https://www.cashbuild.co.za/search?q={query}",
-    "leroy_merlin": "https://leroymerlin.co.za/search?q={query}"
+    "leroy_merlin": "https://leroymerlin.co.za/search?q={query}",
+    # Added in the tender-pivot refactor — symmetric 5-store matrix.
+    # URL shapes are best-effort and may need adjustment after first real run.
+    "buco": "https://www.buco.co.za/?s={query}&post_type=product",
+    "buildit": "https://www.buildit.co.za/?s={query}",
 }
 
 async def fetch_html_playwright(url: str) -> str:
@@ -29,7 +33,7 @@ async def fetch_html_playwright(url: str) -> str:
             if browserbase_project_id:
                 cdp_url += f"&projectId={browserbase_project_id}"
             
-            print(f"Connecting to Browserbase CDP (Project ID: {browserbase_project_id})...")
+            print("Connecting to Browserbase CDP...")
             browser = await p.chromium.connect_over_cdp(cdp_url)
             context = browser.contexts[0]
             page = context.pages[0] if context.pages else await context.new_page()
@@ -113,7 +117,13 @@ async def scrape_store(store: str = Query(...), query: str = Query(...)):
     Scrapes the visual DOM from the requested store and returns clean text.
     """
     if store not in STORE_URLS:
-        raise HTTPException(status_code=400, detail=f"Store '{store}' is not supported. Use builders, cashbuild, or leroy_merlin.")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Store '{store}' is not supported. Use one of: "
+                + ", ".join(sorted(STORE_URLS.keys()))
+            ),
+        )
     
     # Broaden search: Strip parentheses and special characters that break retailer search engines
     clean_q = re.sub(r'[()\[\]]', '', query).strip()

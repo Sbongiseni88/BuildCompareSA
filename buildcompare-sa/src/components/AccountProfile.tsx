@@ -43,15 +43,19 @@ export default function AccountProfile() {
 
     useEffect(() => {
         if (authLoading) return;
-        if (!user?.id) return;
+        if (!user?.id) {
+            // Auth resolved but no user — stop the spinner immediately.
+            setIsLoading(false);
+            return;
+        }
 
         const abortController = new AbortController();
-        
+
         const fetchProfileData = async () => {
             setIsLoading(true);
             setFetchError(null);
-            
-            const timer = setTimeout(() => {
+
+            const softAbort = setTimeout(() => {
                 abortController.abort(new Error("Connection timed out"));
             }, 6000);
 
@@ -63,7 +67,7 @@ export default function AccountProfile() {
                     .abortSignal(abortController.signal)
                     .single();
 
-                clearTimeout(timer);
+                clearTimeout(softAbort);
                 if (error) throw error;
 
                 if (data) {
@@ -77,15 +81,22 @@ export default function AccountProfile() {
                 }
                 setFetchError(error.message || 'Failed to load profile');
             } finally {
-                clearTimeout(timer);
+                clearTimeout(softAbort);
                 setIsLoading(false);
             }
         };
 
         fetchProfileData();
 
+        // Hard failsafe — release the spinner no matter what after 9 s so the
+        // Account page can never appear permanently stalled.
+        const hardFailsafe = setTimeout(() => {
+            setIsLoading(false);
+        }, 9000);
+
         return () => {
             abortController.abort();
+            clearTimeout(hardFailsafe);
         };
     }, [user?.id, authLoading, supabase]);
 

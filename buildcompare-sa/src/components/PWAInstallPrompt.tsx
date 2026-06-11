@@ -11,7 +11,10 @@ interface BeforeInstallPromptEvent extends Event {
 export default function PWAInstallPrompt() {
     const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
     const [showBanner, setShowBanner] = useState(false);
-    const [isInstalled, setIsInstalled] = useState(false);
+    // Lazily derived so we never set state synchronously inside the effect.
+    const [isInstalled, setIsInstalled] = useState(
+        () => typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches,
+    );
 
     useEffect(() => {
         // Register service worker
@@ -27,8 +30,7 @@ export default function PWAInstallPrompt() {
         }
 
         // Already running as an installed app — no need to show the banner
-        if (window.matchMedia('(display-mode: standalone)').matches) {
-            setIsInstalled(true);
+        if (isInstalled) {
             return;
         }
 
@@ -55,7 +57,7 @@ export default function PWAInstallPrompt() {
         return () => {
             window.removeEventListener('beforeinstallprompt', handler);
         };
-    }, []);
+    }, [isInstalled]);
 
     const handleInstall = async () => {
         if (!deferredPrompt) return;

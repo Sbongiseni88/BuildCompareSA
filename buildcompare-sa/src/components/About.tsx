@@ -42,7 +42,7 @@ export default function About() {
                     </div>
 
                     <p className="text-slate-200 text-xl max-w-4xl leading-relaxed">
-                        <span className="text-yellow-400 font-bold">BuildCompare</span> is South Africa's premier construction material comparison platform,
+                        <span className="text-yellow-400 font-bold">BuildCompare</span> is South Africa&apos;s premier construction material comparison platform,
                         empowering builders, contractors, and homeowners to make informed purchasing decisions.
                         We leverage cutting-edge technology to bring transparency and efficiency to the construction industry.
                     </p>
@@ -139,7 +139,7 @@ export default function About() {
                             As the sole director of BuildCompare, Sibongiseni Dubazane is deeply committed to revolutionizing the South African construction sector. With strong roots in Springs, Gauteng, Sibongiseni understands the local market dynamics and the unique challenges faced by contractors and builders in the region.
                         </p>
                         <p className="text-lg text-slate-300 leading-relaxed">
-                            Under Sibongiseni's leadership, BuildCompare strives to bring transparency, efficiency, and cutting-edge technology to everyday construction procurement, ensuring that local businesses can thrive in a competitive landscape.
+                            Under Sibongiseni&apos;s leadership, BuildCompare strives to bring transparency, efficiency, and cutting-edge technology to everyday construction procurement, ensuring that local businesses can thrive in a competitive landscape.
                         </p>
                     </div>
                 </div>

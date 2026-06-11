@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
+import { runAIChain, isAnyAIProviderConfigured } from '@/lib/ai-chain';
 
 // Vercel serverless functions will timeout in 10-15s natively.
 // We explicitly request up to 60s since Playwright headless scraping takes time.
@@ -19,8 +19,13 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
     }
 
-    if (!checkDeepseekConfigured()) {
-        return NextResponse.json({ error: 'DeepSeek key missing' }, { status: 500 });
+    // Scraped text is useless without an extractor, so fail fast only when
+    // the WHOLE provider chain (DeepSeek canonical → Groq fallback) is empty.
+    if (!isAnyAIProviderConfigured()) {
+        return NextResponse.json(
+            { error: 'No AI provider configured (set DEEPSEEK_API_KEY or GROQ_API_KEY)' },
+            { status: 500 }
+        );
     }
 
     // ── CACHE LAYER ──
@@ -96,18 +101,19 @@ CRITICAL RULES:
 ${rawText}
 --- END TEXT ---`;
 
-        console.log(`🤖 Passing ${rawText.length} chars to DeepSeek for structural parsing...`);
-        
-        const client = getDeepseekClient();
-        const chatCompletion = await client.chat.completions.create({
-            messages: [{ role: 'system', content: systemPrompt }],
-            model: 'deepseek-chat',
-            temperature: 0.1,
-            response_format: { type: 'json_object' },
-        });
+        console.log(`🤖 Passing ${rawText.length} chars to the AI chain (DeepSeek → Groq) for structural parsing...`);
 
-        const rawResponse = chatCompletion.choices[0]?.message?.content || '{"results": []}';
-        
+        let rawResponse: string;
+        try {
+            rawResponse = await runAIChain([{ role: 'system', content: systemPrompt }]);
+        } catch (aiErr: any) {
+            console.error('AI extraction failed after exhausting the provider chain:', aiErr?.message);
+            return NextResponse.json(
+                { success: false, results: [], error: 'AI extraction failed' },
+                { status: 502 }
+            );
+        }
+
         // Normalise deepseek response whether it sent an array directly or { "prices": [...] }
         let parsed = [];
         try {

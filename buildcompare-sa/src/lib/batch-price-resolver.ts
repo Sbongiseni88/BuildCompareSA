@@ -18,7 +18,40 @@ import {
 } from '@/data/sa-market-knowledge';
 import { groqClient, isGroqConfigured } from '@/lib/groq';
 import { getDeepseekClient, checkDeepseekConfigured } from '@/lib/deepseek';
-import { generateSearchString, normalizeMaterialName } from '@/lib/boq-engine';
+import {
+    generateSearchString,
+    normalizeMaterialName,
+    shouldBypassRetailPricing,
+} from '@/lib/boq-engine';
+import {
+    RETAIL_STORES,
+    RETAIL_STORE_LABELS,
+    blankMatrix,
+    assertSymmetric,
+    cheapestQuote,
+    logMatrixNa,
+    type RetailMatrix,
+    type RetailStore,
+} from '@/lib/retail-matrix';
+import { mapLegacyToTenderCategory, guessTenderCategory } from '@/lib/tender-categories';
+import { estimateLabour } from '@/lib/bccei/labour';
+import { isBoqCategory, type BoqCategory } from '@/lib/bccei/labour-defaults';
+
+/**
+ * Resolve a material's tender category.
+ *
+ * Order of trust: an explicit `tenderCategory` set by the BoQ pipeline wins;
+ * then classification from the DESCRIPTION (e.g. "20A single pole circuit
+ * breaker" → Electrical); the legacy `category` field is only a last resort.
+ * The old code mapped solely from the legacy field, so a BoQ where every item
+ * came through as 'other' collapsed to a single category for the whole sheet.
+ */
+function resolveTenderCategory(material: Material): BoqCategory {
+    if (isBoqCategory(material.tenderCategory)) return material.tenderCategory;
+    const fromDescription = guessTenderCategory(material.name || '');
+    if (fromDescription.confidence !== 'low') return fromDescription.category;
+    return mapLegacyToTenderCategory(material.category || 'other');
+}
 import fs from 'fs';
 import path from 'path';
 
@@ -84,8 +117,26 @@ export interface BatchPriceResult {
     bestPrice: BatchQuote | null;
     averagePrice: number;
     potentialSavings: number;
-    source: 'market-knowledge' | 'ai-batch-estimate';
+    source: 'market-knowledge' | 'ai-batch-estimate' | 'no-retail-pricing';
     laborEstimate: number;
+    /**
+     * Canonical 5-supplier matrix — same data as `quotes` but keyed by
+     * store with N/A placeholders for any failed slot. Downstream
+     * tender-grade exports (Excel) read from this field, not from `quotes`.
+     */
+    matrix: RetailMatrix;
+    /** BCCEI tender category resolved for this material. */
+    tenderCategory: BoqCategory;
+    /** BCCEI-traceable labour estimate (ZAR, total for this material's qty). */
+    bccei: {
+        totalZar: number;
+        rateZarPerHour: number;
+        grade: number;
+        hoursPerUnit: number;
+        totalHours: number;
+        year: 'Y1' | 'Y2' | 'Y3';
+        basis: string;
+    };
 }
 
 export interface BatchQuote {
@@ -108,6 +159,71 @@ export interface BatchResolveResult {
         knowledgeMatched: number;
         aiEstimated: number;
         failed: number;
+        /** Preliminaries / structural lines deliberately not retail-priced. */
+        nonRetail: number;
+    };
+}
+
+// ── Tender helpers (matrix + BCCEI labour) ───────────────────────────────────
+
+function buildMatrixFromQuotes(
+    quotes: BatchQuote[],
+    source: 'market-knowledge' | 'ai-batch-estimate' | 'live-scrape',
+    query: string,
+): RetailMatrix {
+    const matrix = blankMatrix('not_found');
+    for (const q of quotes) {
+        if (q.store in matrix && q.price > 0) {
+            matrix[q.store as RetailStore] = {
+                store: q.store as RetailStore,
+                storeName: RETAIL_STORE_LABELS[q.store as RetailStore] ?? q.storeName,
+                priceZar: q.price,
+                status: 'ok',
+                source,
+            };
+        }
+    }
+    // Anti-bias telemetry: log any column we couldn't populate.
+    for (const store of RETAIL_STORES) {
+        if (matrix[store].status === 'N/A') logMatrixNa(store, 'not_found', query);
+    }
+    assertSymmetric(matrix);
+    return matrix;
+}
+
+/**
+ * Result for a line that must NOT carry retail prices (Preliminaries / P&G
+ * allowances / structural summaries). Per the retail_matrix_normalization
+ * skill, every store column is an honest `N/A` — fabricating a 5-store
+ * spread here was the "Cashbuild always wins" bias bug. BCCEI labour still
+ * resolves so the tender line remains costable.
+ */
+function buildNoRetailResult(material: Material): BatchPriceResult {
+    return {
+        material,
+        quotes: [],
+        bestPrice: null,
+        averagePrice: 0,
+        potentialSavings: 0,
+        source: 'no-retail-pricing',
+        laborEstimate: 0,
+        matrix: blankMatrix('not_attempted'),
+        tenderCategory: resolveTenderCategory(material),
+        bccei: bcceiForMaterial(material),
+    };
+}
+
+function bcceiForMaterial(material: Material): BatchPriceResult['bccei'] {
+    const category = resolveTenderCategory(material);
+    const r = estimateLabour({ category, qty: material.quantity, unit: material.unit || 'unit' });
+    return {
+        totalZar: r.totalZar,
+        rateZarPerHour: r.rateZarPerHour,
+        grade: r.grade,
+        hoursPerUnit: r.hoursPerUnit,
+        totalHours: r.totalHours,
+        year: r.year,
+        basis: r.basis,
     };
 }
 
@@ -163,6 +279,9 @@ function resolveFromKnowledge(
     const best = quotes[0];
     const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
 
+    const matrix = buildMatrixFromQuotes(quotes, 'market-knowledge', material.name);
+    const bccei = bcceiForMaterial(material);
+
     return {
         material,
         quotes,
@@ -171,6 +290,9 @@ function resolveFromKnowledge(
         potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
         source: 'market-knowledge',
         laborEstimate: quotes[0]?.laborEstimate || 0,
+        matrix,
+        tenderCategory: resolveTenderCategory(material),
+        bccei,
     };
 }
 
@@ -300,6 +422,9 @@ CRITICAL:
             const best = quotes[0];
             const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
 
+            const matrix = buildMatrixFromQuotes(quotes, 'ai-batch-estimate', material.name);
+            const bccei = bcceiForMaterial(material);
+
             results.set(material.id, {
                 material,
                 quotes,
@@ -308,6 +433,9 @@ CRITICAL:
                 potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
                 source: 'ai-batch-estimate',
                 laborEstimate: typeof est.laborEstimate === 'number' ? est.laborEstimate : 0,
+                matrix,
+                tenderCategory: resolveTenderCategory(material),
+                bccei,
             });
 
             // Store in cache
@@ -337,10 +465,18 @@ export async function resolveBatchPrices(
     userLng?: number
 ): Promise<BatchResolveResult> {
     const knowledgeResults: BatchPriceResult[] = [];
+    const nonRetailResults = new Map<string, BatchPriceResult>();
     const unknowns: Material[] = [];
 
-    // Phase 1: Try market knowledge / cache for each material (instant)
+    // Phase 0+1: Intercept non-retail lines, then try market knowledge / cache
     for (const material of materials) {
+        // Preliminaries / structural summary lines have no retail product —
+        // they get an all-N/A matrix and are NEVER sent to the AI estimator.
+        if (shouldBypassRetailPricing(material)) {
+            nonRetailResults.set(material.id, buildNoRetailResult(material));
+            continue;
+        }
+
         const searchTerm = material.search_string || material.name;
         const knowledge = findProductKnowledge(searchTerm) || findProductKnowledge(material.name);
 
@@ -354,6 +490,8 @@ export async function resolveBatchPrices(
                 const quotes = cached.quotes;
                 const best = quotes[0];
                 const avg = quotes.reduce((sum, q) => sum + q.price, 0) / quotes.length;
+                const matrix = buildMatrixFromQuotes(quotes, 'ai-batch-estimate', material.name);
+                const bccei = bcceiForMaterial(material);
                 knowledgeResults.push({
                     material,
                     quotes,
@@ -362,6 +500,9 @@ export async function resolveBatchPrices(
                     potentialSavings: Math.round((avg - best.price) * material.quantity * 100) / 100,
                     source: 'ai-batch-estimate',
                     laborEstimate: cached.laborEstimate,
+                    matrix,
+                    tenderCategory: resolveTenderCategory(material),
+                    bccei,
                 });
             } else {
                 unknowns.push(material);
@@ -392,6 +533,12 @@ export async function resolveBatchPrices(
     let failed = 0;
 
     for (const material of materials) {
+        const nonRetail = nonRetailResults.get(material.id);
+        if (nonRetail) {
+            allResults.push(nonRetail);
+            continue;
+        }
+
         const knResult = knowledgeResults.find(r => r.material.id === material.id);
         if (knResult) {
             allResults.push(knResult);
@@ -404,8 +551,10 @@ export async function resolveBatchPrices(
             continue;
         }
 
-        // Neither matched — create a minimal result with no prices
+        // Neither matched — every column is N/A but labour still resolves.
         failed++;
+        const matrix = buildMatrixFromQuotes([], 'ai-batch-estimate', material.name);
+        const bccei = bcceiForMaterial(material);
         allResults.push({
             material,
             quotes: [],
@@ -414,6 +563,9 @@ export async function resolveBatchPrices(
             potentialSavings: 0,
             source: 'ai-batch-estimate',
             laborEstimate: 0,
+            matrix,
+            tenderCategory: resolveTenderCategory(material),
+            bccei,
         });
     }
 
@@ -427,6 +579,7 @@ export async function resolveBatchPrices(
             knowledgeMatched: knowledgeMatchedCount,
             aiEstimated: aiEstimatedCount,
             failed,
+            nonRetail: nonRetailResults.size,
         },
     };
 }
