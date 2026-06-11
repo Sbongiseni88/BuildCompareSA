@@ -56,7 +56,30 @@ jobs:
           BROWSERBASE_API_KEY: ${{ secrets.BROWSERBASE_API_KEY }}
           BROWSERBASE_PROJECT_ID: ${{ secrets.BROWSERBASE_PROJECT_ID }}
           PIPELINE_CONCURRENCY: '4'
+          # Belt-and-braces: keep `scraper.*` importable even if a future
+          # edit changes the step's working directory.
+          PYTHONPATH: ${{ github.workspace }}/buildcompare-sa
+          # Inputs come in via env (NOT inline ${{ }} in the script) so
+          # free-text values can never break or inject into the shell.
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          LIMIT_INPUT: ${{ inputs.limit }}
         run: |
-          python -m scraper.pipeline \
-            ${{ inputs.dry_run == true && '--dry-run' || '' }} \
-            ${{ inputs.limit != '' && format('--limit {0}', inputs.limit) || '' }}
+          # Fail loudly if this branch predates the pipeline code — the
+          # bare "No module named" error this replaces was unhelpful.
+          if [ ! -f scraper/pipeline.py ]; then
+            echo "::error::scraper/pipeline.py not found in $(pwd). Is this branch up to date with main?"
+            exit 1
+          fi
+
+          ARGS=""
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          # Keep digits only, so "items = 3" or "3 items" still means 3.
+          LIMIT="$(printf '%s' "$LIMIT_INPUT" | tr -cd '0-9')"
+          if [ -n "$LIMIT" ]; then
+            ARGS="$ARGS --limit $LIMIT"
+          fi
+
+          echo "Running: python -m scraper.pipeline $ARGS"
+          python -m scraper.pipeline $ARGS
