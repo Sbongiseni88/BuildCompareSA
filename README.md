@@ -1,6 +1,6 @@
 # BuildCompare SA
 
-B2B SaaS platform for South African construction contractors bidding on government tenders. Upload a Bill of Quantities, get a tender-grade sourcing file: live retail prices across five major SA suppliers, BCCEI-compliant labour estimates, and a single-click priced report ready for submission.
+B2B SaaS platform for South African construction contractors bidding on government tenders. Upload a Bill of Quantities, get a tender-grade sourcing file: live retail prices across five major SA suppliers.
 
 ## Who it's for
 
@@ -31,6 +31,12 @@ Professional contractors — civil, residential, light commercial — who need:
 Removed in the tender-pivot refactor: standalone Python `backend/`, ChromaDB RAG, Google Gemini, direct OpenAI API usage, the AI Concierge chatbot, and WhatsApp share buttons.
 
 ## Getting started
+
+### Production
+
+Visit the live application: [https://buildcomparre-git-main-sibongiseni-dubazanes-projects.vercel.app/login](https://buildcomparre-git-main-sibongiseni-dubazanes-projects.vercel.app/login)
+
+### Local development
 
 ```bash
 cp .env.example .env.local
@@ -79,7 +85,7 @@ Tender-pivot history and milestones: [`.agent/tender_pivot_plan.md`](.agent/tend
 
 ## Compliance notes
 
-- BCCEI wage figures encoded in `src/lib/bccei/wages.ts` are sourced from the BCCEI Industry Circular dated 08 August 2025. They are subject to ministerial promulgation. The UI surfaces this caveat alongside every labour estimate.
+- BCCEI wage figures encoded in `src/lib/bccei/wages.ts` are sourced from the BCCEI Industry Circular dated 08 August 2025. They are subject to ministerial promulgation. The UI surfaces this caveat.
 - POPIA notes: [`POPIA_COMPLIANCE.md`](POPIA_COMPLIANCE.md).
 - Deployment guide: [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md).
 
