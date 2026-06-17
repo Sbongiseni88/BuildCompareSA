@@ -27,9 +27,10 @@ interface DashboardProps {
     onNavigateToProjects: () => void;
     onNavigateToCompare: () => void;
     onFeedbackClick?: () => void;
+    onShowTutorialClick?: () => void;
 }
 
-export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, onFeedbackClick }: DashboardProps) {
+export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, onFeedbackClick, onShowTutorialClick }: DashboardProps) {
     const { user, userProfile, loading: authLoading } = useAuthContext();
     const supabaseRef = React.useRef(createClient());
     const supabase = supabaseRef.current;
@@ -317,6 +318,13 @@ export default function Dashboard({ onNavigateToProjects, onNavigateToCompare, o
                         >
                             <Plus className="w-5 h-5" />
                             Create a New Job
+                        </button>
+                        <button
+                            onClick={() => onShowTutorialClick?.()}
+                            className="px-6 py-3 min-h-[56px] bg-transparent border-2 border-blue-500/60 hover:border-blue-400 text-blue-300 hover:text-blue-200 font-bold rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-blue-500/10 transition-all w-full md:w-auto"
+                        >
+                            <PlayCircle className="w-5 h-5" />
+                            How It Works
                         </button>
                     </div>
                 </div>

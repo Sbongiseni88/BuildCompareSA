@@ -2,9 +2,13 @@
  * Retail matrix constants + invariants.
  *
  * See `.agent/skills/retail_matrix_normalization/SKILL.md`.
- * Every priced line carries a quote from each of the 5 SA retailers,
+ * Every priced line carries a quote from each of the 7 SA suppliers,
  * in canonical column order. A failed store NEVER mirrors another
  * store's value — it reports N/A with a reason.
+ *
+ * Five are general builders' merchants (builders…buildit); Voltex and ABB
+ * are electrical specialists and only quote electrical line items (they
+ * report N/A on cement / bricks / timber / etc.).
  */
 
 export const RETAIL_STORES = [
@@ -13,6 +17,8 @@ export const RETAIL_STORES = [
   'leroy_merlin',
   'buco',
   'buildit',
+  'voltex',
+  'abb',
 ] as const;
 
 export type RetailStore = (typeof RETAIL_STORES)[number];
@@ -23,7 +29,19 @@ export const RETAIL_STORE_LABELS: Record<RetailStore, string> = {
   leroy_merlin: 'Leroy Merlin',
   buco:         'BUCO',
   buildit:      'Build it',
+  voltex:       'Voltex',
+  abb:          'ABB',
 };
+
+/**
+ * Electrical-specialist wholesalers. They only carry electrical goods
+ * (cabling, breakers, switchgear, DB boards, drives…), so they quote
+ * ONLY on lines classified `Electrical` and report N/A everywhere else.
+ */
+export const ELECTRICAL_SPECIALIST_STORES: ReadonlySet<RetailStore> = new Set([
+  'voltex',
+  'abb',
+]);
 
 export type RetailQuoteStatus = 'ok' | 'N/A';
 export type RetailNaReason = 'timeout' | 'not_found' | 'parse_error' | 'site_down' | 'not_attempted';

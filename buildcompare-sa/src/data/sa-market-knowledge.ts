@@ -115,6 +115,36 @@ export const SA_STORES: StoreProfile[] = [
             durban: ['BUCO Pinetown'],
         }
     },
+    {
+        id: 'voltex',
+        name: 'Voltex',
+        type: 'chain',
+        pricePosition: -0.05,  // Electrical wholesaler — competitive trade pricing
+        stockReliability: 0.86,
+        hasDelivery: true,
+        deliveryCostRange: [120, 400],
+        searchUrl: 'https://www.voltex.co.za/search?q={query}',
+        regionPresence: {
+            gauteng: ['Voltex Johannesburg', 'Voltex Pretoria', 'Voltex Midrand'],
+            'cape-town': ['Voltex Cape Town', 'Voltex Bellville'],
+            durban: ['Voltex Durban', 'Voltex Pinetown'],
+        }
+    },
+    {
+        id: 'abb',
+        name: 'ABB',
+        type: 'chain',
+        pricePosition: 0.15,  // Premium electrical brand / OEM pricing
+        stockReliability: 0.88,
+        hasDelivery: true,
+        deliveryCostRange: [150, 450],
+        searchUrl: 'https://new.abb.com/products/search?q={query}',
+        regionPresence: {
+            gauteng: ['ABB Longmeadow', 'ABB Pretoria'],
+            'cape-town': ['ABB Cape Town'],
+            durban: ['ABB Durban'],
+        }
+    },
 ];
 
 // ─── Product Category Knowledge ──────────────────────────────────────────

@@ -1,8 +1,9 @@
 /**
  * Tender-grade sourcing file generator.
  *
- * Produces an .xlsx with the exact 13-column matrix mandated by
- * `.agent/rules/team_standards.md`, a 5-row executive dashboard at the
+ * Produces an .xlsx with the exact 15-column matrix mandated by
+ * `.agent/rules/team_standards.md` (7 supplier columns: 5 general merchants
+ * + Voltex & ABB electrical specialists), a 5-row executive dashboard at the
  * top, BCCEI-traceable labour estimates, and ⭐-prefixed cheapest-supplier
  * cells. Used by the "Download Sourcing File" button in PriceSearchHub and
  * the "Save Report" button in ProjectsManager.
@@ -186,6 +187,8 @@ export function buildSourcingWorkbook(
     RETAIL_STORE_LABELS.leroy_merlin,
     RETAIL_STORE_LABELS.buco,
     RETAIL_STORE_LABELS.buildit,
+    RETAIL_STORE_LABELS.voltex,
+    RETAIL_STORE_LABELS.abb,
     'Cheapest Supplier',
     'Cheapest Price (ZAR)',
     'Labour Estimate (ZAR)',
@@ -205,6 +208,8 @@ export function buildSourcingWorkbook(
       asMoneyCell(r.prices.leroy_merlin),
       asMoneyCell(r.prices.buco),
       asMoneyCell(r.prices.buildit),
+      asMoneyCell(r.prices.voltex),
+      asMoneyCell(r.prices.abb),
       asTextCell(r.cheapestSupplier ? `⭐ ${r.cheapestSupplier}` : 'N/A'),
       asMoneyCell(r.cheapestPriceZar),
       asMoneyCell(r.labourEstimateZar),
@@ -213,10 +218,10 @@ export function buildSourcingWorkbook(
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // Merge the project name across the matrix width
+  // Merge the project name across the matrix width (15 columns: 0–14)
   ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
-    { s: { r: 4, c: 0 }, e: { r: 4, c: 12 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 14 } },
+    { s: { r: 4, c: 0 }, e: { r: 4, c: 14 } },
   ];
 
   // Freeze the top 7 rows (summary + headers) so users can scroll the body
@@ -234,9 +239,11 @@ export function buildSourcingWorkbook(
     { wch: 16 },  // H: Leroy Merlin
     { wch: 14 },  // I: BUCO
     { wch: 14 },  // J: Build it
-    { wch: 22 },  // K: Cheapest Supplier
-    { wch: 22 },  // L: Cheapest Price (ZAR)
-    { wch: 22 },  // M: Labour Estimate (ZAR)
+    { wch: 14 },  // K: Voltex
+    { wch: 14 },  // L: ABB
+    { wch: 22 },  // M: Cheapest Supplier
+    { wch: 22 },  // N: Cheapest Price (ZAR)
+    { wch: 22 },  // O: Labour Estimate (ZAR)
   ];
 
   const wb = XLSX.utils.book_new();
@@ -352,5 +359,5 @@ export const SOURCING_FILE_LAYOUT = {
   /** Row index (0-based) of the first data row. */
   firstDataRow: 7,
   /** Number of columns in the matrix (Item Ref … Labour). */
-  columnCount: 13,
+  columnCount: 15,
 };

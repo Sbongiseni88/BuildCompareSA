@@ -13,14 +13,17 @@ import urllib.parse
 
 from bs4 import BeautifulSoup
 
-# Canonical 5-store matrix. URL shapes for BUCO / Build it are best-effort and
-# need verification against the live sites (see PROJECT_HANDOFF "Next Steps").
+# Canonical 7-store matrix (5 general merchants + Voltex & ABB electrical
+# specialists). URL shapes for BUCO / Build it / Voltex / ABB are best-effort
+# and need verification against the live sites (see PROJECT_HANDOFF "Next Steps").
 STORE_URLS = {
     "builders": "https://www.builders.co.za/search/?text={query}",
     "cashbuild": "https://www.cashbuild.co.za/search?q={query}",
     "leroy_merlin": "https://leroymerlin.co.za/search?q={query}",
     "buco": "https://www.buco.co.za/?s={query}&post_type=product",
     "buildit": "https://www.buildit.co.za/?s={query}",
+    "voltex": "https://www.voltex.co.za/search?q={query}",
+    "abb": "https://new.abb.com/products/search?q={query}",
 }
 
 # Aggressively delete "Select your store" modals / overlays so the underlying

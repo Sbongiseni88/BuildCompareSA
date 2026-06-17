@@ -954,7 +954,7 @@ export default function PriceSearchHub({ initialMaterials = [], onClearInitial }
                                     {searchStep === 3 && "Comparing like-for-like across stores..."}
                                     {searchStep === 0 && "Initializing..."}
                                 </h3>
-                                <p className="text-slate-400">Checking Builders, Cashbuild, Build it, Leroy Merlin & BUCO</p>
+                                <p className="text-slate-400">Checking Builders, Cashbuild, Build it, Leroy Merlin, BUCO, Voltex & ABB</p>
                             </div>
                         )}
 

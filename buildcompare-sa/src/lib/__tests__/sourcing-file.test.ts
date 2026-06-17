@@ -65,13 +65,16 @@ describe('buildSourcingRows', () => {
     expect(rows[1].category).toBe('Structural Steel'); // steel → Structural Steel
   });
 
-  it('populates all 5 retail price columns from the canonical supplierIds', () => {
+  it('populates the general retail price columns from the canonical supplierIds', () => {
     const rows = buildSourcingRows(fullMatrix, FIXED_DATE);
     expect(rows[0].prices.builders).toBe(5.20);
     expect(rows[0].prices.cashbuild).toBe(4.90);
     expect(rows[0].prices.leroy_merlin).toBe(5.50);
     expect(rows[0].prices.buco).toBe(5.10);
     expect(rows[0].prices.buildit).toBe(4.95);
+    // Electrical specialists are N/A for this non-electrical (bricks) line.
+    expect(rows[0].prices.voltex).toBeNull();
+    expect(rows[0].prices.abb).toBeNull();
   });
 
   it('cheapest supplier is the actual minimum from the 5-column matrix', () => {
@@ -121,7 +124,7 @@ describe('buildSourcingWorkbook', () => {
     expect(aoa[4][0].v).toMatch(/Y1/);
   });
 
-  it('header row uses the 13 canonical columns in order', () => {
+  it('header row uses the 15 canonical columns in order', () => {
     const { aoa } = buildSourcingWorkbook(fullMatrix, { generatedAt: FIXED_DATE });
     const headers = aoa[SOURCING_FILE_LAYOUT.headerRow].map((c) => c.v);
     expect(headers).toEqual([
@@ -135,6 +138,8 @@ describe('buildSourcingWorkbook', () => {
       'Leroy Merlin',
       'BUCO',
       'Build it',
+      'Voltex',
+      'ABB',
       'Cheapest Supplier',
       'Cheapest Price (ZAR)',
       'Labour Estimate (ZAR)',
@@ -144,7 +149,7 @@ describe('buildSourcingWorkbook', () => {
   it('cheapest supplier cell is prefixed with ⭐ and bolded text', () => {
     const { aoa } = buildSourcingWorkbook(fullMatrix, { generatedAt: FIXED_DATE });
     const dataRow1 = aoa[SOURCING_FILE_LAYOUT.firstDataRow];
-    const cheapestCell = dataRow1[10];
+    const cheapestCell = dataRow1[12];  // shifted +2 by the Voltex/ABB columns
     expect(cheapestCell.v).toMatch(/^⭐ /);
     expect(cheapestCell.v).toBe('⭐ Cashbuild');
   });
@@ -163,14 +168,14 @@ describe('buildSourcingWorkbook', () => {
     ];
     const { aoa } = buildSourcingWorkbook(noQuotes, { generatedAt: FIXED_DATE });
     const dataRow = aoa[SOURCING_FILE_LAYOUT.firstDataRow];
-    for (let col = 5; col <= 9; col++) {
-      // money cells become 'N/A' strings when value is null
+    for (let col = 5; col <= 11; col++) {
+      // 7 store money cells (cols 5–11) become 'N/A' strings when value is null
       expect(dataRow[col].v).toBe('N/A');
     }
-    expect(dataRow[10].v).toBe('N/A');                // cheapest supplier
-    expect(dataRow[11].v).toBe('N/A');                // cheapest price
+    expect(dataRow[12].v).toBe('N/A');                // cheapest supplier
+    expect(dataRow[13].v).toBe('N/A');                // cheapest price
     // Labour still resolves (Preliminaries default)
-    expect(typeof dataRow[12].v).toBe('number');
+    expect(typeof dataRow[14].v).toBe('number');
   });
 });
 

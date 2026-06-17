@@ -144,6 +144,7 @@ export default function Home() {
             onNavigateToProjects={() => setActiveTab('projects')}
             onNavigateToCompare={() => setActiveTab('compare')}
             onFeedbackClick={() => setIsFeedbackOpen(true)}
+            onShowTutorialClick={() => setShowOnboarding(true)}
           />
         );
       case 'estimator':
@@ -167,6 +168,7 @@ export default function Home() {
             onNavigateToProjects={() => setActiveTab('projects')}
             onNavigateToCompare={() => setActiveTab('compare')}
             onFeedbackClick={() => setIsFeedbackOpen(true)}
+            onShowTutorialClick={() => setShowOnboarding(true)}
           />
         );
     }

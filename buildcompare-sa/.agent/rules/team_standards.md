@@ -39,7 +39,9 @@ Every AI call site must implement the chain: `DeepSeek → Groq fallback → thr
 ## Excel / report export
 Reports are tender-grade B2B sourcing files. The column set is fixed:
 
-`Item Ref | Material Description | Category | Qty | Unit | Builders Warehouse | Cashbuild | Leroy Merlin | BUCO | Build it | Cheapest Supplier | Cheapest Price (ZAR) | Labour Estimate (ZAR)`
+`Item Ref | Material Description | Category | Qty | Unit | Builders Warehouse | Cashbuild | Leroy Merlin | BUCO | Build it | Voltex | ABB | Cheapest Supplier | Cheapest Price (ZAR) | Labour Estimate (ZAR)`
+
+Voltex and ABB are electrical-specialist suppliers — they quote only on `Electrical` line items and report `N/A` on all other categories.
 
 The cheapest supplier cell is prefixed with `⭐ ` (star + space). The project summary block (Grand Total, Total Labour, Total Materials, generated date) lives in rows 1–5 — never at the bottom. The download button reads **"Download Sourcing File"** in PriceSearchHub and **"Save Report"** in ProjectsManager. Never label it "Export Excel".
 
@@ -47,4 +49,4 @@ The cheapest supplier cell is prefixed with `⭐ ` (star + space). The project s
 Every line-item labour estimate must resolve through `src/lib/bccei/labour.ts` so the figure is traceable to a published BCCEI Task Grade. The encoded table in `src/lib/bccei/wages.ts` is the only place wage values live; if the Minister promulgates a new circular, edit that file and nowhere else.
 
 ## Retail matrix invariant
-The five-store supplier matrix (Builders Warehouse, Cashbuild, Leroy Merlin, BUCO, Build it) is symmetric. A failed lookup returns `{ priceZar: null, status: 'N/A', reason }` — **never** falls back to mirroring another store's value. See `.agent/skills/retail_matrix_normalization/SKILL.md`.
+The seven-store supplier matrix (Builders Warehouse, Cashbuild, Leroy Merlin, BUCO, Build it, Voltex, ABB) is symmetric. A failed lookup returns `{ priceZar: null, status: 'N/A', reason }` — **never** falls back to mirroring another store's value. See `.agent/skills/retail_matrix_normalization/SKILL.md`.

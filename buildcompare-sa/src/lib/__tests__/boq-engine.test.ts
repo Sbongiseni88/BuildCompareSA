@@ -516,31 +516,96 @@ describe('resolveBatchPrices — Preliminaries rows get a null retail matrix', (
         expect(stats.aiEstimated).toBe(0);
     });
 
-    it('real material on a cache miss → single indicative estimate, NO fabricated spread', async () => {
+    it('PRODUCTION mode (DEMO_ESTIMATED_PRICES=false): single indicative estimate, NO fabricated spread', async () => {
+        const prev = process.env.DEMO_ESTIMATED_PRICES;
+        process.env.DEMO_ESTIMATED_PRICES = 'false';
+        try {
+            const cement: Material = {
+                id: 'mat-1',
+                name: 'PPC Surebuild Cement 42.5N 50kg',
+                category: 'cement',
+                quantity: 10,
+                unit: 'bags',
+            };
+            const { results, stats } = await resolveBatchPrices([cement]);
+            const r = results[0];
+
+            expect(stats.nonRetail).toBe(0);
+            expect(r.source).toBe('market-knowledge');
+
+            // With demo estimates OFF the market-knowledge fallback must NEVER
+            // invent a per-store comparison (the old `pricePosition` curve
+            // crowned Cashbuild on every line). One labelled estimate; N/A cols.
+            expect(r.quotes).toHaveLength(0);
+            expect(r.bestPrice).toBeNull();
+            expect(r.indicativeEstimateZar).toBeGreaterThan(0);
+            expect(r.estimateBasis).toContain('not store-verified');
+            for (const store of RETAIL_STORES) {
+                expect(r.matrix[store].priceZar).toBeNull();
+                expect(r.matrix[store].status).toBe('N/A');
+            }
+        } finally {
+            process.env.DEMO_ESTIMATED_PRICES = prev;
+        }
+    });
+});
+
+describe('resolveBatchPrices — DEMO estimated per-store spread (default ON)', () => {
+    const prev = process.env.DEMO_ESTIMATED_PRICES;
+    beforeAll(() => { process.env.DEMO_ESTIMATED_PRICES = 'true'; });
+    afterAll(() => { process.env.DEMO_ESTIMATED_PRICES = prev; });
+
+    it('a general material gets a populated, NON-uniform 5-store estimate (no single fixed winner)', async () => {
         const cement: Material = {
-            id: 'mat-1',
-            name: 'PPC Surebuild Cement 42.5N 50kg',
-            category: 'cement',
-            quantity: 10,
-            unit: 'bags',
+            id: 'c1', name: 'PPC Surebuild Cement 42.5N 50kg',
+            category: 'cement', quantity: 10, unit: 'bags',
         };
-        const { results, stats } = await resolveBatchPrices([cement]);
+        const { results } = await resolveBatchPrices([cement]);
         const r = results[0];
 
-        expect(stats.nonRetail).toBe(0);
-        expect(r.source).toBe('market-knowledge');
-
-        // The market-knowledge fallback must NEVER invent a per-store
-        // comparison (the old `pricePosition` curve crowned Cashbuild on
-        // every line). One labelled estimate; all 5 columns honest N/A.
-        expect(r.quotes).toHaveLength(0);
-        expect(r.bestPrice).toBeNull();
-        expect(r.indicativeEstimateZar).toBeGreaterThan(0);
-        expect(r.estimateBasis).toContain('not store-verified');
-        for (const store of RETAIL_STORES) {
-            expect(r.matrix[store].priceZar).toBeNull();
-            expect(r.matrix[store].status).toBe('N/A');
+        // General merchants are all populated...
+        for (const store of ['builders', 'cashbuild', 'leroy_merlin', 'buco', 'buildit'] as const) {
+            expect(r.matrix[store].status).toBe('ok');
+            expect(r.matrix[store].priceZar).toBeGreaterThan(0);
         }
+        // ...and NOT all identical (defeats the deterministic-winner bug).
+        const prices = (['builders', 'cashbuild', 'leroy_merlin', 'buco', 'buildit'] as const)
+            .map((s) => r.matrix[s].priceZar);
+        expect(new Set(prices).size).toBeGreaterThan(1);
+
+        // Non-electrical line → electrical specialists stay N/A.
+        expect(r.matrix.voltex.status).toBe('N/A');
+        expect(r.matrix.abb.status).toBe('N/A');
+        expect(r.estimateBasis).toMatch(/indicative estimates, not scraped/);
+    });
+
+    it('the cheapest store is NOT always the same across different items (anti-bias)', async () => {
+        const items: Material[] = [
+            { id: 'a', name: 'PPC Surebuild Cement 42.5N 50kg', category: 'cement', quantity: 1, unit: 'bag' },
+            { id: 'b', name: 'NFP clay stock brick', category: 'bricks', quantity: 1, unit: 'each' },
+            { id: 'c', name: 'SA Pine structural timber 38x114', category: 'timber', quantity: 1, unit: 'length' },
+            { id: 'd', name: 'Dulux Weatherguard exterior paint 20L', category: 'paint', quantity: 1, unit: 'bucket' },
+        ];
+        const { results } = await resolveBatchPrices(items);
+        const winners = results
+            .map((r) => r.bestPrice?.store)
+            .filter((s): s is string => Boolean(s));
+        // At least one line should be won by a store other than the first
+        // winner — the old curve made Cashbuild win 100% of lines.
+        expect(new Set(winners).size).toBeGreaterThan(1);
+    });
+
+    it('an electrical line DOES quote Voltex and ABB', async () => {
+        const breaker: Material = {
+            id: 'e1', name: '20A single pole circuit breaker',
+            category: 'electrical', quantity: 12, unit: 'No',
+        };
+        const { results } = await resolveBatchPrices([breaker]);
+        const r = results[0];
+        expect(r.tenderCategory).toBe('Electrical');
+        expect(r.matrix.voltex.status).toBe('ok');
+        expect(r.matrix.abb.status).toBe('ok');
+        expect(r.matrix.voltex.priceZar).toBeGreaterThan(0);
     });
 });
 
