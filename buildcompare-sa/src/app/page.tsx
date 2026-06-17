@@ -187,7 +187,7 @@ export default function Home() {
           onMobileClose={() => setIsMobileSidebarOpen(false)}
         />
 
-        <main className="flex-1 min-h-screen flex flex-col relative bg-[#020617] transition-all duration-300 w-full">
+        <main className="flex-1 min-w-0 min-h-screen flex flex-col relative bg-[#020617] transition-all duration-300">
 
           <header className="h-16 md:h-20 border-b border-slate-800 flex items-center justify-between px-4 md:px-8 bg-black/40 backdrop-blur-md sticky top-0 z-40">
             <div className="flex items-center gap-3 md:gap-4">
