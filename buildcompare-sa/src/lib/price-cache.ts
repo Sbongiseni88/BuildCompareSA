@@ -6,9 +6,12 @@
  * searches return genuine per-store prices instantly — no live scrape, no
  * fabricated estimate — when a fresh row exists.
  *
- * Read-only and stateless: uses the anon key (RLS allows authenticated reads),
- * never the service-role key. Degrades gracefully to an empty result when the
- * table/env is absent, so the caller falls back to its normal path.
+ * SERVER-ONLY (imported by API routes / the batch resolver). Prefers the
+ * service-role key when present; otherwise the anon key — which requires the
+ * anon-read policy from supabase/price_cache.sql. The original anon-key read
+ * against an authenticated-only policy returned ZERO rows silently: every
+ * store column in every export was N/A no matter what the pipeline scraped.
+ * Degrades gracefully to an empty result when the table/env is absent.
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -44,7 +47,10 @@ let _client: SupabaseClient | null = null;
 function getReadClient(): SupabaseClient | null {
     if (_client) return _client;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // Service-role first (server-only module, bypasses RLS for this
+    // read-only reference data); anon key as fallback — needs the anon
+    // SELECT policy applied, or RLS silently filters every row out.
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) return null;
     _client = createClient(url, key, { auth: { persistSession: false } });
     return _client;

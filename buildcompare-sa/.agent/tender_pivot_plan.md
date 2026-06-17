@@ -624,3 +624,65 @@ instance lock contention ruled out. Single onAuthStateChange call site
 repo-wide. Workflow file untouched.
 
 Validation: 14 suites / 213 tests · tsc clean · ESLint 0 errors · build clean.
+
+---
+
+## Execution log — 2026-06-17 · BoQ parser STILL Preliminaries-locked (full end-to-end trace on real SAPS doc)
+
+Ran the engine against the actual input (~/Downloads/BoQ.xlsx, SAPS WELKOM,
+2,961 rows) and the user's exact failing export
+(BuildCompareSA_Sourcing_1781204456202.xlsx). The all-N/A symptom was NOT
+one bug — the live trace exposed FOUR independent causes:
+
+1. **PREAMBLES caption hijack (root of the 908 false-Preliminaries rows).**
+   Every SAPS trade bill opens "MASONRY" → "PREAMBLES" → items. The section
+   detector mapped "preambles" to a Preliminaries boundary, so the bare
+   "PREAMBLES" caption under every trade handed that whole bill to the N/A
+   bypass. FIX: PREAMBLE_MARKER_RE — "PREAMBLES"/"SUPPLEMENTARY PREAMBLES"/
+   "For preambles refer…" are notes WITHIN a section, never a boundary;
+   detectSectionContext returns null for them (context flows through). The
+   'preambles' token removed from the Preliminaries SECTION_TRADE_RULES.
+
+2. **Substring keyword poison (the 602 false-Electrical rows).** guess used
+   raw `includes()`: 'amp' matched "Ramps", 'earth' matched "earthworks",
+   'tap' matched "tape", 'gate' matched "aggregate" — every ramp/earthwork
+   line classified Electrical. FIX: KEYWORD_MATCHERS compiles each keyword
+   to a word-boundary regex (≤4-char keywords get a plural-tolerant hard
+   boundary; longer ones keep prefix growth). Bare 'earth' dropped in favour
+   of 'earthing'/'earth leakage'/'earth rod'/'earth wire'.
+
+3. **Spec prose mistaken for a heading.** "Section 1 with 30% spare space
+   and Light Orange cover plate:" reset the Electrical context mid-bill for
+   450+ rows. FIX: numbered-heading match now requires a separator OR an
+   uppercase/paren continuation — a lowercase continuation with no separator
+   is spec prose, not a heading.
+
+4. **Sanitization fired too late.** Per the user's instruction, scrubbing
+   now runs at the ABSOLUTE ENTRY of the row loop: sanitizeBoqText()
+   normalises LaTeX codes ("813\times2032mm" → "813 x 2032mm"), unicode
+   multipliers/dashes/quotes, NBSP/zero-width/control chars and multi-space
+   blocks BEFORE section detection or any category rule sees the string.
+   Applied in both tryDirectBoQParse and materialsFromParsedRows. HAYLETT
+   formula audit notes + bare preamble markers now drop as scaffolding.
+
+PLUS the deeper "why is everything N/A even when classified" cause:
+**price_cache read returned ZERO rows.** (a) RLS policy was authenticated-
+only but the server reads with the anon key and no user session → silent
+empty. FIX: anon+authenticated SELECT policy (public reference data);
+reader prefers SUPABASE_SERVICE_ROLE_KEY when present. (b) The cache join
+required the BoQ line to equal the catalogue query verbatim (~0% hit). FIX:
+src/lib/catalogue-match.ts — conservative all-token matcher (every non-brand
+token must appear; size tokens must agree) joins tender phrasing to the
+scraped catalogue product; wired into the resolver and the compare route.
+No fabrication: a line that doesn't name a catalogue product stays N/A.
+
+Live trace BEFORE → AFTER category distribution:
+  Preliminaries 908→781, Electrical 602→635(correct trade now), Masonry
+  131→154, Structural Steel 61→83, Concrete/Openings/Plumbing/Finishes all
+  shifted toward correct trades; ramps→Concrete (was Electrical),
+  earthworks no longer Electrical.
+
+New tests: catalogue-match suite (7), keyword word-boundary suite,
+section-context preamble/spec-prose suite, sanitizeBoqText suite + HAYLETT
+scaffolding. Validation: 15 suites / 244 tests · tsc clean · ESLint 0
+errors · build clean. Workflow file untouched.

@@ -1,4 +1,5 @@
 import {
+  detectSectionContext,
   guessTenderCategory,
   mapLegacyToTenderCategory,
   validateLineItem,
@@ -112,5 +113,63 @@ describe('lineItemViolation (soft variant)', () => {
     expect(lineItemViolation({
       description: '1', qty: 10, unit: 'bag',
     })).toMatch(/bare number/);
+  });
+});
+
+// ── Regressions from the live SAPS WELKOM document (2,961 rows) ──────────────
+
+describe('keyword matching — word boundaries (substring poison regression)', () => {
+  it.each([
+    ['Ramps, etc.', 'Electrical'],                       // 'amp' matched "Ramps"
+    ['In ramp', 'Electrical'],
+    ['Sloping ramps not exceeding 1:10', 'Electrical'],
+    ['Earth filling obtained from the excavations', 'Electrical'], // 'earth' matched soil
+    ['Masking tape to edges', 'Plumbing'],               // 'tap' matched "tape"
+    ['19mm crushed stone aggregate', 'Openings'],        // 'gate' matched "aggregate"
+  ])('"%s" must NOT classify as %s', (text, wrongCategory) => {
+    const r = guessTenderCategory(text);
+    expect(r.confidence === 'low' || r.category !== wrongCategory).toBe(true);
+  });
+
+  it.each([
+    ['20 amp double pole isolator', 'Electrical'],
+    ['Earthing and lightning protection conductor', 'Electrical'],
+    ['Chromium plated taps', 'Plumbing'],
+    ['Steel security gate 900mm', 'Openings'],
+    ['Allowance for testing materials', 'Preliminaries'],
+  ])('"%s" still classifies as %s', (text, category) => {
+    const r = guessTenderCategory(text);
+    expect(r.category).toBe(category);
+    expect(r.confidence).not.toBe('low');
+  });
+});
+
+describe('detectSectionContext — preamble markers and spec prose', () => {
+  const caption = { hasQty: false, hasUnit: false };
+
+  it.each(['PREAMBLES', 'Preambles', 'SUPPLEMENTARY PREAMBLES', 'SUPPLEMENTARY PREAMBLES:',
+    'For Preambles refer to "Specification of Materials PW 371"'])(
+    '"%s" is never a section boundary (context flows through)', (text) => {
+      expect(detectSectionContext(text, caption)).toBeNull();
+    },
+  );
+
+  it('a real numbered Preliminaries heading still switches the section', () => {
+    expect(detectSectionContext('Section No 1: Preliminaries', caption))
+      .toEqual({ category: 'Preliminaries' });
+  });
+
+  it('spec prose quoting a section number is NOT a heading reset', () => {
+    // This live row reset the Electrical context for 450+ following rows.
+    expect(detectSectionContext(
+      'Section 1 with 30% spare space and Light Orange cover plate:', caption,
+    )).toBeNull();
+  });
+
+  it('numbered headings with separators or ALL-CAPS continuations still detect', () => {
+    expect(detectSectionContext('BILL NO 4 - ELECTRICAL INSTALLATION', caption))
+      .toEqual({ category: 'Electrical' });
+    expect(detectSectionContext('SECTION 2 BILL NO.1 CARRIED TO SUMMARY', caption))
+      .toEqual({ category: null });
   });
 });

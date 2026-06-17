@@ -84,6 +84,36 @@ export function extractSpreadsheetText(buffer: ArrayBuffer): string {
     return result.length > 30000 ? result.slice(0, 30000) + '\n\n[...TRUNCATED]' : result;
 }
 
+// ─── Description Sanitization ───────────────────────────────────────────────
+
+/**
+ * Scrub a raw BoQ cell at the ABSOLUTE ENTRY of the row-parsing loop —
+ * before section-boundary detection, narrative detection, or category
+ * rules ever see the string. Exported documents carry LaTeX-style math
+ * codes ("813\times2032mm"), unicode multipliers, non-breaking spaces and
+ * stacked whitespace that would otherwise blind every downstream matcher.
+ */
+export function sanitizeBoqText(raw: string): string {
+    return (raw ?? '')
+        // LaTeX-style operators that survive PDF→Excel conversions.
+        // No \b after the name — digits usually follow ("813\times2032mm")
+        // and digit-to-letter is not a word boundary. A letter lookahead
+        // still protects names like "\timestamp".
+        .replace(/\\(?:times|cdot|ast)(?![a-z])/gi, ' x ')
+        // Unicode multiplication/dimension glyphs → plain "x"
+        .replace(/[×✕✖⨯]/g, ' x ')
+        // Unicode minus / en / em dashes → ASCII hyphen
+        .replace(/[‐‑‒–—−]/g, '-')
+        // Smart quotes → plain
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+        // NBSP, thin/zero-width spaces, control chars → plain space
+        .replace(/[\u00A0\u2000-\u200B\u2028\u2029\uFEFF\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ')
+        // Collapse multi-space blocks last, after all substitutions
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // ─── Category Detection ────────────────────────────────────────────────────
 
 /**
@@ -119,7 +149,9 @@ const STRUCTURAL_SUMMARY_RE = new RegExp(
         /^(sub-?total|total|summary|collection|grand\s+total)\b/.source,
         /^preliminaries(\s+and\s+general(\s+items)?)?\s*$/.source,        // bare P&G heading (payable P&G items keep their text)
         /^preambles?\b/.source,
+        /^supplementary\s+preambles?\b\s*[:.]?\s*$/.source,               // bare preamble marker caption — scaffolding, not a payable line
         /\bfor\s+preambles?\s+refer\b/.source,
+        /^\(?\s*haylett\s+formula\b/.source,                              // "(HAYLETT FORMULA WORK GROUP NO. 102)" audit notes
         /^alterations?\s*$/.source,                                       // bare section heading only
     ].join('|'),
     'i',
@@ -336,7 +368,10 @@ export function tryDirectBoQParse(buffer: ArrayBuffer): Material[] | null {
         let itemIndex = 0;
         for (let r = headerRowIdx + 1; r < rows.length; r++) {
             const row = rows[r];
-            const rawDesc = String(row[descCol] ?? '').trim();
+            // Sanitize at the ABSOLUTE ENTRY of the loop — math codes,
+            // unicode multipliers and multi-space blocks are scrubbed
+            // BEFORE section-boundary detection or any category rule runs.
+            const rawDesc = sanitizeBoqText(String(row[descCol] ?? ''));
             if (!rawDesc || IGNORE_TERMS.some(t => t && rawDesc.toLowerCase().startsWith(t))) continue;
             if (rawDesc.length < 3) continue;
             // Guard: a bare number (or "item 12") is an item-ref that leaked into the
@@ -637,7 +672,9 @@ export function materialsFromParsedRows(
     let activeSection: BoqCategory | null = null;
 
     parsed.forEach((m: any, i: number) => {
-        const name = String(m?.description ?? m?.name ?? '').trim();
+        // Same entry-point scrub as the direct parser — LLM-extracted rows
+        // inherit the source document's math codes and spacing junk too.
+        const name = sanitizeBoqText(String(m?.description ?? m?.name ?? ''));
         const itemRef = m?.item_ref != null ? String(m.item_ref).trim() : undefined;
         const qty = Number(m?.qty ?? m?.quantity) || 1;
         const unit = (String(m?.unit ?? '').trim() || 'unit');

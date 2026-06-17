@@ -27,8 +27,8 @@ const TENDER_CATEGORY_KEYWORDS: Record<BoqCategory, string[]> = {
   Preliminaries: [
     'site establishment', 'preliminary', 'preliminaries', 'site clearance',
     'setting out', 'overheads', 'supervision', 'p&g', 'p & g', 'profit',
-    'insurance', 'guarantees', 'allow', 'provisional sum', 'contingency',
-    'site office', 'temporary works',
+    'insurance', 'guarantees', 'allow', 'allowance', 'provisional sum',
+    'contingency', 'site office', 'temporary works',
   ],
   Concrete: [
     'concrete', 'cement', 'screed', 'plaster', 'mortar', 'grout', 'ppc',
@@ -53,15 +53,20 @@ const TENDER_CATEGORY_KEYWORDS: Record<BoqCategory, string[]> = {
   ],
   Electrical: [
     'circuit breaker', 'mcb', 'rcd', 'distribution board', 'db board',
-    'cable', 'wire', 'conduit', 'switch', 'socket', 'plug', 'light fitting',
-    'luminaire', 'busbar', 'earth', 'electrical', 'isolator',
-    'consumer unit', 'cb', 'sp ', 'dp ', 'tp ', 'amp', 'volt',
+    'cable', 'wire', 'wiring', 'conduit', 'switch', 'socket', 'plug',
+    'light fitting', 'luminaire', 'busbar', 'electrical', 'isolator',
+    // NOTE: bare 'earth' is FORBIDDEN here — in a BoQ "earth" is soil
+    // ("earth filling", "earthworks"), and the substring once classified
+    // whole earthworks bills as Electrical.
+    'earthing', 'earth leakage', 'earth rod', 'earth wire',
+    'consumer unit', 'cb', 'sp', 'dp', 'tp', 'amp', 'volt', 'voltage',
   ],
   Plumbing: [
-    'pipe', 'plumbing', 'tap', 'mixer', 'valve', 'drain', 'sewer', 'gully',
-    'manhole', 'pvc pipe', 'copper pipe', 'galvanised pipe', 'pex', 'hdpe',
-    'toilet', 'cistern', 'wc', 'basin', 'bath', 'shower', 'geyser',
-    'water meter', 'stop cock', 'isolating valve',
+    'pipe', 'pipework', 'plumbing', 'tap', 'mixer', 'valve', 'drain',
+    'sewer', 'gully', 'manhole', 'pvc pipe', 'copper pipe',
+    'galvanised pipe', 'pex', 'hdpe', 'toilet', 'cistern', 'wc', 'basin',
+    'bath', 'bathroom', 'shower', 'geyser', 'water meter', 'stop cock',
+    'isolating valve',
   ],
   Finishes: [
     'paint', 'primer', 'sealer', 'varnish', 'undercoat', 'enamel', 'acrylic',
@@ -152,7 +157,11 @@ export function mapLegacyToTenderCategory(legacy: string): BoqCategory {
  * then drive classification.
  */
 const SECTION_TRADE_RULES: [RegExp, BoqCategory][] = [
-  [/preliminar|preambles?\b|p\s*&\s*g\b|general\s+(?:conditions|requirements)|special\s+conditions/i, 'Preliminaries'],
+  // NOTE: 'preambles' is deliberately NOT a Preliminaries trigger here —
+  // see PREAMBLE_MARKER_RE below. Every SAPS trade bill opens with a
+  // "PREAMBLES" caption; treating it as a P&G boundary handed the whole
+  // bill (real Masonry/Concrete/… items) to Preliminaries ownership.
+  [/preliminar|p\s*&\s*g\b|general\s+(?:conditions|requirements)|special\s+conditions/i, 'Preliminaries'],
   [/concrete|formwork|piling/i, 'Concrete'],
   [/structural\s+steel|steel\s*work|metal\s*work|reinforcement/i, 'Structural Steel'],
   [/electrical|small\s+power|lighting|cables?\b|distribution\s+boards?|earthing|lightning\s+protection/i, 'Electrical'],
@@ -167,6 +176,15 @@ export interface SectionContext {
    *  unknown trade (context RESETS — never carries stale state across it). */
   category: BoqCategory | null;
 }
+
+/**
+ * Preamble MARKERS — "PREAMBLES", "SUPPLEMENTARY PREAMBLES:", "For preambles
+ * refer to …". These captions open every SAPS trade bill ("MASONRY" →
+ * "PREAMBLES" → items), so they are notes WITHIN a section, never a section
+ * boundary. Treating them as a switch to Preliminaries once handed 900+ real
+ * trade rows of a live document to the N/A bypass.
+ */
+const PREAMBLE_MARKER_RE = /^(?:supplementary\s+)?preambles?\b\s*[:.]?\s*$|^for\s+preambles?\s+refer\b/i;
 
 /**
  * Detect whether a BoQ row is a SECTION/BILL heading and, if so, which
@@ -194,12 +212,19 @@ export function detectSectionContext(
   const text = (line ?? '').trim();
   if (!text) return null;
 
+  // Preamble markers are never boundaries — context flows straight through.
+  if (PREAMBLE_MARKER_RE.test(text)) return null;
+
   let title: string | null = null;
   let isNumberedHeading = false;
 
-  const numbered = text.match(/^(?:section|bill)\s*(?:no\.?)?\s*\d+\s*[:\-–—]?\s*(.*)$/i);
-  if (numbered) {
-    title = numbered[1] ?? '';
+  const numbered = text.match(/^(?:section|bill)\s*(?:no\.?)?\s*\d+\s*([:\-–—])?\s*(.*)$/i);
+  // A lowercase continuation with no separator ("Section 1 with 30% spare
+  // space and Light Orange cover plate:") is SPEC PROSE quoting a section
+  // number, not a heading — treating it as one reset the Electrical context
+  // mid-bill for 450+ rows of a live document.
+  if (numbered && (!numbered[2] || numbered[1] || /^[A-Z(]/.test(numbered[2]))) {
+    title = numbered[2] ?? '';
     isNumberedHeading = true;
   } else if (
     !opts.hasQty &&
@@ -231,6 +256,24 @@ export function detectSectionContext(
   return isNumberedHeading ? { category: null } : null;
 }
 
+// Precompiled word-boundary matchers. Raw substring `includes()` poisoned
+// whole documents: 'amp' matched "Ramps", 'tap' matched "tape", 'gate'
+// matched "aggregate", 'earth' matched "earthworks" — every ramp in a SAPS
+// BoQ classified Electrical. Short keywords (≤4 chars) get a hard
+// plural-tolerant boundary; longer ones keep prefix growth ("allow" still
+// matches "allowance"… via start-boundary only).
+const KEYWORD_MATCHERS: { category: BoqCategory; keyword: string; re: RegExp }[] = (
+  Object.entries(TENDER_CATEGORY_KEYWORDS) as [BoqCategory, string[]][]
+).flatMap(([category, kws]) =>
+  kws.map((keyword) => {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = keyword.length <= 4
+      ? new RegExp(`\\b${escaped}s?\\b`, 'i')
+      : new RegExp(`\\b${escaped}`, 'i');
+    return { category, keyword, re };
+  }),
+);
+
 /**
  * Classify a raw BoQ description into a tender category.
  * Scores keyword matches by length — longer, more specific matches win.
@@ -240,12 +283,10 @@ export function guessTenderCategory(description: string): TenderCategoryResult {
 
   let best: { category: BoqCategory; keyword: string } | null = null;
 
-  for (const [cat, kws] of Object.entries(TENDER_CATEGORY_KEYWORDS) as [BoqCategory, string[]][]) {
-    for (const kw of kws) {
-      if (lower.includes(kw)) {
-        if (!best || kw.length > best.keyword.length) {
-          best = { category: cat, keyword: kw };
-        }
+  for (const { category, keyword, re } of KEYWORD_MATCHERS) {
+    if (re.test(lower)) {
+      if (!best || keyword.length > best.keyword.length) {
+        best = { category, keyword };
       }
     }
   }

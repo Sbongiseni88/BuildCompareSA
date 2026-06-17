@@ -33,6 +33,7 @@ import {
     type RetailStore,
 } from '@/lib/retail-matrix';
 import { priceCacheKey, readCachedMatrices, type CachedMatrix } from '@/lib/price-cache';
+import { matchCatalogueProduct } from '@/lib/catalogue-match';
 import { estimatePgService, type PgServiceEstimate } from '@/lib/pg-services';
 import { mapLegacyToTenderCategory, guessTenderCategory } from '@/lib/tender-categories';
 import { estimateLabour } from '@/lib/bccei/labour';
@@ -253,7 +254,11 @@ function buildNoRetailResult(material: Material): BatchPriceResult {
  * supplier here is honest — unlike the market-knowledge estimate path, which
  * fabricates a deterministic spread.
  */
-function resultFromCachedMatrix(material: Material, cached: CachedMatrix): BatchPriceResult {
+function resultFromCachedMatrix(
+    material: Material,
+    cached: CachedMatrix,
+    matchedCatalogueQuery?: string,
+): BatchPriceResult {
     const searchTerm = material.search_string || generateSearchString(material.name);
     const quotes: BatchQuote[] = [];
 
@@ -292,6 +297,10 @@ function resultFromCachedMatrix(material: Material, cached: CachedMatrix): Batch
         matrix: cached.matrix,
         tenderCategory: resolveTenderCategory(material),
         bccei: bcceiForMaterial(material),
+        estimateBasis: matchedCatalogueQuery
+            ? `Matched scraped catalogue product "${matchedCatalogueQuery}" — ` +
+              `store columns are that product's real scraped shelf prices.`
+            : undefined,
     };
 }
 
@@ -539,11 +548,30 @@ export async function resolveBatchPrices(
     // cheapest supplier is real (not a fabricated spread). Degrades to the
     // estimate path on any miss or read failure.
     try {
-        const keyOf = (m: Material) => priceCacheKey(m.search_string || m.name);
-        const cacheHits = await readCachedMatrices(priceable.map(keyOf));
+        // Two key candidates per line: the line's own exact key, and — when
+        // the line names a scraped catalogue product (conservative all-token
+        // match) — that product's canonical key. The exact-only join had a
+        // ~0% hit rate on real tender phrasing, leaving every column N/A.
+        const exactKeyOf = (m: Material) => priceCacheKey(m.search_string || m.name);
+        const catalogueMatchOf = new Map(
+            priceable.map(m => [m.id, matchCatalogueProduct(`${m.name} ${m.search_string ?? ''}`)] as const),
+        );
+        const allKeys = priceable.flatMap(m => {
+            const cm = catalogueMatchOf.get(m.id);
+            return cm ? [exactKeyOf(m), cm.key] : [exactKeyOf(m)];
+        });
+        const cacheHits = await readCachedMatrices(allKeys);
         for (const material of priceable) {
-            const hit = cacheHits.get(keyOf(material));
-            if (hit) cachedResults.set(material.id, resultFromCachedMatrix(material, hit));
+            const exact = cacheHits.get(exactKeyOf(material));
+            const cm = catalogueMatchOf.get(material.id);
+            const viaCatalogue = !exact && cm ? cacheHits.get(cm.key) : undefined;
+            const hit = exact ?? viaCatalogue;
+            if (hit) {
+                cachedResults.set(
+                    material.id,
+                    resultFromCachedMatrix(material, hit, exact ? undefined : cm?.query),
+                );
+            }
         }
         if (cachedResults.size > 0) {
             console.log(`💾 price_cache served ${cachedResults.size}/${priceable.length} lines with real prices.`);

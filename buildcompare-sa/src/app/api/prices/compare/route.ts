@@ -7,6 +7,7 @@ import {
     type StoreProfile,
 } from '@/data/sa-market-knowledge';
 import { priceCacheKey, readCachedMatrices } from '@/lib/price-cache';
+import { matchCatalogueProduct } from '@/lib/catalogue-match';
 import { RETAIL_STORES } from '@/lib/retail-matrix';
 
 export const maxDuration = 60;
@@ -291,9 +292,14 @@ async function quotesFromPriceCache(
     userLat?: number,
     userLng?: number,
 ): Promise<StoreQuote[]> {
+    // Exact key first; when the query names a scraped catalogue product
+    // (conservative all-token match), fall back to its canonical key —
+    // exact-only joins almost never hit on free-text search phrasing.
     const key = priceCacheKey(query.originalQuery);
-    const hits = await readCachedMatrices([key]);
-    const cached = hits.get(key);
+    const catalogueMatch = matchCatalogueProduct(query.originalQuery);
+    const keys = catalogueMatch ? [key, catalogueMatch.key] : [key];
+    const hits = await readCachedMatrices(keys);
+    const cached = hits.get(key) ?? (catalogueMatch ? hits.get(catalogueMatch.key) : undefined);
     if (!cached) return [];
 
     const quotes: StoreQuote[] = [];

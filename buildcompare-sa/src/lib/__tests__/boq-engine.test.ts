@@ -39,6 +39,7 @@ import {
     isNarrativePreambleLine,
     shouldBypassRetailPricing,
     materialsFromParsedRows,
+    sanitizeBoqText,
 } from '../boq-engine';
 import { resolveBatchPrices } from '../batch-price-resolver';
 import { RETAIL_STORES } from '../retail-matrix';
@@ -281,15 +282,38 @@ describe('narrative preamble rows — Preliminaries, never AI-priced (2,630-row 
         expect(shouldBypassRetailPricing(byName('Half brick wall in stretcher bond'))).toBe(false);
     });
 
-    it('a SUPPLEMENTARY PREAMBLES caption switches the whole section to Preliminaries', () => {
+    it('a PREAMBLES caption inside a trade bill does NOT hijack the section (SAPS 908-row Preliminaries regression)', () => {
+        // Every SAPS trade bill opens "MASONRY" → "PREAMBLES" → items. The
+        // old behavior treated PREAMBLES as a switch to Preliminaries and
+        // handed the entire bill to the N/A bypass.
         const buf = sheetBuffer([
             ['Description', 'Unit', 'Qty'],
+            ['MASONRY', '', ''],
+            ['PREAMBLES', '', ''],
             ['SUPPLEMENTARY PREAMBLES', '', ''],
-            ['Descriptions of work to be read with the standard system', 'sum', 1],
+            ['For preambles refer to "Specification PW 371"', '', ''],
+            ['Half brick wall in stretcher bond', 'm2', 200],
         ]);
         const materials = tryDirectBoQParse(buf)!;
-        expect(materials[0].tenderCategory).toBe('Preliminaries');
-        expect(shouldBypassRetailPricing(materials[0])).toBe(true);
+        // Marker/reference rows are scaffolding — never emitted as materials.
+        expect(materials.find((m) => /preambles/i.test(m.name))).toBeUndefined();
+        // The trade context survives the preamble markers.
+        const wall = materials.find((m) => m.name === 'Half brick wall in stretcher bond')!;
+        expect(wall.tenderCategory).toBe('Masonry');
+        expect(shouldBypassRetailPricing(wall)).toBe(false);
+    });
+
+    it('narrative rows after a PREAMBLES marker still classify Preliminaries via narrative detection', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['MASONRY', '', ''],
+            ['PREAMBLES', '', ''],
+            ['The contractor shall allow for samples of all face bricks', '', ''],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        const prose = materials.find((m) => /samples of all face bricks/.test(m.name))!;
+        expect(prose.tenderCategory).toBe('Preliminaries');
+        expect(shouldBypassRetailPricing(prose)).toBe(true);
     });
 
     it('a medium row keyword beats a stale section trade (pipes inside Masonry)', () => {
@@ -347,10 +371,13 @@ describe('mixed-case trade captions & dimension strings (live 2,630-row stuck-on
     });
 
     it('dimension/operator strings ("813 x 2032mm", "813\\times2032mm") never break parsing or pricing', () => {
-        const dims = byName('Door frame 813\\times2032mm pressed steel');
+        // The entry-point sanitizer rewrites the LaTeX code, so the emitted
+        // material carries the SCRUBBED name — searchable and store-ready.
+        const dims = byName('Door frame 813 x 2032mm pressed steel');
         expect(dims).toBeDefined();
         expect(dims.tenderCategory).toBe('Openings');
         expect(shouldBypassRetailPricing(dims)).toBe(false);
+        expect(materials.some((m) => m.name.includes('\\times'))).toBe(false);
         expect(shouldBypassRetailPricing(byName('44mm Semi-solid hardwood door 813 x 2032mm'))).toBe(false);
     });
 
@@ -514,5 +541,45 @@ describe('resolveBatchPrices — Preliminaries rows get a null retail matrix', (
             expect(r.matrix[store].priceZar).toBeNull();
             expect(r.matrix[store].status).toBe('N/A');
         }
+    });
+});
+
+// ── sanitizeBoqText — entry-point scrub before any matcher runs ──────────────
+
+describe('sanitizeBoqText', () => {
+    it('normalises LaTeX math codes and unicode multipliers', () => {
+        expect(sanitizeBoqText('813\\times2032mm door frame')).toBe('813 x 2032mm door frame');
+        expect(sanitizeBoqText('Aluminium window 1200×600')).toBe('Aluminium window 1200 x 600');
+    });
+
+    it('collapses multi-space blocks, NBSP and control characters', () => {
+        expect(sanitizeBoqText('GLAZING TO  STEEL\twith   PUTTY')).toBe('GLAZING TO STEEL with PUTTY');
+    });
+
+    it('normalises en/em dashes so heading separators detect', () => {
+        expect(sanitizeBoqText('BILL NO 4 – ELECTRICAL')).toBe('BILL NO 4 - ELECTRICAL');
+    });
+
+    it('a heading blinded by math characters still switches the section after the scrub', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['Section No 2:  Builders Work', '', ''],
+            ['Half brick wall in stretcher bond', 'm2', 200],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        const wall = materials.find((m) => m.name === 'Half brick wall in stretcher bond')!;
+        expect(wall.tenderCategory).toBe('Masonry');
+    });
+
+    it('HAYLETT formula audit notes are scaffolding, never materials', () => {
+        const buf = sheetBuffer([
+            ['Description', 'Unit', 'Qty'],
+            ['MASONRY', '', ''],
+            ['(HAYLETT FORMULA WORK GROUP NO. 118)', '', ''],
+            ['Half brick wall in stretcher bond', 'm2', 200],
+        ]);
+        const materials = tryDirectBoQParse(buf)!;
+        expect(materials.find((m) => /haylett/i.test(m.name))).toBeUndefined();
+        expect(materials.find((m) => m.name === 'Half brick wall in stretcher bond')!.tenderCategory).toBe('Masonry');
     });
 });
